@@ -5,7 +5,7 @@ using System.IO;
 using System.Linq;
 
 /// <summary>
-/// Isolierte Temp-Kopie einer kanonischen Mini-Solution aus <c>tests/Fixtures/&lt;fixtureFolderName&gt;/</c>.
+/// Isolierte Temp-Kopie einer kanonischen Mini-Solution aus <c>tests/AiNetReview.IntegrationTests/Fixtures/&lt;fixtureFolderName&gt;/</c>.
 /// </summary>
 public sealed class IsolatedFixtureLease : IDisposable
 {
@@ -23,13 +23,24 @@ public sealed class IsolatedFixtureLease : IDisposable
     public string RootPath { get; }
 
     /// <summary>
-    /// Kopiert <c>tests/Fixtures/&lt;fixtureFolderName&gt;/</c> unterhalb von <paramref name="solutionRoot"/>
+    /// Kopiert <c>tests/AiNetReview.IntegrationTests/Fixtures/&lt;fixtureFolderName&gt;/</c> unterhalb von <paramref name="solutionRoot"/>
     /// unter Auslassung von <c>bin</c>/<c>obj</c>-Unterordnern in ein neues, eindeutiges Temp-Verzeichnis.
     /// </summary>
     public static IsolatedFixtureLease CopyFixture(
         string solutionRoot, string fixtureFolderName, string tempPrefix = "ainet-fixture-")
     {
-        var sourceRoot = Path.Combine(solutionRoot, "tests", "Fixtures", fixtureFolderName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fixtureFolderName);
+        if (fixtureFolderName.Contains('/') || fixtureFolderName.Contains('\\') || fixtureFolderName.Contains(".."))
+        {
+            throw new ArgumentException("Fixture-Ordnername darf keine Pfadtrennzeichen oder '..'-Segmente enthalten.", nameof(fixtureFolderName));
+        }
+
+        var sourceRoot = Path.Combine(solutionRoot, "tests", "AiNetReview.IntegrationTests", "Fixtures", fixtureFolderName);
+        if (!Directory.Exists(sourceRoot))
+        {
+            throw new DirectoryNotFoundException($"Fixture-Verzeichnis nicht gefunden: {sourceRoot}");
+        }
+
         var tempDirectory = TestTempDirectory.Create(tempPrefix);
 
         try
