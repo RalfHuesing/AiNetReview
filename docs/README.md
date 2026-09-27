@@ -1,6 +1,6 @@
 # Current-state documentation
 
-The host initializes executable-relative Serilog file logging. The core exposes rule registration, descriptor-based catalog generation, strict configuration validation, project path boundaries, and Git-independent `.sln`/`.slnx` loading with compilation checks. CLI and MCP review commands, finding reconciliation, storage, and reports are not implemented yet.
+The host initializes executable-relative Serilog file logging. The core exposes rule registration, descriptor-based catalog generation, strict configuration validation, project path boundaries, Git-independent `.sln`/`.slnx` loading with compilation checks, and a generic finding runner. Finding state currently lives only in a process-local transitional store; durable storage, verdicts, reports, and CLI/MCP review commands are not implemented yet.
 
 | Area | Pages |
 | --- | --- |

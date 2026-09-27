@@ -27,7 +27,7 @@ Verbleibende Findings werden mit Fundstelle, Auswirkung, Status, Begründung und
   - Scope: [Epic 1: Konfiguration und Projektwurzel](../initial-infrastructure/epics/01-Eingaben-und-Host.md#konfiguration-und-projektwurzel) einschließlich JSON, Regeloptionen aus der Registry, Pfadgrenzen, Git-Unabhängigkeit, Solution-Lader, Compilations und Fehlerzuordnung umsetzen.
   - Nicht: Keine zusätzlichen Konfigurationsmodi, keine Rule-Overrides und keine CLI-/MCP-Adapter.
   - Abnahme: Fast- und IntegrationTests belegen gültige `.sln`/`.slnx`, ungültige Keys, unbekannte Regeln und Pfade, Quellflucht, fehlende Referenzen und unvollständige Analyse als Fehler statt Null-Finding-Erfolg.
-- [ ] **M1-T4 — Finding-Abgleich und Runner.**
+- [x] **M1-T4 — Finding-Abgleich und Runner.**
   - Intention: Findings unabhängig von späteren Schnittstellen und Speicherdateien korrekt einordnen.
   - Scope: [Epic 2: Identität, Fingerprint und Zustandsautomat](../initial-infrastructure/epics/02-Regel-und-Findings.md#identität) samt generischem Runner, Quell-Hashes und testgebundener `FixtureFindingRule` umsetzen. Einen vorübergehenden Store nur gemäß [Epic 4: Umsetzung](../initial-infrastructure/epics/04-Umsetzung-und-Abnahme.md#umsetzung) verwenden.
   - Nicht: Keine produktive Entscheidung ohne dauerhafte Speicherung bestätigen; keine Markdown-Berichte oder CLI-/MCP-Verdicts in diesem Punkt.

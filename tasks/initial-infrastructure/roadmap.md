@@ -18,7 +18,7 @@ Für jeden vergleichbaren Infrastrukturbaustein vor der Umsetzung die [getestete
 
 ## M2 — Findings und Speicherung
 
-- [ ] Identität, Fingerprint, Zustandsautomat und Fixture-Regel gemäß [Epic 2](epics/02-Regel-und-Findings.md) umsetzen und prüfen.
+- [x] Identität, Fingerprint, Zustandsautomat und Fixture-Regel gemäß [Epic 2](epics/02-Regel-und-Findings.md) umsetzen und prüfen.
 - [ ] JSON-Store, Snapshots und Markdown-Berichte gemäß [Epic 3](epics/03-Storage-und-Berichte.md) umsetzen.
 
 ## M3 — Schnittstellen und Abnahme

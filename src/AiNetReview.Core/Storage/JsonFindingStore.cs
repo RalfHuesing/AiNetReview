@@ -1,5 +1,5 @@
 namespace AiNetReview.Core.Storage;
 
-public sealed class JsonFindingStore : IFindingStore
+public sealed class JsonFindingStore
 {
 }
