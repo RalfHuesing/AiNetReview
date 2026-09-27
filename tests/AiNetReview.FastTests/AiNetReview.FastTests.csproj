@@ -1,6 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <Import Project="../AiNetReview.TestProject.props" />
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector">

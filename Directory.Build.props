@@ -6,6 +6,10 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
+  <PropertyGroup Condition="$(MSBuildProjectFullPath.Contains('tests'))">
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
   <!-- Transitive dependency for Microsoft.CodeAnalysis.Workspaces.MSBuild:
        MSBuild.Locator 1.11+ requires ExcludeAssets="runtime" and PrivateAssets="all"
        so MSBuild runtime is not copied into output. -->

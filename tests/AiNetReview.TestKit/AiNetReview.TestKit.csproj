@@ -1,6 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <Import Project="../AiNetReview.TestProject.props" />
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AiNetReview.Core\AiNetReview.Core.csproj" />

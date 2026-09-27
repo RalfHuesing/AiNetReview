@@ -22,6 +22,12 @@ Build the entire solution:
 dotnet build
 ```
 
+Or run the build script which logs the full console output to `temp/build.log`:
+
+```powershell
+pwsh -File ./scripts/build.ps1
+```
+
 TreatWarningsAsErrors and Nullable reference types are enabled across all projects in `Directory.Build.props`.
 
 ## Running Tests
@@ -31,3 +37,15 @@ Execute both test projects:
 ```bash
 dotnet test
 ```
+
+Or run the specific test runner scripts:
+
+```powershell
+# FastTests (dumps full console log to temp/test-fast.log and TRX to TestResults/FastTests.trx)
+pwsh -File ./scripts/test-fast.ps1
+
+# IntegrationTests (dumps full console log to temp/test-integration.log and TRX to TestResults/IntegrationTests.trx)
+pwsh -File ./scripts/test-integration.ps1
+```
+
+Agents and automation tools can inspect the static log files in `temp/` directly.

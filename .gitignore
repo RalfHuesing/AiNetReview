@@ -36,8 +36,9 @@ bld/
 
 ## Build results
 [Aa]rtifacts/
-TestResults/
+[Tt]estResults/
 *.trx
+*.log
 [Tt]emp/
 
 ## NuGet Packages
