@@ -2,11 +2,13 @@
 
 Diese Roadmap ist der Ausführungsplan zum [Konzept](Konzept.md). Produktverträge und Abnahme stehen ausschließlich im [ursprünglichen Konzept](../initial-infrastructure/AiNetReview-Konzept.md) und in [Epic 1](../initial-infrastructure/epics/01-Eingaben-und-Host.md), [Epic 2](../initial-infrastructure/epics/02-Regel-und-Findings.md), [Epic 3](../initial-infrastructure/epics/03-Storage-und-Berichte.md) und [Epic 4](../initial-infrastructure/epics/04-Umsetzung-und-Abnahme.md). Die [ursprüngliche Roadmap](../initial-infrastructure/roadmap.md) bleibt die grobe Fortschrittsübersicht und wird bei späterer Umsetzung mit dieser Liste abgeglichen. Die Reihenfolge hier folgt Abhängigkeiten; deshalb wird Epic 1 erst nach Epic 2 und 3 vollständig abgenommen.
 
-Die Planung erfolgt auf ausdrücklichen Nutzerauftrag trotz `status: draft` des neuen Konzepts. Die Implementierung beginnt erst nach dessen Freigabe und gesondertem Aufruf von [Schritt 3](../../.agents/agent-workflow/03-orchestrierte-umsetzung.md). Bis dahin bleiben alle Checkboxen offen.
+Das [Konzept](Konzept.md) ist vom Nutzer freigegeben (`status: ready`). Die Implementierung beginnt erst mit dem gesonderten Aufruf von [Schritt 3](../../.agents/agent-workflow/03-orchestrierte-umsetzung.md). Bis dahin bleiben alle Checkboxen offen.
 
 Für jeden Implementierungspunkt gilt: Ist-Stand und betroffene Repo-Regeln prüfen; vor einem passenden Infrastrukturbaustein [AiNetLinter-Implementierung und Tests](../initial-infrastructure/epics/04-Umsetzung-und-Abnahme.md#ainetlinter-als-referenz) nur lesend auswerten; relevante Verträge und Fehlerfälle automatisiert prüfen; betroffene `docs/`-Seiten erst für verifiziertes Verhalten aktualisieren; [Build- und Test-Gates](../initial-infrastructure/epics/04-Umsetzung-und-Abnahme.md#testebenen) ausführen; nur eigene Dateien und Checkboxen atomar committen. Kein Punkt erweitert die Produktgrenzen aus dem [Konzept](Konzept.md#nicht).
 
-Jeder Audit-Punkt beauftragt **genau einen lesenden Subagenten** mit Modell `gpt-6-sol`, Reasoning `medium`. Er liest das gesamte ursprüngliche Konzept, alle vier Epics, die aktuelle Anwendung, relevante Tests und Doku sowie den bisherigen Roadmap-Stand. Er prüft Architektur, Verträge, Datenfluss und Integration im Zusammenhang, nicht nur den letzten Diff. Er meldet Findings mit Schwere, Fundstelle und Begründung an den Orchestrator; auch „keine Findings“ wird ausdrücklich gemeldet. Der Orchestrator entscheidet über einen gezielten Korrekturpunkt, begründete Nicht-Aktion oder Stopp bei einem ungeklärten Produkt-Fork und hält das Ergebnis beim Audit-Punkt fest. Entsprechend [Schritt 3](../../.agents/agent-workflow/03-orchestrierte-umsetzung.md#audit) gibt es nach einem Audit höchstens einen Korrektur-Implementierer und keinen Audit-Loop. Ein Audit-Haken bestätigt erst den überprüften Bericht und die Entscheidung des Orchestrators.
+Jeder Audit-Punkt beauftragt **genau einen lesenden Subagenten** mit Modell `gpt-6-sol`, Reasoning `medium`. Er liest das gesamte ursprüngliche Konzept, alle vier Epics, die aktuelle Anwendung, relevante Tests und Doku sowie den bisherigen Roadmap-Stand. Er prüft Architektur, Verträge, Datenfluss und Integration im Zusammenhang, nicht nur den letzten Diff. Noch nicht fällige spätere Roadmap-Punkte bewertet er als geplante Arbeit; ein Finding braucht eine Abweichung im erreichten Stand oder eine belegte Gefahr für die weitere Umsetzung. Er meldet Findings mit Schwere, Fundstelle und Begründung an den Orchestrator; auch „keine Findings“ wird ausdrücklich gemeldet. Der Orchestrator priorisiert nach Auswirkung auf Vertrag, Abnahme und weitere Arbeit. Für diesen Task sind nach einem Audit **bis zu drei sequenzielle Korrekturschritte** zulässig; damit gilt die vom Nutzer freigegebene Ausnahme zur Ein-Korrektur-Grenze aus [Schritt 3](../../.agents/agent-workflow/03-orchestrierte-umsetzung.md#audit). Jeder Korrekturschritt wird geprüft und einzeln committet; es gibt keinen automatischen Audit-Loop. Ein Audit-Haken bestätigt den geprüften Bericht, die Korrekturentscheidungen und die Dokumentation verbleibender Findings.
+
+Verbleibende Findings werden mit Fundstelle, Auswirkung, Status, Begründung und nächstem Schritt in `audit.md` dieses Task-Verzeichnisses notiert. Die Datei wird erst beim ersten Audit mit Findings angelegt. Nicht blockierende Hinweise dürfen offen bleiben, während der Orchestrator die nächste unabhängig bearbeitbare Checkbox übernimmt. Eine Checkbox mit nicht erfüllter Abnahme bleibt offen; das [Produkt-DoD](../initial-infrastructure/epics/04-Umsetzung-und-Abnahme.md#definition-of-done) wird nicht abgeschwächt. Falls der erste offene Punkt nach den Korrekturen nicht bearbeitbar ist, darf der Orchestrator für diesen Task einen späteren unabhängigen Punkt vorziehen und hält die Abhängigkeit beim offenen Punkt fest. Erst wenn keine unabhängige Arbeit mehr möglich ist, stoppt er und nennt dem Nutzer den harten Blocker, die bisherigen Versuche und die erforderliche Entscheidung. Vorhandene fremde Änderungen werden gemäß [Git-Regel](../../.agents/rules/05-git.mdc) nicht mitcommittet; bei Bedarf wird ein isolierter Worktree verwendet.
 
 ## M1 — Regel- und Finding-Kern (Epic 2 abschließen)
 
@@ -32,7 +34,7 @@ Jeder Audit-Punkt beauftragt **genau einen lesenden Subagenten** mit Modell `gpt
   - Abnahme: Tests prüfen unabhängige Findings, Byteformat des Fingerprints, jeden Zustandsübergang, Regelreihenfolge, Abbruch und Analysefehler; `template-noop` liefert nur nach vollständigem Lauf null Findings.
 - [ ] **M1-A — Gesamtaudit nach Epic 2.**
   - Auftrag: Epic 2 samt M1-Grundlagen gegen alle Produktverträge und den tatsächlichen Code prüfen; insbesondere Erweiterbarkeit, vollständige Analyse und die Trennung von Test- und Produktregel.
-  - Abnahme: Lesender `gpt-6-sol`-Subagent mit Reasoning `medium` berichtet dem Orchestrator belegte Findings oder explizit keine; dessen Entscheidung ist am Audit-Punkt festgehalten.
+  - Abnahme: Lesender `gpt-6-sol`-Subagent mit Reasoning `medium` berichtet dem Orchestrator belegte Findings oder explizit keine; Korrekturen und Restbefunde sind gemäß Audit-Regel festgehalten.
 
 ## M2 — Speicherung und Berichte (Epic 3 abschließen)
 
@@ -41,16 +43,16 @@ Jeder Audit-Punkt beauftragt **genau einen lesenden Subagenten** mit Modell `gpt
   - Scope: [Epic 3: Grundform, Manifest, Finding-Ereignis, Snapshot und Entscheidung](../initial-infrastructure/epics/03-Storage-und-Berichte.md#grundform-und-ids) umsetzen; echten JSON-Store an den Runner anschließen.
   - Nicht: Keine automatische Retention, kein Statistik-Dashboard und keine Speicherung vollständiger Quellpfade.
   - Abnahme: FastTests prüfen Schemata, ID- und Referenzbeziehungen, Snapshot-Bytes, idempotente Urteile, Urteilskorrekturen und Laden nach Neustart.
-- [ ] **M2-T2 — Atomare Veröffentlichung und Speicherkonflikte.**
-  - Intention: Fehlgeschlagene oder konkurrierende Läufe dürfen keinen gültigen Verlauf vortäuschen.
-  - Scope: [Epic 3: Veröffentlichung und Konflikte](../initial-infrastructure/epics/03-Storage-und-Berichte.md#veröffentlichung-konflikte-und-retention) umsetzen; Lock-Mechanik aus [Epic 1](../initial-infrastructure/epics/01-Eingaben-und-Host.md#lock-und-abbruch) für Scan und Entscheidung integrieren.
-  - Nicht: Keine stille Konfliktauflösung, kein Warten auf belegte Locks und keine automatische Datenlöschung.
-  - Abnahme: Tests belegen Commit-Punkt, Quelländerung vor Veröffentlichung, Abbruch/Prozessabsturz, verwaiste Berichte, verzweigte Ereignisketten und unveränderten gültigen Zustand bei Fehlern.
-- [ ] **M2-T3 — Deterministische Markdown-Berichte.**
+- [ ] **M2-T2 — Deterministische Markdown-Berichte.**
   - Intention: Vollständige Läufe als nachvollziehbare Review-Wegweiser ausgeben.
   - Scope: [Epic 3: Markdown-Berichte](../initial-infrastructure/epics/03-Storage-und-Berichte.md#markdown-berichte) mit Index, Regeldateien, Zählwerten, Sortierung, relativen Links und Snapshot-Verweisen umsetzen.
   - Nicht: Keine automatische Refactoring-Anweisung und kein vollständiger Quellcode-Dump im Bericht.
   - Abnahme: Tests prüfen Bytes und Linkziele auch für Sonderzeichen, leere Regelresultate, offene versus akzeptierte Findings und deterministische Reihenfolge.
+- [ ] **M2-T3 — Atomare Veröffentlichung und Speicherkonflikte.**
+  - Intention: Fehlgeschlagene oder konkurrierende Läufe dürfen keinen gültigen Verlauf vortäuschen.
+  - Scope: [Epic 3: Veröffentlichung und Konflikte](../initial-infrastructure/epics/03-Storage-und-Berichte.md#veröffentlichung-konflikte-und-retention) für Store und fertige Berichte umsetzen; Lock-Mechanik aus [Epic 1](../initial-infrastructure/epics/01-Eingaben-und-Host.md#lock-und-abbruch) für Scan und Entscheidung integrieren.
+  - Nicht: Keine stille Konfliktauflösung, kein Warten auf belegte Locks und keine automatische Datenlöschung.
+  - Abnahme: Tests belegen Commit-Punkt, Quelländerung vor Veröffentlichung, Abbruch/Prozessabsturz, verwaiste Berichte, verzweigte Ereignisketten und unveränderten gültigen Zustand bei Fehlern.
 - [ ] **M2-T4 — Persistierten Review-Zyklus integrieren.**
   - Intention: Kern, Store und Berichte gemeinsam gegen die spezifizierte Zustandsfolge prüfen.
   - Scope: Die Test-Fixture aus [Epic 2](../initial-infrastructure/epics/02-Regel-und-Findings.md#startregel-und-test-fixierung) durch vollständige Scans und Entscheidungen mit dem echten Store führen; [Epic 3](../initial-infrastructure/epics/03-Storage-und-Berichte.md) als Ganzes prüfen.
@@ -58,7 +60,7 @@ Jeder Audit-Punkt beauftragt **genau einen lesenden Subagenten** mit Modell `gpt
   - Abnahme: IntegrationTests belegen `new → accepted/false-positive → reopened/updated → resolved`, unveränderte Unterdrückung, Snapshots, Berichte und dauerhaftes Urteil; der produktive Runner verwendet keinen No-op-Store mehr.
 - [ ] **M2-A — Gesamtaudit nach Epic 3.**
   - Auftrag: Epic 3 im Zusammenhang mit Epic 1 und 2, dem Review-Zyklus und dem tatsächlichen Datenfluss prüfen; atomare Veröffentlichung und Konfliktverhalten besonders berücksichtigen.
-  - Abnahme: Lesender `gpt-6-sol`-Subagent mit Reasoning `medium` berichtet dem Orchestrator belegte Findings oder explizit keine; dessen Entscheidung ist am Audit-Punkt festgehalten.
+  - Abnahme: Lesender `gpt-6-sol`-Subagent mit Reasoning `medium` berichtet dem Orchestrator belegte Findings oder explizit keine; Korrekturen und Restbefunde sind gemäß Audit-Regel festgehalten.
 
 ## M3 — Host-Schnittstellen (Epic 1 abschließen)
 
@@ -79,7 +81,7 @@ Jeder Audit-Punkt beauftragt **genau einen lesenden Subagenten** mit Modell `gpt
   - Abnahme: IntegrationTests belegen parallele CLI-/MCP-Prozesse, belegte Locks, Abbruch, geänderte Quellen/Optionen/Versionen sowie erfolgreiche und abgewiesene Urteile ohne beschädigte Runs.
 - [ ] **M3-A — Gesamtaudit nach Epic 1.**
   - Auftrag: Epic 1 samt den inzwischen vollständigen Epic-2- und Epic-3-Pfaden aus Sicht beider Schnittstellen prüfen; Prozessgrenzen, Logging, Pfade und Parallelität einbeziehen.
-  - Abnahme: Lesender `gpt-6-sol`-Subagent mit Reasoning `medium` berichtet dem Orchestrator belegte Findings oder explizit keine; dessen Entscheidung ist am Audit-Punkt festgehalten.
+  - Abnahme: Lesender `gpt-6-sol`-Subagent mit Reasoning `medium` berichtet dem Orchestrator belegte Findings oder explizit keine; Korrekturen und Restbefunde sind gemäß Audit-Regel festgehalten.
 
 ## M4 — Gesamtabnahme (Epic 4 abschließen)
 
@@ -95,4 +97,4 @@ Jeder Audit-Punkt beauftragt **genau einen lesenden Subagenten** mit Modell `gpt
   - Abnahme: Der separate Performance-Test erfüllt die in Epic 4 definierten Daten-, Zeit- und Speichergrenzen auf der geforderten Testmaschine; Dogfooding und alle Produkt-DoD-Punkte sind mit ausgeführten Checks belegt.
 - [ ] **M4-A — Gesamtaudit nach Epic 4.**
   - Auftrag: Den vollständigen ersten Produktstand gegen Konzept, alle Epics, Tests, Dokumentation und Roadmap auditieren; auch übergreifende Architektur- oder Vertragsabweichungen melden.
-  - Abnahme: Lesender `gpt-6-sol`-Subagent mit Reasoning `medium` berichtet dem Orchestrator belegte Findings oder explizit keine; dessen Entscheidung und der finale DoD-Status sind am Audit-Punkt festgehalten.
+  - Abnahme: Lesender `gpt-6-sol`-Subagent mit Reasoning `medium` berichtet dem Orchestrator belegte Findings oder explizit keine; Korrekturen, Restbefunde und der finale DoD-Status sind gemäß Audit-Regel festgehalten.
