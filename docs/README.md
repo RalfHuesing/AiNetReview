@@ -1,6 +1,6 @@
 # Current-state documentation
 
-AiNetReview has no application code yet. The linked pages are empty placeholders. Add only behavior verified in this repository.
+AiNetReview is currently in the initial skeleton stage. The project structure and test execution are verified; other linked pages remain placeholders until implemented.
 
 | Area | Pages |
 | --- | --- |

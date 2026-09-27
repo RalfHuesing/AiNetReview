@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AiNetReview.Core/AiNetReview.Core.csproj" />
+    <Project Path="src/AiNetReview/AiNetReview.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AiNetReview.FastTests/AiNetReview.FastTests.csproj" />
+    <Project Path="tests/AiNetReview.IntegrationTests/AiNetReview.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

@@ -1,6 +1,6 @@
 # AiNetReview
 
-This repository is in the specification stage. There is no application code yet.
+This repository contains the initial project skeleton. Application logic is not yet implemented.
 
 - [Initial infrastructure specification](tasks/initial-infrastructure/README.md)
 - [Current-state documentation](docs/README.md)
