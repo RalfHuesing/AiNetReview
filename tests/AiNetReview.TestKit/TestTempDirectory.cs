@@ -15,6 +15,7 @@ using System.Threading;
 public sealed class TestTempDirectory : IDisposable
 {
     private const string DefaultPrefix = "ainet-test-";
+    private const string AllowedPrefixStart = "ainet-";
     private const string TempFolderName = "temp";
     private const string OwnerMarkerFilePrefix = ".ainet-test-owner-";
     private static readonly TimeSpan StaleDirectoryAge = TimeSpan.FromMinutes(5);
@@ -56,12 +57,33 @@ public sealed class TestTempDirectory : IDisposable
     /// <returns>Eine neue <see cref="TestTempDirectory"/>-Instanz.</returns>
     public static TestTempDirectory Create(string prefix = DefaultPrefix)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(prefix);
+
+        if (!prefix.StartsWith(AllowedPrefixStart, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException($"Präfix muss mit '{AllowedPrefixStart}' beginnen.", nameof(prefix));
+        }
+
+        if (prefix.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            prefix.Contains('/') ||
+            prefix.Contains('\\') ||
+            prefix.Contains(':'))
+        {
+            throw new ArgumentException("Präfix enthält ungültige Zeichen oder Pfadtrennzeichen.", nameof(prefix));
+        }
+
         var root = RootTempDirectory;
         Directory.CreateDirectory(root);
         CleanupStaleDirectories(root);
 
         var subDirName = $"{prefix}{Guid.NewGuid():N}";
-        var fullPath = Path.Combine(root, subDirName);
+        var fullPath = Path.GetFullPath(Path.Combine(root, subDirName));
+        var normalizedRoot = Path.TrimEndingDirectorySeparator(root);
+        if (Path.GetDirectoryName(fullPath) != normalizedRoot)
+        {
+            throw new ArgumentException("Präfix darf das Wurzelverzeichnis nicht verlassen.", nameof(prefix));
+        }
+
         Directory.CreateDirectory(fullPath);
 
         try
@@ -117,7 +139,35 @@ public sealed class TestTempDirectory : IDisposable
     /// <summary>
     /// Liefert einen absoluten Pfad für eine relative Datei- oder Ordnerangabe innerhalb dieses Temp-Verzeichnisses.
     /// </summary>
-    public string GetPath(string relativePath) => Path.GetFullPath(Path.Combine(DirectoryPath, relativePath));
+    public string GetPath(string relativePath)
+    {
+        ArgumentNullException.ThrowIfNull(relativePath);
+        if (string.IsNullOrWhiteSpace(relativePath))
+        {
+            throw new ArgumentException("Pfad darf nicht leer sein.", nameof(relativePath));
+        }
+
+        if (Path.IsPathRooted(relativePath))
+        {
+            throw new ArgumentException("Pfad muss relativ sein.", nameof(relativePath));
+        }
+
+        var segments = relativePath.Split(['/', '\\'], StringSplitOptions.None);
+        if (segments.Any(s => s == ".."))
+        {
+            throw new ArgumentException("Pfad darf keine '..'-Segmente enthalten.", nameof(relativePath));
+        }
+
+        var fullPath = Path.GetFullPath(Path.Combine(DirectoryPath, relativePath));
+        var normalizedDir = Path.TrimEndingDirectorySeparator(DirectoryPath);
+        if (!fullPath.Equals(normalizedDir, StringComparison.OrdinalIgnoreCase) &&
+            !fullPath.StartsWith(normalizedDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Pfad darf das temporäre Testverzeichnis nicht verlassen.", nameof(relativePath));
+        }
+
+        return fullPath;
+    }
 
     /// <summary>
     /// Implizite Konvertierung zu <see cref="string"/>, damit Instanzen direkt an Methoden mit Pfad-Parametern übergeben werden können.
@@ -199,6 +249,11 @@ public sealed class TestTempDirectory : IDisposable
         var staleBeforeUtc = DateTime.UtcNow - StaleDirectoryAge;
         foreach (var directory in directories)
         {
+            if (!LooksLikeTestDirectory(directory))
+            {
+                continue;
+            }
+
             if (!ActiveDirectories.ContainsKey(directory))
             {
                 CleanupStaleDirectory(directory, staleBeforeUtc);
@@ -296,7 +351,24 @@ public sealed class TestTempDirectory : IDisposable
     private static bool LooksLikeTestDirectory(string directory)
     {
         var name = Path.GetFileName(directory);
-        return name.Length >= 32 && Guid.TryParseExact(name[^32..], "N", out _);
+        if (!name.StartsWith(AllowedPrefixStart, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (name.Length < AllowedPrefixStart.Length + 32)
+        {
+            return false;
+        }
+
+        var guidPart = name[^32..];
+        if (!Guid.TryParseExact(guidPart, "N", out _))
+        {
+            return false;
+        }
+
+        var prefixPart = name[..^32];
+        return prefixPart.All(c => char.IsAsciiLetterOrDigit(c) || c == '-' || c == '_');
     }
 
     private static DateTime GetLastWriteTimeUtc(string path)
