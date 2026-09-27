@@ -10,6 +10,7 @@ Die Epics definieren die Verträge; diese Liste zeigt Reihenfolge und Fortschrit
 
 ## M1 — Eingaben und Regeln
 
+- [ ] Serilog-Dateilogging beim Host-Start gemäß [Epic 1](epics/01-Eingaben-und-Host.md#logging) einrichten und durch Prozesstests prüfen.
 - [ ] Konfiguration, Pfadvalidierung und Solution-Lader gemäß [Epic 1](epics/01-Eingaben-und-Host.md) umsetzen.
 - [ ] Composition Root, Regelvertrag, Registry, `template-noop` und Katalog gemäß [Epic 2](epics/02-Regel-und-Findings.md) anschließen.
 

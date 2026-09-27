@@ -32,7 +32,15 @@ Git ist keine Laufzeitabhängigkeit. Das Werkzeug ruft `git` nicht auf und verla
 - `ainetreview review --config <absoluter-pfad>` startet einen Review synchron. `--config` ist der einzige Pflichtparameter; weitere Analyseparameter werden abgewiesen.
 - `ainetreview catalog --repo <absoluter-pfad>` erzeugt unter dieser Projektwurzel `docs/ainetreview-rules.md` und `ainetreview.example.json` aus der Registry. `docs` wird angelegt. Die beiden als generiert gekennzeichneten Dateien werden deterministisch ersetzt; `ainetreview.json` wird nie verändert. Die Beispiel-JSON enthält alle registrierten Regeln mit Defaults, `outputDirectory: "audit-reporting"`, `storageDirectory: ".ainetreview"` und `solution: ""` als vor Nutzung auszufüllendes Feld. Git ist auch hierfür nicht nötig.
 
-`review` schreibt bei Erfolg genau eine kompakte JSON-Zeile auf stdout: `{"status":"completed","runId":"...","indexPath":"audit-reporting/<run-id>/index.md","counts":{...}}`. Fehler schreiben genau eine JSON-Zeile `{"code":"...","message":"..."}` auf stderr; keine halben Ergebnisse auf stdout. Progress und Logs gehen nur auf stderr. Exit-Codes: `0` vollständiger Lauf auch mit Findings, `2` Eingabe-/Konfigurationsfehler, `3` Analyse-/Roslyn-Fehler oder geänderte Quellen, `4` Storage-/Schreibfehler oder Speicherkonflikt, `5` belegter Repository-Lock, `130` Abbruch durch Nutzer. `catalog` verwendet `0`, `2` und `4` entsprechend.
+`review` schreibt bei Erfolg genau eine kompakte JSON-Zeile auf stdout: `{"status":"completed","runId":"...","indexPath":"audit-reporting/<run-id>/index.md","counts":{...}}`. Fehler schreiben genau eine JSON-Zeile `{"code":"...","message":"..."}` auf stderr; keine halben Ergebnisse auf stdout. Progress und nutzergerichtete Diagnosen gehen auf stderr; Serilog schreibt ausschließlich in Dateien. Exit-Codes: `0` vollständiger Lauf auch mit Findings, `2` Eingabe-/Konfigurationsfehler, `3` Analyse-/Roslyn-Fehler oder geänderte Quellen, `4` Storage-/Schreibfehler oder Speicherkonflikt, `5` belegter Repository-Lock, `130` Abbruch durch Nutzer. `catalog` verwendet `0`, `2` und `4` entsprechend.
+
+## Logging
+
+Der Host initialisiert Serilog vor CLI-Parsing oder MCP-Start einmal pro Prozess. Der einzige Sink schreibt unter `<AppContext.BaseDirectory>/logs/`; das ist das Verzeichnis des ausgeführten Hosts, unabhängig von Arbeitsverzeichnis, `--config` und analysierter Projektwurzel. Die Logs liegen niemals im analysierten Projekt, außer die EXE befindet sich selbst dort.
+
+Die Datei `ainetreview-.log` rotiert täglich und bei 10 MiB; höchstens 30 Logdateien bleiben erhalten. Der File-Sink erlaubt gemeinsames Schreiben durch gleichzeitige CLI- und MCP-Prozesse. Ereignisse enthalten Zeit, Level, Befehl oder Operation, Run-ID soweit vorhanden und Fehlerkontext. Quellcode, vollständige Konfigurationen, Review-Kommentare und Geheimnisse werden nicht geloggt.
+
+Kann der Host das Logverzeichnis oder die Logdatei nicht beschreiben, endet der Start mit `LOGGING_FAILED` und Exit-Code `4`. Die Fehlermeldung erscheint als eine JSON-Zeile auf stderr; stdout bleibt leer. Für `mcp` gilt dies vor dem Protokollstart. Serilog schreibt niemals auf stdout oder stderr; stderr bleibt den im CLI-Vertrag beschriebenen Antworten und Diagnosen vorbehalten.
 
 ## MCP-Tools
 
