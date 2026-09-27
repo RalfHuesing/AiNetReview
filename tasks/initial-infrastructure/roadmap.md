@@ -14,7 +14,7 @@ Für jeden vergleichbaren Infrastrukturbaustein vor der Umsetzung die [getestete
 
 - [x] Serilog-Dateilogging beim Host-Start gemäß [Epic 1](epics/01-Eingaben-und-Host.md#logging) einrichten und durch Prozesstests prüfen.
 - [ ] Konfiguration, Pfadvalidierung und Solution-Lader gemäß [Epic 1](epics/01-Eingaben-und-Host.md) umsetzen.
-- [ ] Composition Root, Regelvertrag, Registry, `template-noop` und Katalog gemäß [Epic 2](epics/02-Regel-und-Findings.md) anschließen.
+- [x] Regelvertrag, DI-Registry, `template-noop` und descriptorbasierten Katalog gemäß [Epic 2](epics/02-Regel-und-Findings.md) umsetzen.
 
 ## M2 — Findings und Speicherung
 
@@ -23,6 +23,6 @@ Für jeden vergleichbaren Infrastrukturbaustein vor der Umsetzung die [getestete
 
 ## M3 — Schnittstellen und Abnahme
 
-- [ ] CLI und MCP an denselben Runner anschließen; Locking, Polling und Stale-Prüfung gemäß [Epic 1](epics/01-Eingaben-und-Host.md) abschließen.
+- [ ] Produktiven Composition Root sowie CLI und MCP an denselben Runner anschließen; Locking, Polling und Stale-Prüfung gemäß [Epic 1](epics/01-Eingaben-und-Host.md) abschließen.
 - [ ] FastTests, IntegrationTests, Dogfooding und separaten Lasttest gemäß [Epic 4](epics/04-Umsetzung-und-Abnahme.md) bestehen.
 - [ ] Produkt-DoD aus [Epic 4](epics/04-Umsetzung-und-Abnahme.md#definition-of-done) vollständig nachweisen.

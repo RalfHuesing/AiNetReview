@@ -17,7 +17,7 @@ Verbleibende Findings werden mit Fundstelle, Auswirkung, Status, Begründung und
   - Scope: Offene Infrastrukturänderungen der [ursprünglichen M0](../initial-infrastructure/roadmap.md#m0--grundlage) abschließen; Build und FastTests prüfen; Serilog vom Host-Start an nach [Epic 1: Logging](../initial-infrastructure/epics/01-Eingaben-und-Host.md#logging) einrichten.
   - Nicht: Noch keine CLI-/MCP-Fachfunktionen und kein Finding-Store.
   - Abnahme: Skript-Gates bestehen; Prozesstests belegen EXE-relativen Dateisink, Fehler bei nicht beschreibbarem Log und freies stdout/stderr gemäß Vertrag.
-- [ ] **M1-T2 — Regelvertrag, Registrierung und Katalogkern.**
+- [x] **M1-T2 — Regelvertrag, Registrierung und Katalogkern.**
   - Intention: Regeln ohne Änderungen an generischen Komponenten ergänzbar machen.
   - Scope: [Epic 2: Regelvertrag und Startregel](../initial-infrastructure/epics/02-Regel-und-Findings.md#regelvertrag) sowie [Epic 4: DI und Regel-Erweiterung](../initial-infrastructure/epics/04-Umsetzung-und-Abnahme.md#di-und-regel-erweiterung) umsetzen; produktiv nur `template-noop` registrieren; Katalog und JSON-Vorlage aus Deskriptoren erzeugen.
   - Nicht: Keine fachliche Review-Regel, keine dynamische Rule-Suche und noch kein produktiver Verdict-Speicher.
