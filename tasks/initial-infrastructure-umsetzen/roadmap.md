@@ -22,7 +22,7 @@ Verbleibende Findings werden mit Fundstelle, Auswirkung, Status, Begründung und
   - Scope: [Epic 2: Regelvertrag und Startregel](../initial-infrastructure/epics/02-Regel-und-Findings.md#regelvertrag) sowie [Epic 4: DI und Regel-Erweiterung](../initial-infrastructure/epics/04-Umsetzung-und-Abnahme.md#di-und-regel-erweiterung) umsetzen; produktiv nur `template-noop` registrieren; Katalog und JSON-Vorlage aus Deskriptoren erzeugen.
   - Nicht: Keine fachliche Review-Regel, keine dynamische Rule-Suche und noch kein produktiver Verdict-Speicher.
   - Abnahme: Tests belegen Deskriptorvalidierung, doppelte IDs, Defaults, Katalog-Determinismus und vollständige leere Regelresultate; die Fixture-Regel bleibt im Testprojekt.
-- [ ] **M1-T3 — Konfiguration und Solution-Laden.**
+- [x] **M1-T3 — Konfiguration und Solution-Laden.**
   - Intention: Einen gemeinsamen, validierten Analyse-Eingang schaffen.
   - Scope: [Epic 1: Konfiguration und Projektwurzel](../initial-infrastructure/epics/01-Eingaben-und-Host.md#konfiguration-und-projektwurzel) einschließlich JSON, Regeloptionen aus der Registry, Pfadgrenzen, Git-Unabhängigkeit, Solution-Lader, Compilations und Fehlerzuordnung umsetzen.
   - Nicht: Keine zusätzlichen Konfigurationsmodi, keine Rule-Overrides und keine CLI-/MCP-Adapter.

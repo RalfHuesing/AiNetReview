@@ -1,6 +1,6 @@
 # Current-state documentation
 
-AiNetReview is currently in the initial skeleton stage. The project structure and test execution are verified. The host initializes executable-relative Serilog file logging, and the core exposes rule registration, descriptor validation, and descriptor-based catalog generation. Most other linked pages remain placeholders until their behavior is implemented.
+The host initializes executable-relative Serilog file logging. The core exposes rule registration, descriptor-based catalog generation, strict configuration validation, project path boundaries, and Git-independent `.sln`/`.slnx` loading with compilation checks. CLI and MCP review commands, finding reconciliation, storage, and reports are not implemented yet.
 
 | Area | Pages |
 | --- | --- |

@@ -13,7 +13,7 @@ Für jeden vergleichbaren Infrastrukturbaustein vor der Umsetzung die [getestete
 ## M1 — Eingaben und Regeln
 
 - [x] Serilog-Dateilogging beim Host-Start gemäß [Epic 1](epics/01-Eingaben-und-Host.md#logging) einrichten und durch Prozesstests prüfen.
-- [ ] Konfiguration, Pfadvalidierung und Solution-Lader gemäß [Epic 1](epics/01-Eingaben-und-Host.md) umsetzen.
+- [x] Konfiguration, Pfadvalidierung und Solution-Lader gemäß [Epic 1](epics/01-Eingaben-und-Host.md) umsetzen.
 - [x] Regelvertrag, DI-Registry, `template-noop` und descriptorbasierten Katalog gemäß [Epic 2](epics/02-Regel-und-Findings.md) umsetzen.
 
 ## M2 — Findings und Speicherung
