@@ -4,6 +4,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>10.0</AnalysisLevel>
+    <MeziantouAnalysisMode>None</MeziantouAnalysisMode>
   </PropertyGroup>
 
   <PropertyGroup Condition="$(MSBuildProjectFullPath.Contains('tests'))">

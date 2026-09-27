@@ -3,6 +3,13 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Repository-wide build analyzers (no runtime dependency). -->
+    <GlobalPackageReference Include="Meziantou.Analyzer" Version="3.0.290" />
+    <GlobalPackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.401" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Build.Framework" Version="18.9.6" />
