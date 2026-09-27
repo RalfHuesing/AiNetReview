@@ -184,10 +184,12 @@ public sealed class TestTempDirectory : IDisposable
         }
 
         disposed = true;
+#pragma warning disable CA2000 // Ownership transferred to DisposeOwnerMarker
         if (ActiveDirectories.TryRemove(DirectoryPath, out var ownerMarker))
         {
             DisposeOwnerMarker(ownerMarker);
         }
+#pragma warning restore CA2000
 
         if (TryDeleteDirectory(DirectoryPath))
         {
@@ -391,10 +393,12 @@ public sealed class TestTempDirectory : IDisposable
     {
         foreach (var pair in ActiveDirectories.ToArray())
         {
+#pragma warning disable CA2000 // Ownership transferred to DisposeOwnerMarker
             if (ActiveDirectories.TryRemove(pair.Key, out var ownerMarker))
             {
                 DisposeOwnerMarker(ownerMarker);
             }
+#pragma warning restore CA2000
 
             if (TryDeleteDirectory(pair.Key))
             {

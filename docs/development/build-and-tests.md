@@ -14,6 +14,8 @@ The solution `AiNetReview.slnx` contains five projects:
 - `tests/AiNetReview.FastTests/`: Unit and component test suite.
 - `tests/AiNetReview.IntegrationTests/`: End-to-end and host integration test suite.
 
+Core, Host, and TestKit expose their internal members to both test assemblies through `InternalsVisibleTo`. This supports tests of internal components as the implementation grows.
+
 ## Building
 
 Build the solution using the PowerShell build script, which logs the full console output to `temp/build.log`:
