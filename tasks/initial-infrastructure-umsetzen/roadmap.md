@@ -32,7 +32,7 @@ Verbleibende Findings werden mit Fundstelle, Auswirkung, Status, Begründung und
   - Scope: [Epic 2: Identität, Fingerprint und Zustandsautomat](../initial-infrastructure/epics/02-Regel-und-Findings.md#identität) samt generischem Runner, Quell-Hashes und testgebundener `FixtureFindingRule` umsetzen. Einen vorübergehenden Store nur gemäß [Epic 4: Umsetzung](../initial-infrastructure/epics/04-Umsetzung-und-Abnahme.md#umsetzung) verwenden.
   - Nicht: Keine produktive Entscheidung ohne dauerhafte Speicherung bestätigen; keine Markdown-Berichte oder CLI-/MCP-Verdicts in diesem Punkt.
   - Abnahme: Tests prüfen unabhängige Findings, Byteformat des Fingerprints, jeden Zustandsübergang, Regelreihenfolge, Abbruch und Analysefehler; `template-noop` liefert nur nach vollständigem Lauf null Findings.
-- [ ] **M1-A — Gesamtaudit nach Epic 2.**
+- [x] **M1-A — Gesamtaudit nach Epic 2.**
   - Auftrag: Epic 2 samt M1-Grundlagen gegen alle Produktverträge und den tatsächlichen Code prüfen; insbesondere Erweiterbarkeit, vollständige Analyse und die Trennung von Test- und Produktregel.
   - Abnahme: Lesender `gpt-6-sol`-Subagent mit Reasoning `medium` berichtet dem Orchestrator belegte Findings oder explizit keine; Korrekturen und Restbefunde sind gemäß Audit-Regel festgehalten.
 
