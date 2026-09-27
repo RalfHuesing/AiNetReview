@@ -8,6 +8,8 @@ AiNetReview ist ein lokales Review-Werkzeug für C#/.NET. Es findet deterministi
 
 Der Agent schließt zuerst seinen Entwicklungstask ab. Danach oder zu einem anderen Zeitpunkt prüft er mit dem Nutzer die Findings. Das Tool entscheidet nicht über Refactoring, blockiert keinen Build und ersetzt keine Code-Navigation. Eindeutige technische Fehler bleiben bei Build- und Compilerprüfungen. Das bisherige AiNetLinter wird erst nach erfolgreicher Einführung dieses Werkzeugs gesondert bewertet.
 
+AiNetLinter ist ein separates, umfangreich getestetes Referenzprojekt für passende Infrastrukturmechanismen. Vor deren Neubau prüft der Implementierungsagent dort Code und zugehörige Tests, übernimmt nur passende Erkenntnisse und weist sie gegen die Verträge von AiNetReview erneut nach. Produktverhalten, Architektur und Regeln von AiNetLinter sind keine Blaupause; die konkrete Vorgehensweise steht in [Epic 4](epics/04-Umsetzung-und-Abnahme.md#ainetlinter-als-referenz).
+
 Die Arbeitsthese lautet: Für Agenten ist Code schwer, wenn viele Entscheidungswege lokal verfolgt werden müssen, relevanter Kontext über Dateien und Aufrufketten verstreut ist, Zustand verborgen bleibt oder Dokumentation in die Irre führt. Menschliche Lesbarkeit und agentische Verständlichkeit überschneiden sich, sind aber nicht identisch. Studien zeigen Probleme beim [Finden relevanten Repository-Kontexts](https://arxiv.org/abs/2602.05892), beim [Verfolgen von Abhängigkeiten](https://arxiv.org/abs/2608.01927) und bei [falscher Code-Dokumentation](https://aclanthology.org/2024.findings-naacl.66/). Daraus folgt kein universeller KI-Komplexitätswert; der Nutzen unserer Regeln wird anhand der späteren Review-Entscheidungen geprüft.
 
 ## Erster nutzbarer Stand

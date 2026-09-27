@@ -58,6 +58,8 @@ Allgemeine Infrastruktur kommt aus etablierten, aktiv gepflegten NuGet-Paketen, 
 
 Bei Aufnahme oder gezielter Aktualisierung eines Pakets wird die neueste stabile, mit .NET 10 und den benötigten Verträgen kompatible Version gewählt und exakt in `Directory.Packages.props` fixiert. API-Eignung, Wartungsstand, Lizenz und bekannte Sicherheitsprobleme werden vor der Übernahme geprüft; relevante Build- und Testsuiten laufen danach. Eine ältere Version oder Eigenimplementierung braucht einen konkreten, im zuständigen Task dokumentierten Grund.
 
+Build-Analyzer erzwingen nur eindeutige technische Korrektheit. Metriken für Dateilänge, Komplexität, Kopplung, Architektur sowie kontextabhängige Performance- und Designhinweise sind keine Build-Fehler. Solche Fragen gehören später als prüfbare Review-Hinweise mit menschlichem Urteil in AiNetReview. Die aktuelle Auswahl technischer Diagnosen steht in `.editorconfig`.
+
 ## DI und Regel-Erweiterung
 
 Der Host verwendet `Microsoft.Extensions.DependencyInjection` für die wenigen langlebigen Dienste: Solution-Lader, Runner, Registry, Store, FingerprintService, Berichts- und Katalogwriter sowie MCP-Operationsverwaltung. Der Host konfiguriert Serilog vor dem Aufbau des Providers, bindet es über `Microsoft.Extensions.Logging` ein und leert den Logger beim regulären Prozessende. Core-Dienste erhalten nur `ILogger<T>` aus `Microsoft.Extensions.Logging.Abstractions`; der Core referenziert Serilog nicht. Die validierte Konfiguration wird pro Aufruf aus der JSON erzeugt und dem Runner als unveränderlicher Wert übergeben. Die Composition Root registriert genau eine produktive Regel explizit als `IReviewRule`: `TemplateNoOpRule`. `RuleRegistry` erhält `IEnumerable<IReviewRule>` und weist doppelte IDs sowie ungültige Deskriptoren beim Start zurück. Aktivierte Regeln werden aus dieser Registry anhand der JSON-Konfiguration gewählt und nach ID sortiert. Es gibt weder Assembly-Scanning noch dynamisches Nachladen.
@@ -68,7 +70,17 @@ Konkrete Regeln und Dienste sind standardmäßig `sealed`. `IReviewRule` und kle
 
 Eine neue fachliche Regel benötigt einen Ordner unter `src/AiNetReview.Core/Rules/<Regelname>/`, gezielte FastTests und genau eine zusätzliche Registrierungszeile in `ServiceRegistration`. Sie liefert ihren Deskriptor, Optionen, Dokumentation und Finding-Entwürfe selbst. `catalog` erzeugt daraus Referenz und Beispiel-JSON; weder zentrale Schema-Switches noch regelbezogene Änderungen an CLI, MCP, Store oder Markdownwriter sind zulässig. Das Entfernen einer Regel löscht ihren Ordner, ihre Tests und ihre Registrierungszeile; Konfigurationen mit ihrer ID werden danach klar als `INVALID_INPUT` abgewiesen.
 
-Der getestete AiNetLinter-Code liegt im separaten Repository `C:\Daten\Entwicklung\Ralf\AiNetLinter\`. Die Testinfrastruktur mit isolierten Temp-Verzeichnissen ist bereits in AiNetReview übernommen und angepasst. Für weitere Bausteine zuerst dort nach einer passenden, getesteten Vorlage suchen und nur benötigtes Verhalten auf die AiNetReview-Verträge übertragen. Geeignete, selektiv zu prüfende Vorlagen sind `C:\Daten\Entwicklung\Ralf\AiNetLinter\src\AiNetLinter\Baseline\SourceFileCatalogLoader.cs` für MSBuild/Roslyn, `C:\Daten\Entwicklung\Ralf\AiNetLinter\src\AiNetLinter\Mcp\LongRunningToolCallStore.cs` für Polling und `C:\Daten\Entwicklung\Ralf\AiNetLinter\src\AiNetLinter\Core\RuleRegistry.cs` für Registrierung. Diese Pfade liegen **nicht** im AiNetReview-Repository. Es gibt keinen zusätzlichen Daemon.
+## AiNetLinter als Referenz
+
+Der getestete AiNetLinter-Code liegt ausschließlich im separaten Repository `C:\Daten\Entwicklung\Ralf\AiNetLinter\`. Die Testinfrastruktur mit isolierten Temp-Verzeichnissen ist bereits in AiNetReview übernommen und angepasst. Vor der Umsetzung eines vergleichbaren Bausteins sucht der Agent dort die konkrete Implementierung **und ihre Tests**, benennt die übertragbare Invariante und setzt sie nach dem zuständigen AiNetReview-Vertrag um. Er übernimmt weder Architektur noch Produktsemantik pauschal und ergänzt gezielte AiNetReview-Tests für das angepasste Verhalten. Wenn kein passender Baustein existiert, ist eine Eigenimplementierung nach Vertrag zulässig; die Suche ist kein Umsetzungsstopp.
+
+Selektiv zu prüfende Ausgangspunkte im AiNetLinter-Repository:
+
+- `src/AiNetLinter/Baseline/SourceFileCatalogLoader.cs`, `src/AiNetLinter.FastTests/Baseline/SourceFileCatalogRegistrationPolicyTests.cs` und `src/AiNetLinter.IntegrationTests/Baseline/SourceFileCatalogRegistrationStressTests.cs`: einmalige MSBuild-Registrierung, paralleles Laden und Workspace-Ownership prüfen. Konsolenausgaben und alte Laderannahmen nicht übernehmen.
+- `src/AiNetLinter/Mcp/LongRunningToolCallStore.cs` und `src/AiNetLinter.FastTests/Mcp/LongRunningToolCallStoreTests.cs`: Token-Zuordnung, Parallelität, Abbruch und Ablauf. Die drei neuen MCP-Tools und ihr Polling-Vertrag aus Epic 1 bleiben maßgeblich.
+- `src/AiNetLinter/Core/RuleRegistry.cs` und `src/AiNetLinter.FastTests/Core/RuleRegistryTests.cs`: Ideen für ID-Validierung und Registry-Tests. Die dortige statische Regelmetadatenliste passt **nicht** zur DI-Registry und dem `IReviewRule`-Vertrag aus Epic 2.
+
+Weitere passende Code- und Teststellen dürfen als Referenz dienen. AiNetLinter bleibt unverändert. Seine fachlichen Regeln, Metrikgrenzen, Build-Gates, eigener Logger, CLI-/MCP-Protokollcode und Daemon-Architektur werden nicht übertragen; für MCP, CLI und Logging gelten die NuGet-Pakete und Host-Verträge dieses Projekts.
 
 ## Umsetzung
 

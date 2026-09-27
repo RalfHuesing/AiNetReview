@@ -1,0 +1,10 @@
+---
+description: Use AiNetLinter as a tested, read-only reference where relevant.
+globs: '*'
+alwaysApply: true
+---
+
+# Reference reuse
+
+- Before implementing a matching infrastructure component, inspect its AiNetLinter implementation and relevant tests as directed by [Epic 4](../../tasks/initial-infrastructure/epics/04-Umsetzung-und-Abnahme.md#ainetlinter-als-referenz).
+- Do not copy AiNetLinter architecture, rule semantics, build gates, custom protocol or CLI parsing, or code that conflicts with AiNetReview contracts. Adapt only useful mechanisms and verify them with AiNetReview tests.

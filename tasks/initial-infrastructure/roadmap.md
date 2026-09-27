@@ -2,6 +2,8 @@
 
 Die Epics definieren die Verträge; diese Liste zeigt Reihenfolge und Fortschritt. Ein Haken bestätigt nur den benannten Punkt. Produktabnahme erfolgt nach [Epic 4](epics/04-Umsetzung-und-Abnahme.md#definition-of-done).
 
+Für jeden vergleichbaren Infrastrukturbaustein vor der Umsetzung die [getesteten AiNetLinter-Referenzen](epics/04-Umsetzung-und-Abnahme.md#ainetlinter-als-referenz) prüfen; die Abnahme richtet sich ausschließlich nach AiNetReview-Verträgen und -Tests.
+
 ## M0 — Grundlage
 
 - [x] Fünf-Projekt-Skelett mit .NET-10-Buildkonfiguration ist vorhanden.

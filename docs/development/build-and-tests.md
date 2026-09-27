@@ -24,6 +24,8 @@ pwsh -File ./scripts/build.ps1
 
 TreatWarningsAsErrors and Nullable reference types are enabled across all projects in `Directory.Build.props`.
 
+`.editorconfig` enables build errors for selected resource, async/task, threading, API-result, and regex-timeout defects. It explicitly disables design, complexity-related, context-dependent performance, and cancellation-forwarding diagnostics as build gates. The selected technical diagnostics apply to test projects and TestKit; suppress a verified false positive at its specific location.
+
 ## Running Tests
 
 Run the test suites using the dedicated test scripts:
