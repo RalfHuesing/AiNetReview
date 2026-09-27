@@ -9,5 +9,6 @@ The linked rules apply to work in this repository:
 - [Git and automatic commits](05-git.mdc)
 - [Dependencies and NuGet packages](06-dependencies.mdc)
 - [AiNetLinter reference reuse](07-reference-reuse.mdc)
+- [Code structure](08-code-structure.mdc)
 
 Keep rules short and enforceable. Put implementation details in `docs/` only after they exist. Put planned contracts in `tasks/`.

@@ -1,0 +1,9 @@
+---
+description: Reuse existing code and keep responsibilities focused.
+globs: '*'
+alwaysApply: true
+---
+
+# Code structure
+
+- Reuse existing project infrastructure and functions where appropriate. Extract shared code only for concrete reuse, keep refactoring within the task scope, and give each component a clear responsibility. Avoid speculative abstractions and god classes.

@@ -19,5 +19,6 @@ This repository contains product specifications, a solution skeleton, and test i
 - [Git and automatic commits](.agents/rules/05-git.mdc)
 - [Dependencies and NuGet packages](.agents/rules/06-dependencies.mdc)
 - [AiNetLinter reference reuse](.agents/rules/07-reference-reuse.mdc)
+- [Code structure](.agents/rules/08-code-structure.mdc)
 
 Read the relevant specification and rules before changing files. Ask when a decision is missing or sources conflict.
