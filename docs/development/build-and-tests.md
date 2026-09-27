@@ -6,10 +6,11 @@
 
 ## Solution Structure
 
-The solution `AiNetReview.slnx` contains four projects:
+The solution `AiNetReview.slnx` contains five projects:
 
 - `src/AiNetReview.Core/`: Core library for configuration, analysis, rules, findings, storage, reporting, and catalog.
 - `src/AiNetReview/`: Host executable for CLI and MCP entry points.
+- `tests/AiNetReview.TestKit/`: Shared test support infrastructure (e.g. isolated temp directory lifecycle and test helpers).
 - `tests/AiNetReview.FastTests/`: Unit and component test suite.
 - `tests/AiNetReview.IntegrationTests/`: End-to-end and host integration test suite.
 

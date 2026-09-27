@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <Import Project="../../tests/AiNetReview.TestProject.props" />
+  <Import Project="../AiNetReview.TestProject.props" />
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector">
@@ -18,11 +18,13 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="AiNetReview.TestKit" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AiNetReview.Core\AiNetReview.Core.csproj" />
     <ProjectReference Include="..\..\src\AiNetReview\AiNetReview.csproj" />
+    <ProjectReference Include="..\AiNetReview.TestKit\AiNetReview.TestKit.csproj" />
   </ItemGroup>
 
 </Project>

@@ -6,5 +6,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/AiNetReview.FastTests/AiNetReview.FastTests.csproj" />
     <Project Path="tests/AiNetReview.IntegrationTests/AiNetReview.IntegrationTests.csproj" />
+    <Project Path="tests/AiNetReview.TestKit/AiNetReview.TestKit.csproj" />
   </Folder>
 </Solution>
