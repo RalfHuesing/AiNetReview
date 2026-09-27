@@ -8,11 +8,11 @@ Für jeden vergleichbaren Infrastrukturbaustein vor der Umsetzung die [getestete
 
 - [x] Fünf-Projekt-Skelett mit .NET-10-Buildkonfiguration ist vorhanden.
 - [x] TestKit mit isoliertem `temp/` sowie Build- und Testskripte sind vorhanden.
-- [ ] Laufende Infrastrukturänderungen abschließen; Build und FastTests über die Skripte prüfen.
+- [x] Laufende Infrastrukturänderungen abschließen; Build und FastTests über die Skripte prüfen.
 
 ## M1 — Eingaben und Regeln
 
-- [ ] Serilog-Dateilogging beim Host-Start gemäß [Epic 1](epics/01-Eingaben-und-Host.md#logging) einrichten und durch Prozesstests prüfen.
+- [x] Serilog-Dateilogging beim Host-Start gemäß [Epic 1](epics/01-Eingaben-und-Host.md#logging) einrichten und durch Prozesstests prüfen.
 - [ ] Konfiguration, Pfadvalidierung und Solution-Lader gemäß [Epic 1](epics/01-Eingaben-und-Host.md) umsetzen.
 - [ ] Composition Root, Regelvertrag, Registry, `template-noop` und Katalog gemäß [Epic 2](epics/02-Regel-und-Findings.md) anschließen.
 

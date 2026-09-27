@@ -12,7 +12,7 @@ Verbleibende Findings werden mit Fundstelle, Auswirkung, Status, Begründung und
 
 ## M1 — Regel- und Finding-Kern (Epic 2 abschließen)
 
-- [ ] **M1-T1 — Grundlage und Host-Logging herstellen.**
+- [x] **M1-T1 — Grundlage und Host-Logging herstellen.**
   - Intention: Das vorhandene Skelett für die folgenden Core- und Host-Arbeiten nutzbar machen.
   - Scope: Offene Infrastrukturänderungen der [ursprünglichen M0](../initial-infrastructure/roadmap.md#m0--grundlage) abschließen; Build und FastTests prüfen; Serilog vom Host-Start an nach [Epic 1: Logging](../initial-infrastructure/epics/01-Eingaben-und-Host.md#logging) einrichten.
   - Nicht: Noch keine CLI-/MCP-Fachfunktionen und kein Finding-Store.

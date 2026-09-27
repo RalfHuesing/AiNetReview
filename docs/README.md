@@ -1,6 +1,6 @@
 # Current-state documentation
 
-AiNetReview is currently in the initial skeleton stage. The project structure and test execution are verified; other linked pages remain placeholders until implemented.
+AiNetReview is currently in the initial skeleton stage. The project structure and test execution are verified, and the host initializes executable-relative Serilog file logging before command handling. Other linked pages remain placeholders until their behavior is implemented.
 
 | Area | Pages |
 | --- | --- |

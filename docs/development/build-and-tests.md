@@ -26,6 +26,10 @@ pwsh -File ./scripts/build.ps1
 
 TreatWarningsAsErrors and Nullable reference types are enabled across all projects in `Directory.Build.props`.
 
+## Host Logging
+
+The host initializes Serilog before command handling. Its only sink writes `ainetreview-<date>.log` under the host executable's `logs/` directory, independent of the working directory. Files roll daily and at 10 MiB, retain at most 30 files, and allow concurrent host processes to write. If the directory or active log file cannot be opened for writing, the host exits with code `4` and writes a `LOGGING_FAILED` JSON error to stderr without writing to stdout. Process-level coverage is in `HostProcessIntegrationTests`.
+
 `.editorconfig` enables build errors for selected resource, async/task, threading, API-result, and regex-timeout defects. It explicitly disables design, complexity-related, context-dependent performance, and cancellation-forwarding diagnostics as build gates. The selected technical diagnostics apply to test projects and TestKit; suppress a verified false positive at its specific location.
 
 ## Running Tests
