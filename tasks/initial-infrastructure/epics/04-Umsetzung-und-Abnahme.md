@@ -52,6 +52,12 @@ Alle C#-Namespaces spiegeln diesen Pfad ab: etwa `AiNetReview.Core.Configuration
 
 `AiNetReview.Core` enthält keine Referenz auf den ausführbaren Host und keine MCP- oder CLI-Abhängigkeit. Der Host referenziert den Core und ist die einzige Composition Root. TestKit referenziert den Core; FastTests referenzieren Core und TestKit; IntegrationTests referenzieren Core, Host und TestKit. `global.json` pinnt das .NET-10-SDK; `Directory.Build.props` aktiviert Nullable und Warnungen als Fehler. Testdateien und generierte Fixture-Solutions liegen ausschließlich in isolierten `TestTempDirectory`-Unterverzeichnissen unter `temp/`; Tests räumen sie nach dem Lauf auf. Build und Tests laufen über die drei `scripts/*.ps1`-Einstiege; Details stehen in [Build and Tests](../../../docs/development/build-and-tests.md). CI baut die Solution und führt FastTests und kleine IntegrationTests aus.
 
+## Pakete und Wiederverwendung
+
+Allgemeine Infrastruktur kommt aus etablierten, aktiv gepflegten NuGet-Paketen, sofern sie den benötigten Vertrag erfüllen. Der Host nutzt das offizielle C#-SDK `ModelContextProtocol` für MCP und `System.CommandLine` für CLI-Parsing; eigene Protokoll- oder Argumentparser werden nicht gebaut. Die fachlichen Review-Verträge und Zustandsübergänge bleiben Projektcode.
+
+Bei Aufnahme oder gezielter Aktualisierung eines Pakets wird die neueste stabile, mit .NET 10 und den benötigten Verträgen kompatible Version gewählt und exakt in `Directory.Packages.props` fixiert. API-Eignung, Wartungsstand, Lizenz und bekannte Sicherheitsprobleme werden vor der Übernahme geprüft; relevante Build- und Testsuiten laufen danach. Eine ältere Version oder Eigenimplementierung braucht einen konkreten, im zuständigen Task dokumentierten Grund.
+
 ## DI und Regel-Erweiterung
 
 Der Host verwendet `Microsoft.Extensions.DependencyInjection` für die wenigen langlebigen Dienste: Solution-Lader, Runner, Registry, Store, FingerprintService, Berichts- und Katalogwriter sowie MCP-Operationsverwaltung. Die validierte Konfiguration wird pro Aufruf aus der JSON erzeugt und dem Runner als unveränderlicher Wert übergeben. Die Composition Root registriert genau eine produktive Regel explizit als `IReviewRule`: `TemplateNoOpRule`. `RuleRegistry` erhält `IEnumerable<IReviewRule>` und weist doppelte IDs sowie ungültige Deskriptoren beim Start zurück. Aktivierte Regeln werden aus dieser Registry anhand der JSON-Konfiguration gewählt und nach ID sortiert. Es gibt weder Assembly-Scanning noch dynamisches Nachladen.

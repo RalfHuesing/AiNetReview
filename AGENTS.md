@@ -17,5 +17,6 @@ This repository contains product specifications, a solution skeleton, and test i
 - [Product boundaries](.agents/rules/03-product-boundaries.mdc)
 - [Verification](.agents/rules/04-verification.mdc)
 - [Git and automatic commits](.agents/rules/05-git.mdc)
+- [Dependencies and NuGet packages](.agents/rules/06-dependencies.mdc)
 
 Read the relevant specification and rules before changing files. Ask when a decision is missing or sources conflict.

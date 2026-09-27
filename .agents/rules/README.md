@@ -7,5 +7,6 @@ The linked rules apply to work in this repository:
 - [Product boundaries](03-product-boundaries.mdc)
 - [Verification](04-verification.mdc)
 - [Git and automatic commits](05-git.mdc)
+- [Dependencies and NuGet packages](06-dependencies.mdc)
 
 Keep rules short and enforceable. Put implementation details in `docs/` only after they exist. Put planned contracts in `tasks/`.
