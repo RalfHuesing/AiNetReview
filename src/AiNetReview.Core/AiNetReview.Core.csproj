@@ -7,4 +7,9 @@
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="AiNetReview.FastTests" />
+    <InternalsVisibleTo Include="AiNetReview.IntegrationTests" />
+  </ItemGroup>
+
 </Project>

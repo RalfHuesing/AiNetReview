@@ -3,4 +3,9 @@
 
 
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="AiNetReview.FastTests" />
+    <InternalsVisibleTo Include="AiNetReview.IntegrationTests" />
+  </ItemGroup>
+
 </Project>
