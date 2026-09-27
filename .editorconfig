@@ -22,7 +22,7 @@ dotnet_diagnostic.MA0053.severity = error
 dotnet_diagnostic.CA1508.severity = error
 
 # Performance and enumeration
-dotnet_diagnostic.CA1851.severity = warning
+dotnet_diagnostic.CA1851.severity = error
 dotnet_diagnostic.CA1849.severity = error
 
 # Resource and memory safety
@@ -33,7 +33,7 @@ dotnet_diagnostic.MA0025.severity = error
 # Async, cancellation, and task handling
 dotnet_diagnostic.MA0040.severity = error
 dotnet_diagnostic.MA0042.severity = error
-dotnet_diagnostic.MA0045.severity = warning
+dotnet_diagnostic.MA0045.severity = error
 dotnet_diagnostic.MA0064.severity = error
 dotnet_diagnostic.MA0134.severity = error
 dotnet_diagnostic.MA0155.severity = error
@@ -50,12 +50,12 @@ dotnet_diagnostic.MA0079.severity = error
 
 # Test projects: relax constraints that only apply to production boundaries
 [tests/**/*.cs]
-dotnet_diagnostic.CA2000.severity = suggestion
-dotnet_diagnostic.MA0040.severity = suggestion
-dotnet_diagnostic.MA0042.severity = suggestion
-dotnet_diagnostic.MA0045.severity = suggestion
-dotnet_diagnostic.MA0009.severity = suggestion
-dotnet_diagnostic.CA1849.severity = suggestion
+dotnet_diagnostic.CA2000.severity = none
+dotnet_diagnostic.MA0040.severity = none
+dotnet_diagnostic.MA0042.severity = none
+dotnet_diagnostic.MA0045.severity = none
+dotnet_diagnostic.MA0009.severity = none
+dotnet_diagnostic.CA1849.severity = none
 
 [**/*.g.cs]
 generated_code = true
