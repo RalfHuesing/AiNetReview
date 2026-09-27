@@ -7,6 +7,44 @@ using AiNetReview.Core.Rules;
 
 public sealed class RuleDescriptorTests
 {
+    [Theory]
+    [InlineData("../escape")]
+    [InlineData("a/b")]
+    [InlineData("a\\b")]
+    [InlineData(".")]
+    [InlineData("..")]
+    [InlineData("CON")]
+    [InlineData("con")]
+    [InlineData("prn")]
+    [InlineData("aux")]
+    [InlineData("nul")]
+    [InlineData("com1")]
+    [InlineData("lpt9")]
+    [InlineData("rule_id")]
+    [InlineData("rule--id")]
+    [InlineData("-rule")]
+    [InlineData("rule-")]
+    [InlineData("Rule")]
+    [InlineData("rulé")]
+    public void Constructor_RejectsRuleIdsThatAreNotSafeFileNames(string ruleId)
+    {
+        Assert.Throws<ArgumentException>(() => CreateDescriptor(ruleId: ruleId));
+    }
+
+    [Fact]
+    public void Constructor_RejectsRuleIdsWhoseMarkdownFileNameExceedsCommonSegmentLimit()
+    {
+        Assert.Throws<ArgumentException>(() => CreateDescriptor(ruleId: new string('a', 253)));
+    }
+
+    [Fact]
+    public void Constructor_AcceptsSafeRuleIdAtMaximumMarkdownFileNameLength()
+    {
+        var descriptor = CreateDescriptor(ruleId: new string('a', 252));
+
+        Assert.Equal(252, descriptor.RuleId.Length);
+    }
+
     [Fact]
     public void Constructor_RejectsNonPositiveBehaviorVersionAndIncompleteCatalogMetadata()
     {
@@ -93,11 +131,12 @@ public sealed class RuleDescriptorTests
     }
 
     private static RuleDescriptor CreateDescriptor(
+        string ruleId = "test-rule",
         int behaviorVersion = 1,
         string purpose = "Test purpose.",
         IReadOnlyList<string>? reviewQuestions = null,
         IReadOnlyList<RuleOptionDescriptor>? options = null) => new(
-            ruleId: "test-rule",
+            ruleId: ruleId,
             title: "Test Rule",
             behaviorVersion: behaviorVersion,
             purpose: purpose,

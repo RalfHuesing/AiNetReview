@@ -8,6 +8,8 @@ using System.Text.Json;
 
 public sealed class RuleDescriptor
 {
+    private const int MaximumRuleIdLength = 252;
+
     private readonly ReadOnlyCollection<RuleOptionDescriptor> options;
     private readonly ReadOnlyCollection<string> reviewQuestions;
     private readonly IReadOnlyDictionary<string, RuleOptionDescriptor> optionsByName;
@@ -26,6 +28,13 @@ public sealed class RuleDescriptor
         if (!StringComparer.Ordinal.Equals(ruleId, ruleId.Trim()))
         {
             throw new ArgumentException("Rule ID cannot start or end with whitespace.", nameof(ruleId));
+        }
+
+        if (!IsSafeRuleId(ruleId))
+        {
+            throw new ArgumentException(
+                $"Rule ID must be a lowercase ASCII slug of at most {MaximumRuleIdLength} characters and cannot be a reserved Windows device name.",
+                nameof(ruleId));
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
@@ -83,6 +92,42 @@ public sealed class RuleDescriptor
     public IReadOnlyList<RuleOptionDescriptor> Options => options;
 
     public bool IsTemplate { get; }
+
+    private static bool IsSafeRuleId(string ruleId)
+    {
+        if (ruleId.Length > MaximumRuleIdLength || !IsAsciiLowerAlphaNumeric(ruleId[0]) || ruleId[^1] == '-')
+        {
+            return false;
+        }
+
+        var previousWasHyphen = false;
+        foreach (var character in ruleId)
+        {
+            if (IsAsciiLowerAlphaNumeric(character))
+            {
+                previousWasHyphen = false;
+                continue;
+            }
+
+            if (character != '-' || previousWasHyphen)
+            {
+                return false;
+            }
+
+            previousWasHyphen = true;
+        }
+
+        return !IsReservedWindowsDeviceName(ruleId);
+    }
+
+    private static bool IsAsciiLowerAlphaNumeric(char character) =>
+        character is >= 'a' and <= 'z' or >= '0' and <= '9';
+
+    private static bool IsReservedWindowsDeviceName(string ruleId) =>
+        ruleId is "con" or "prn" or "aux" or "nul"
+        || ruleId.Length == 4
+        && (ruleId.StartsWith("com", StringComparison.Ordinal) || ruleId.StartsWith("lpt", StringComparison.Ordinal))
+        && ruleId[3] is >= '1' and <= '9';
 
     public RuleOptions ResolveOptions(IEnumerable<KeyValuePair<string, JsonElement>>? configuredOptions = null)
     {
