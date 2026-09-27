@@ -1,0 +1,9 @@
+---
+description: Prefer semantic C# navigation through AiNetLinter MCP.
+globs: '*'
+alwaysApply: true
+---
+
+# Code navigation
+
+- For C# navigation, proactively use AiNetLinter MCP's read-only symbol, reference, implementation, structure, and call tools before broad text searches. Pass the absolute path to `AiNetReview.slnx` as `targetPath`. Use `rg` for unindexed files or when MCP results are unavailable or incomplete. Do not run lint or verify tools for navigation.
