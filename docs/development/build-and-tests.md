@@ -16,13 +16,7 @@ The solution `AiNetReview.slnx` contains five projects:
 
 ## Building
 
-Build the entire solution:
-
-```bash
-dotnet build
-```
-
-Or run the build script which logs the full console output to `temp/build.log`:
+Build the solution using the PowerShell build script, which logs the full console output to `temp/build.log`:
 
 ```powershell
 pwsh -File ./scripts/build.ps1
@@ -32,13 +26,7 @@ TreatWarningsAsErrors and Nullable reference types are enabled across all projec
 
 ## Running Tests
 
-Execute both test projects:
-
-```bash
-dotnet test
-```
-
-Or run the specific test runner scripts:
+Run the test suites using the dedicated test scripts:
 
 ```powershell
 # FastTests (dumps full console log to temp/test-fast.log and TRX to TestResults/FastTests.trx)
