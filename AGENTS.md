@@ -1,6 +1,6 @@
 # AiNetReview agent map
 
-This repository currently contains product specifications and agent guidance. It has no application code yet. Do not describe planned behavior as implemented behavior.
+This repository contains product specifications, a solution skeleton, and test infrastructure. Most application classes are still placeholders. Do not describe planned behavior as implemented behavior.
 
 ## Where to look
 

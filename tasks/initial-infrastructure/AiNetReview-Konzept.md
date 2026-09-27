@@ -25,4 +25,4 @@ Ein Finding erhält eine stabile ID, strukturierten Quellort, Messwerte, Evidenz
 3. [Storage und Berichte](epics/03-Storage-und-Berichte.md): versionierbare JSON-Dateien, Snapshots, Konflikte, Retention und Markdown-Format.
 4. [Umsetzung und Abnahme](epics/04-Umsetzung-und-Abnahme.md): Projekt- und Namespace-Struktur, DI, Testebenen, Lasttest und Definition of Done.
 
-Der frühe technische Aufbau darf einen sichtbaren `NoOpFindingStore` verwenden. Das [Produkt-DoD](epics/04-Umsetzung-und-Abnahme.md#definition-of-done) verlangt echte Speicherung, vollständiges Reporting, einen wiederholbaren Review-Zyklus und grüne Tests. Ein Implementierungsagent arbeitet die Epics in dieser Reihenfolge ab; Produktentscheidungen sind dort festgelegt.
+Der frühe technische Aufbau darf einen sichtbaren `NoOpFindingStore` verwenden. Das [Produkt-DoD](epics/04-Umsetzung-und-Abnahme.md#definition-of-done) verlangt echte Speicherung, vollständiges Reporting, einen wiederholbaren Review-Zyklus und grüne Tests. Ein Implementierungsagent arbeitet die [Roadmap](roadmap.md) ab; Produktentscheidungen stehen in den Epics.

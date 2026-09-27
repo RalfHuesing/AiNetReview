@@ -4,14 +4,19 @@ Dieses Epic legt Repository-Struktur, Abhängigkeitsrichtung und prüfbare Abnah
 
 ## Projekt- und Dateistruktur
 
-Das neue Repository enthält genau diese vier Projekte; weitere Projekte brauchen einen konkreten Grund:
+Das neue Repository enthält diese fünf Projekte; weitere Projekte brauchen einen konkreten Grund:
 
 ```text
 AiNetReview.slnx
 global.json
 Directory.Build.props
+Directory.Packages.props
 README.md
-Docs/
+docs/
+scripts/
+  build.ps1
+  test-fast.ps1
+  test-integration.ps1
 src/
   AiNetReview.Core/
     AiNetReview.Core.csproj
@@ -30,6 +35,9 @@ src/
     Cli/                ReviewCommand, CatalogCommand
     Mcp/                ReviewTools, OperationStore
 tests/
+  AiNetReview.TestKit/
+    AiNetReview.TestKit.csproj
+    TestTempDirectory, SolutionRootLocator, IsolatedFixtureLease, TestWaiter
   AiNetReview.FastTests/
     AiNetReview.FastTests.csproj
     Configuration/ Analysis/ Rules/ Findings/ Storage/ Reporting/
@@ -40,9 +48,9 @@ tests/
     Cli/ Mcp/ Storage/ Performance/
 ```
 
-Alle C#-Namespaces spiegeln diesen Pfad ab: etwa `AiNetReview.Core.Configuration`, `AiNetReview.Core.Rules.TemplateNoOp`, `AiNetReview.Core.Storage`, `AiNetReview.Bootstrap`, `AiNetReview.Mcp`, `AiNetReview.FastTests.Findings` und `AiNetReview.IntegrationTests.FixtureRules`. Die Struktur darf innerhalb eines Bereichs wachsen, aber fachlich verschiedene Bereiche werden nicht in den Root-Namespace gelegt. Pro Datei steht normalerweise ein Haupttyp. Die Fixture-Regel bleibt ausschließlich im Testprojekt.
+Alle C#-Namespaces spiegeln diesen Pfad ab: etwa `AiNetReview.Core.Configuration`, `AiNetReview.Core.Rules.TemplateNoOp`, `AiNetReview.Core.Storage`, `AiNetReview.Bootstrap`, `AiNetReview.Mcp`, `AiNetReview.TestKit`, `AiNetReview.FastTests.Findings` und `AiNetReview.IntegrationTests.FixtureRules`. Die Struktur darf innerhalb eines Bereichs wachsen, aber fachlich verschiedene Bereiche werden nicht in den Root-Namespace gelegt. Pro Datei steht normalerweise ein Haupttyp. Die Fixture-Regel bleibt ausschließlich im Testprojekt.
 
-`AiNetReview.Core` enthält keine Referenz auf den ausführbaren Host und keine MCP- oder CLI-Abhängigkeit. Der Host referenziert den Core und ist die einzige Composition Root. FastTests referenzieren den Core; IntegrationTests referenzieren Core und Host. `global.json` pinnt das .NET-10-SDK; `Directory.Build.props` aktiviert Nullable und Warnungen als Fehler. CI baut die Solution und führt FastTests und kleine IntegrationTests aus.
+`AiNetReview.Core` enthält keine Referenz auf den ausführbaren Host und keine MCP- oder CLI-Abhängigkeit. Der Host referenziert den Core und ist die einzige Composition Root. TestKit referenziert den Core; FastTests referenzieren Core und TestKit; IntegrationTests referenzieren Core, Host und TestKit. `global.json` pinnt das .NET-10-SDK; `Directory.Build.props` aktiviert Nullable und Warnungen als Fehler. Testdateien und generierte Fixture-Solutions liegen ausschließlich in isolierten `TestTempDirectory`-Unterverzeichnissen unter `temp/`; Tests räumen sie nach dem Lauf auf. Build und Tests laufen über die drei `scripts/*.ps1`-Einstiege; Details stehen in [Build and Tests](../../../docs/development/build-and-tests.md). CI baut die Solution und führt FastTests und kleine IntegrationTests aus.
 
 ## DI und Regel-Erweiterung
 
@@ -54,11 +62,11 @@ Konkrete Regeln und Dienste sind standardmäßig `sealed`. `IReviewRule` und kle
 
 Eine neue fachliche Regel benötigt einen Ordner unter `src/AiNetReview.Core/Rules/<Regelname>/`, gezielte FastTests und genau eine zusätzliche Registrierungszeile in `ServiceRegistration`. Sie liefert ihren Deskriptor, Optionen, Dokumentation und Finding-Entwürfe selbst. `catalog` erzeugt daraus Referenz und Beispiel-JSON; weder zentrale Schema-Switches noch regelbezogene Änderungen an CLI, MCP, Store oder Markdownwriter sind zulässig. Das Entfernen einer Regel löscht ihren Ordner, ihre Tests und ihre Registrierungszeile; Konfigurationen mit ihrer ID werden danach klar als `INVALID_INPUT` abgewiesen.
 
-Der alte AiNetLinter-Code liegt im separaten Repository `C:\Daten\Entwicklung\Ralf\AiNetLinter\`. Geeignete, selektiv zu prüfende Vorlagen sind `C:\Daten\Entwicklung\Ralf\AiNetLinter\src\AiNetLinter\Baseline\SourceFileCatalogLoader.cs` für MSBuild/Roslyn, `C:\Daten\Entwicklung\Ralf\AiNetLinter\src\AiNetLinter\Mcp\LongRunningToolCallStore.cs` für Polling und `C:\Daten\Entwicklung\Ralf\AiNetLinter\src\AiNetLinter\Core\RuleRegistry.cs` für Registrierung. Diese Pfade liegen **nicht** im AiNetReview-Repository. Die Vorlagen werden fachlich angepasst. Es gibt keinen zusätzlichen Daemon.
+Der getestete AiNetLinter-Code liegt im separaten Repository `C:\Daten\Entwicklung\Ralf\AiNetLinter\`. Die Testinfrastruktur mit isolierten Temp-Verzeichnissen ist bereits in AiNetReview übernommen und angepasst. Für weitere Bausteine zuerst dort nach einer passenden, getesteten Vorlage suchen und nur benötigtes Verhalten auf die AiNetReview-Verträge übertragen. Geeignete, selektiv zu prüfende Vorlagen sind `C:\Daten\Entwicklung\Ralf\AiNetLinter\src\AiNetLinter\Baseline\SourceFileCatalogLoader.cs` für MSBuild/Roslyn, `C:\Daten\Entwicklung\Ralf\AiNetLinter\src\AiNetLinter\Mcp\LongRunningToolCallStore.cs` für Polling und `C:\Daten\Entwicklung\Ralf\AiNetLinter\src\AiNetLinter\Core\RuleRegistry.cs` für Registrierung. Diese Pfade liegen **nicht** im AiNetReview-Repository. Es gibt keinen zusätzlichen Daemon.
 
 ## Umsetzung
 
-1. Vier Projekte, gemeinsame Build-Einstellungen, Composition Root, validierte Konfiguration und Solution-Lader anlegen.
+1. Fünf Projekte und gemeinsame Build- und Testinfrastruktur vervollständigen; Composition Root, validierte Konfiguration und Solution-Lader anschließen.
 2. Regelvertrag, Registry, `template-noop` und Kataloggenerator anschließen. Ein sichtbarer `NoOpFindingStore` ist nur in diesem Zwischenschritt erlaubt und darf kein Urteil als gespeichert bestätigen.
 3. Generischen Finding-Abgleich, FingerprintService, JSON-Store und Markdown-Berichte mit der Test-Fixture implementieren. Ab hier ist `NoOpFindingStore` nur noch Test-Double.
 4. CLI und drei MCP-Tools an denselben Runner anschließen; Polling, Locking, Abbruch und Stale-Prüfung integrieren.
