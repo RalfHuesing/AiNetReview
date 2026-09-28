@@ -81,6 +81,25 @@ public sealed class ReviewConfigValidatorTests
         Assert.Throws<InvalidReviewInputException>(() => new ReviewConfigValidator(Registry()).Validate(temp.DirectoryPath, json));
     }
 
+    [Theory]
+    [InlineData("solution")]
+    [InlineData("outputDirectory")]
+    public void Validate_RejectsBackslashesInProjectRelativePaths(string fieldName)
+    {
+        using var temp = TestTempDirectory.Create();
+        temp.CreateFile("nested/Project.slnx", "<Solution />");
+
+        var json = JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            solution = fieldName == "solution" ? "nested\\Project.slnx" : "nested/Project.slnx",
+            outputDirectory = fieldName == "outputDirectory" ? "nested\\reports" : "reports",
+            rules = new Dictionary<string, object> { ["template-noop"] = new { } },
+        });
+
+        Assert.Throws<InvalidReviewInputException>(() => new ReviewConfigValidator(Registry()).Validate(temp.DirectoryPath, json));
+    }
+
     [Fact]
     public void Validate_RejectsPathThatEscapesThroughDirectorySymlink()
     {

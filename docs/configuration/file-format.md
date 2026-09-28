@@ -15,7 +15,7 @@ Schema version 1 currently accepts these fields:
 }
 ```
 
-The root object must contain exactly `schemaVersion`, `solution`, `outputDirectory`, and `rules`. `schemaVersion` must be the integer `1`. The solution and output paths are nonempty project-relative paths; the solution must resolve to an existing `.sln` or `.slnx` file, and the output directory must stay inside the project root. The validator creates the output directory when needed.
+The root object must contain exactly `schemaVersion`, `solution`, `outputDirectory`, and `rules`. `schemaVersion` must be the integer `1`. The solution and output paths are nonempty project-relative paths using `/` separators; backslashes are rejected. The solution must resolve to an existing `.sln` or `.slnx` file, and the output directory must stay inside the project root. The validator creates the output directory when needed.
 
 `rules` must be a nonempty object. Each key must name a registered rule, and its value must be an object containing only options declared by that rule. The registry descriptor applies defaults to omitted options and validates supplied value types. The current production registry contains only `template-noop`, whose only valid configuration is `{}`.
 

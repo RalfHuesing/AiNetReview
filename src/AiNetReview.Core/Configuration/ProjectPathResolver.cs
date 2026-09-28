@@ -35,7 +35,12 @@ internal static class ProjectPathResolver
             throw new InvalidReviewInputException($"'{fieldName}' must be project-relative.");
         }
 
-        var segments = value.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+        if (value.Contains('\\'))
+        {
+            throw new InvalidReviewInputException($"'{fieldName}' must use '/' path separators.");
+        }
+
+        var segments = value.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length == 0 || segments.Any(static segment => segment == ".."))
         {
             throw new InvalidReviewInputException($"'{fieldName}' must not contain '..' path segments.");
