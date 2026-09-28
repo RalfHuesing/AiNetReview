@@ -41,7 +41,7 @@
     - `git diff --check` sauber.
     - Dokumentation entspricht exakt dem implementierten Verhalten.
 
-- [ ] **Audit**
+- [x] **Audit**
   - Intention: Abschließende Verifikation der gesamten Lösung gegen Konzept, Richtlinien und Tests.
   - Scope:
     - Vollständiger Testlauf (`dotnet test AiNetReview.slnx`).
@@ -51,3 +51,7 @@
   - Abnahme:
     - Alle Unit- und Integrationstests erfolgreich.
     - Keine offenen Regressionspunkte.
+  - Abschlussnachweis:
+    - Build ohne Warnungen; FastTests 146/146 und Integration-Gate 67/67 erfolgreich.
+    - `dotnet test AiNetReview.slnx` mit `AINETREVIEW_AUDIT_TARGET=ainetreview` erfolgreich (146 FastTests, 69 IntegrationTests; lokales Audit-Profil deaktiviert).
+    - Guardrails für Logging-Pfade, Abhängigkeitsrichtung Core/CLI und stdout/stderr bestanden.
