@@ -1,30 +1,49 @@
+---
+status: draft
+---
+
 # AiNetReview – Konzept
 
-Dieses Dokument ist der Einstieg in die verbindliche Spezifikation. Das ursprüngliche [Relaunch-Konzept](Relaunch-Konzept.md) bleibt als unveränderte Motivation erhalten. Die konkreten Verträge stehen jeweils in genau einem der unten verlinkten Epics. Bei Widersprüchen wird die Spezifikation korrigiert, bevor implementiert wird.
+## Intention
 
-## Ziel
+AiNetReview soll nach einem Entwicklungstask oder zu einem anderen Zeitpunkt lokal mögliche Qualitäts- und Architekturprobleme in einer C#/.NET-Solution sichtbar machen. Die ausführbare Anwendung prüft die konfigurierten Regeln gegen den **aktuellen** Code und schreibt für Agent und Nutzer verständliche Markdown-Berichte. Die Entscheidung, ob ein Hinweis sinnvoll ist und ob Code geändert wird, bleibt beim Review durch Agent und Nutzer. Das Werkzeug blockiert keinen Build und refaktoriert nichts automatisch.
 
-AiNetReview ist ein lokales Review-Werkzeug für C#/.NET. Es findet deterministisch mögliche Qualitäts- und Architekturprobleme, erstellt für Agenten nachvollziehbare Markdown-Berichte und speichert strukturierte Review-Entscheidungen mit dem ursächlichen Quellcode im analysierten Projekt. Ein akzeptierter Fall wird bei gleichem Code nicht immer wieder als neue Arbeit gemeldet; relevante Änderungen öffnen ihn erneut.
+Die Arbeitsthese bleibt: Code ist für Agenten besonders schwer zu beurteilen, wenn Entscheidungswege, Kontext oder Zustand unübersichtlich sind oder Dokumentation in die Irre führt. Menschliche Lesbarkeit und agentische Verständlichkeit überschneiden sich, sind aber nicht identisch. Der Nutzen späterer fachlicher Regeln wird im Review mit Agent und Nutzer bewertet; das Werkzeug behauptet keinen universellen KI-Komplexitätswert. Eindeutige technische Fehler gehören weiterhin zu Build- und Compilerprüfungen.
 
-Der Agent schließt zuerst seinen Entwicklungstask ab. Danach oder zu einem anderen Zeitpunkt prüft er mit dem Nutzer die Findings. Das Tool entscheidet nicht über Refactoring, blockiert keinen Build und ersetzt keine Code-Navigation. Eindeutige technische Fehler bleiben bei Build- und Compilerprüfungen. Das bisherige AiNetLinter wird erst nach erfolgreicher Einführung dieses Werkzeugs gesondert bewertet.
+## Zielbild
 
-AiNetLinter ist ein separates, umfangreich getestetes Referenzprojekt für passende Infrastrukturmechanismen. Vor deren Neubau prüft der Implementierungsagent dort Code und zugehörige Tests, übernimmt nur passende Erkenntnisse und weist sie gegen die Verträge von AiNetReview erneut nach. Produktverhalten, Architektur und Regeln von AiNetLinter sind keine Blaupause; die konkrete Vorgehensweise steht in [Epic 4](epics/04-Umsetzung-und-Abnahme.md#ainetlinter-als-referenz).
+Ein Aufruf der `.exe` lädt die angegebene `.sln` oder `.slnx` und die Regelkonfiguration, führt eine vollständige Analyse aus und erzeugt Markdown-Dateien im Ausgabeordner. Ein fehlgeschlagener oder unvollständiger Lauf darf nicht als „keine Findings“ erscheinen. Jeder Lauf betrachtet allein den aktuellen Code und die aktuelle Konfiguration.
 
-Die Arbeitsthese lautet: Für Agenten ist Code schwer, wenn viele Entscheidungswege lokal verfolgt werden müssen, relevanter Kontext über Dateien und Aufrufketten verstreut ist, Zustand verborgen bleibt oder Dokumentation in die Irre führt. Menschliche Lesbarkeit und agentische Verständlichkeit überschneiden sich, sind aber nicht identisch. Studien zeigen Probleme beim [Finden relevanten Repository-Kontexts](https://arxiv.org/abs/2602.05892), beim [Verfolgen von Abhängigkeiten](https://arxiv.org/abs/2608.01927) und bei [falscher Code-Dokumentation](https://aclanthology.org/2024.findings-naacl.66/). Daraus folgt kein universeller KI-Komplexitätswert; der Nutzen unserer Regeln wird anhand der späteren Review-Entscheidungen geprüft.
+Die Berichte sind die einzigen dauerhaften Ergebnisse des Werkzeugs. Es gibt keinen MCP-Server, keinen Finding-Store, keine gespeicherten Quellcode-Stände oder Snapshots, keine Checksummen zum Vergleich mit früheren Läufen, keine Ereignisketten und kein Archiv früherer Review-Entscheidungen. Eine Bewertung wie `accepted` oder `false-positive`, ihre automatische Unterdrückung und die Zustände `new`, `updated`, `reopened` und `resolved` lassen sich ohne Zustand zwischen Läufen nicht anbieten und gehören nicht zu diesem Zielbild.
 
-## Erster nutzbarer Stand
+Die einzige produktive Startregel bleibt `template-noop`; sie liefert absichtlich keine Findings. Eine testgebundene Fixture-Regel belegt den vollständigen Weg von der Analyse bis zum Markdown-Bericht. Fachliche Review-Regeln werden später gesondert festgelegt. Der Regelvertrag soll ihre Ergänzung ohne Änderungen an CLI, Runner und Berichtsgenerator erlauben.
 
-Der Produktname ist `AiNetReview`. Ein ausführbarer Host bietet lokalen MCP-Server und CLI über denselben Kern. Beide verwenden die im analysierten Projekt liegende `ainetreview.json`. Git ist keine Laufzeitvoraussetzung; die Speicherdateien sind für Versionierung geeignet. MCP kann zusätzlich zu Berichten strukturierte Urteile entgegennehmen.
+AiNetLinter bleibt ein getrenntes, nur lesend verwendetes Referenzprojekt für passende Infrastrukturmechanismen. Seine fachlichen Regeln und Build-Gates werden nicht übernommen; seine spätere Ablösung ist kein Bestandteil dieses Vorhabens. Das [ursprüngliche Relaunch-Konzept](Relaunch-Konzept.md) dokumentiert die Motivation, ist aber für Storage, MCP und Verlaufsverhalten überholt.
 
-Der erste vollständige Stand enthält **keine fachliche Review-Regel**. Eine registrierte `template-noop`-Regel liefert bewusst keine Findings und zeigt den Erweiterungspunkt. Tests verwenden eine nur dort registrierte Fixture-Regel mit reproduzierbaren Findings, damit Reporting und Zustandswechsel bereits vollständig geprüft werden. Welche fachlichen Regeln sinnvoll sind, entscheiden wir erst anhand späterer Erfahrung. Die Architektur hält ihre Aufnahme auf eine Regelimplementierung, ihre Tests und eine Registrierungszeile begrenzt.
+## Scope
 
-Ein Finding erhält eine stabile ID, strukturierten Quellort, Messwerte, Evidenz, Fingerprint und Quellcode-Snapshot. Agenten melden `accepted` oder `false-positive`; ein verschwundener Befund wird erst durch vollständigen Scan `resolved`. Eine Änderung des von der Regel gelieferten Vergleichsinhalts, ihrer wirksamen Optionen oder ihrer Verhaltensversion kann eine alte Entscheidung wieder öffnen. Wie Quellcode normalisiert wird, bestimmt die jeweilige fachliche Regel. Das Speicherformat, die genaue Zustandsmaschine und Fehlerfälle stehen in den Epics.
+### Muss
 
-## Verbindliche Epics
+- Die Spezifikation in diesem Task-Verzeichnis wird auf einen zustandslosen EXE-zu-Markdown-Ablauf umgeschrieben. Alle verbindlichen Verträge, Beispiele, Abnahmekriterien und Querverweise werden auf Widersprüche zu diesem Zielbild geprüft und bereinigt.
+- Die spätere Umsetzung enthält nur die für Konfiguration, Solution-Laden, Regelprüfung, CLI und Markdown-Ausgabe benötigten Produktkomponenten. Bereits begonnene Storage-, MCP-, Fingerprint-, Snapshot-, Verdict- und Zustandsautomaten-Arbeit wird auf tatsächlich noch benötigte Teile geprüft; obsolete Teile werden aus Produktcode, Tests, Abhängigkeiten und Ist-Dokumentation entfernt.
+- Findings sind Hinweise zum aktuellen Quellstand mit Quellort, Begründung und aktueller Evidenz. Regeln liefern ihre fachliche Aussage, der generische Runner prüft die Vollständigkeit, und der Berichtsgenerator schreibt die Ergebnisse nachvollziehbar und deterministisch.
+- Fehlerfälle, leere vollständige Läufe und die Trennung zwischen produktiver `template-noop`-Regel und Test-Fixture werden automatisiert nachgewiesen.
 
-1. [Eingaben und Host](epics/01-Eingaben-und-Host.md): JSON, CLI, MCP, Pfade, Git-Unabhängigkeit und Lock.
-2. [Regel und Findings](epics/02-Regel-und-Findings.md): Regelvertrag, Template-Regel, Identität, Fingerprint und Zustandsautomat.
-3. [Storage und Berichte](epics/03-Storage-und-Berichte.md): versionierbare JSON-Dateien, Snapshots, Konflikte, Retention und Markdown-Format.
-4. [Umsetzung und Abnahme](epics/04-Umsetzung-und-Abnahme.md): Projekt- und Namespace-Struktur, DI, Testebenen, Lasttest und Definition of Done.
+### Nicht
 
-Der frühe technische Aufbau darf einen sichtbaren `NoOpFindingStore` verwenden. Das [Produkt-DoD](epics/04-Umsetzung-und-Abnahme.md#definition-of-done) verlangt echte Speicherung, vollständiges Reporting, einen wiederholbaren Review-Zyklus und grüne Tests. Ein Implementierungsagent arbeitet die [Roadmap](roadmap.md) ab; Produktentscheidungen stehen in den Epics.
+- Kein MCP-Server und keine zweite Analyse-Schnittstelle.
+- Kein persistierter Review-Zustand, keine vorherigen Code-Stände, keine Vergleichs-Checksummen, keine Review-Urteile, kein Verlauf und keine automatische Unterdrückung früher akzeptierter Findings.
+- Keine neue fachliche Produktregel, kein automatisches Refactoring, kein Build-Gate für Review-Hinweise und keine Änderung am AiNetLinter-Repository.
+- Keine Implementierung oder neue Umsetzungs-Roadmap in dieser Konzeptphase.
+
+## Verifikation
+
+Eine produktive EXE erzeugt mit `template-noop` nach vollständiger Analyse gültige Markdown-Ausgabe ohne Findings. Die Fixture-Regel erzeugt überprüfbare, nach Regel und Quellort geordnete Hinweise mit aktueller Evidenz. Wiederholte Läufe benötigen keinen gespeicherten Vorzustand und geben bei identischer Eingabe inhaltlich identische Berichte aus. Ungültige Konfiguration, Lade- oder Analysefehler sowie Fehler beim Schreiben führen zu einem klaren Fehlschlag. Tests und Repository-Inspektion belegen, dass kein MCP-Zugang und kein persistierter Review-Zustand im Produkt verbleiben.
+
+## Arbeitsgedächtnis (nur Draft)
+
+- Der bisherige Detailvertrag in [Epic 1](epics/01-Eingaben-und-Host.md), [Epic 2](epics/02-Regel-und-Findings.md), [Epic 3](epics/03-Storage-und-Berichte.md), [Epic 4](epics/04-Umsetzung-und-Abnahme.md) und der [Roadmap](roadmap.md) beschreibt noch Storage/MCP und ist für die Neuausrichtung **nicht freigegeben**. Er wird erst nach Klärung der offenen Entscheidungen konsistent ersetzt. `tasks/initial-infrastructure-umsetzen/` ist ein separater, inzwischen überholter Arbeitsstand und wird hier nicht geändert.
+- Die Repository-Regeln zu MCP und Storage sowie die Ist-Dokumentation müssen nach der Konzeptfreigabe gegen den tatsächlich geänderten Produktstand bereinigt werden. Während dieses Planungsschritts bleiben Produktcode und Ist-Dokumentation unverändert.
+- Offen: Soll ein akzeptierter Hinweis künftig bei jedem Lauf erneut erscheinen? Jede automatische Unterdrückung benötigt eine dauerhafte Entscheidung oder eine explizite Regel-/Konfigurationsausnahme und würde das Ziel „nur aktuelle Analyse, keine gespeicherte Entscheidung“ ändern.
+- Offen: Bedeutet „es kommen md-files raus, nicht mehr und nicht weniger“ auch, dass das bisherige EXE-relative Serilog-Dateilogging und generierte Katalog-/JSON-Dateien entfallen? Der Entwurf behandelt Markdown als einziges dauerhaftes Analyseergebnis; die Grenze für sonstige Host-Dateien muss feststehen.
+- Für die Umsetzung zu entscheiden: Werden Dateien im dedizierten Ausgabeordner bei jedem Lauf ersetzt, oder legt jeder Lauf einen eigenen Berichtssatz an? Letzteres würde ohne Store trotzdem einen Verlauf von Markdown-Dateien hinterlassen. Empfehlung: ein definierter Berichtssatz, der beim nächsten vollständigen Lauf ersetzt wird, ohne fremde Dateien im Ausgabeordner zu löschen.

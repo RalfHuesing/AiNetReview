@@ -1,6 +1,8 @@
 # Relaunch-Diskussion
 
-Für einen neuen Chat zuerst das unveränderte [Relaunch-Konzept](Relaunch-Konzept.md) als Motivation und dann das [AiNetReview-Konzept](AiNetReview-Konzept.md) lesen. Die dort verlinkten vier Epics enthalten die verbindlichen Verträge und das DoD. Die [Roadmap](roadmap.md) zeigt Reihenfolge und Fortschritt. Jeder Vertrag steht nur an einer Stelle; bei Änderungen werden überholte Aussagen ersetzt und betroffene Querverweise geprüft.
+Die [Neuausrichtung des AiNetReview-Konzepts](AiNetReview-Konzept.md) hat `status: draft`. Sie beschreibt einen zustandslosen EXE-zu-Markdown-Ablauf ohne Storage und MCP. Die bisherigen Epics und die Roadmap enthalten noch überholte Verträge; sie sind bis zur konsistenten Überarbeitung nicht als Auftrag für weitere Umsetzung freigegeben.
+
+Für einen neuen Chat zuerst das unveränderte [Relaunch-Konzept](Relaunch-Konzept.md) als Motivation und dann das [AiNetReview-Konzept](AiNetReview-Konzept.md) lesen. Die vier Epics und die [Roadmap](roadmap.md) dokumentieren noch die bisherige Spezifikation und den bisherigen Fortschritt. Nach der Konzeptentscheidung werden überholte Aussagen ersetzt und betroffene Querverweise geprüft.
 
 Dieses Task-Verzeichnis gehört zum neuen Repository `C:\Daten\Entwicklung\Ralf\AiNetReview\`. Der vorhandene, getestete AiNetLinter-Code liegt im **anderen** Repository `C:\Daten\Entwicklung\Ralf\AiNetLinter\`. Die Quellcode-Vorlagen in Epic 4 beziehen sich auf diesen absoluten Pfad. Umsetzung und neue Dateien gehören ausschließlich in AiNetReview.
 
