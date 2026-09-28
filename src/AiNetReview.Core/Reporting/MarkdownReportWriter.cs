@@ -42,7 +42,6 @@ public sealed class MarkdownReportWriter
         }
 
         var resultById = result.Rules.ToDictionary(static run => run.RuleId, StringComparer.Ordinal);
-        var started = DateTimeOffset.UtcNow;
         Directory.CreateDirectory(config.ResolvedOutputDirectory);
 
         while (true)
@@ -63,6 +62,11 @@ public sealed class MarkdownReportWriter
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var ruleResult = resultById[configuredRule.RuleId];
+                    if (ruleResult.DetectedCount == 0)
+                    {
+                        continue;
+                    }
+
                     var rulePath = Path.Combine(temporaryPath, "rules", configuredRule.RuleId + ".md");
                     Directory.CreateDirectory(Path.GetDirectoryName(rulePath)!);
                     await WriteUtf8Async(rulePath, FormatRuleReport(config, configuredRule, ruleResult, Path.GetDirectoryName(rulePath)!), cancellationToken)
@@ -70,9 +74,8 @@ public sealed class MarkdownReportWriter
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
-                var ended = DateTimeOffset.UtcNow;
                 var indexPath = Path.Combine(temporaryPath, "index.md");
-                await WriteUtf8Async(indexPath, FormatIndex(runId, started, ended, config, rules, resultById), cancellationToken)
+                await WriteUtf8Async(indexPath, FormatIndex(runId, config, rules, resultById), cancellationToken)
                     .ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (beforePublication is not null)
@@ -127,33 +130,34 @@ public sealed class MarkdownReportWriter
 
     private static string FormatIndex(
         string runId,
-        DateTimeOffset started,
-        DateTimeOffset ended,
         ReviewConfig config,
         ConfiguredRule[] rules,
         System.Collections.Generic.IReadOnlyDictionary<string, RuleRunResult> results)
     {
         var builder = new StringBuilder();
         builder.Append("# AiNetReview – ").Append(runId).Append("\n\n")
-            .Append("| Metadata | Value |\n| --- | --- |\n")
-            .Append("| Started (UTC) | ").Append(EscapeTable(FormatTimestamp(started))).Append(" |\n")
-            .Append("| Ended (UTC) | ").Append(EscapeTable(FormatTimestamp(ended))).Append(" |\n")
-            .Append("| Solution | ").Append(EscapeTable(config.SolutionPath)).Append(" |\n")
-            .Append("| Detected | ").Append(results.Values.Sum(static result => result.DetectedCount).ToString(CultureInfo.InvariantCulture)).Append(" |\n\n")
-            .Append("| Rule | Title | Version | Options | Detected | Report |\n| --- | --- | ---: | --- | ---: | --- |\n");
+            .Append("- Run ID: `").Append(runId).Append("`\n")
+            .Append("- Repository: `").Append(EscapeInline(Path.GetFullPath(config.ProjectRoot))).Append("`\n")
+            .Append("- Solution: `").Append(EscapeInline(config.SolutionPath)).Append("`\n\n");
 
-        foreach (var rule in rules)
+        var rulesWithFindings = rules.Where(rule => results[rule.RuleId].DetectedCount > 0).ToArray();
+        if (rulesWithFindings.Length == 0)
         {
-            var id = rule.RuleId;
-            var descriptor = rule.Rule.Descriptor;
-            builder.Append("| ").Append(EscapeTable(id)).Append(" | ").Append(EscapeTable(descriptor.Title)).Append(" | ")
-                .Append(descriptor.BehaviorVersion.ToString(CultureInfo.InvariantCulture)).Append(" | ")
-                .Append(EscapeTable(FormatOptions(rule.EffectiveOptions))).Append(" | ")
-                .Append(results[id].DetectedCount.ToString(CultureInfo.InvariantCulture)).Append(" | [Markdown report](rules/")
-                .Append(EncodePathSegment(id)).Append(".md) |\n");
+            builder.Append(rules.Length == 0
+                ? "Keine Prüfung fand statt, da alle Regeln deaktiviert sind.\n"
+                : "Keine Befunde gefunden.\n");
+            return builder.ToString();
         }
 
-        builder.Append("\nFindings are review prompts, not errors that should be fixed automatically.\n");
+        builder.Append("## Rules with open findings\n\n");
+        foreach (var rule in rulesWithFindings)
+        {
+            builder.Append("- [").Append(EscapeLinkText(rule.Rule.Descriptor.Title)).Append("](rules/")
+                .Append(EncodePathSegment(rule.RuleId)).Append(".md)\n");
+        }
+
+        builder.Append("\n## Working through findings\n\n")
+            .Append("Review each finding against the source code. After fixing it or deciding to ignore it, explain the decision to the user and delete the finding's table row. When a rule has no rows left, delete its report and remove its link here. When all findings are handled, replace these instructions with **All findings addressed**.\n");
         return builder.ToString();
     }
 
@@ -161,46 +165,39 @@ public sealed class MarkdownReportWriter
     {
         var descriptor = configuredRule.Rule.Descriptor;
         var builder = new StringBuilder();
-        builder.Append("# ").Append(EscapeInline(descriptor.RuleId)).Append(" – ").Append(EscapeInline(descriptor.Title)).Append("\n\n")
-            .Append("| Property | Value |\n| --- | --- |\n")
-            .Append("| Behavior version | ").Append(descriptor.BehaviorVersion.ToString(CultureInfo.InvariantCulture)).Append(" |\n")
-            .Append("| Purpose | ").Append(EscapeTable(descriptor.Purpose)).Append(" |\n")
-            .Append("| Measurement | ").Append(EscapeTable(descriptor.Measurement)).Append(" |\n")
-            .Append("| Effective options | ").Append(EscapeTable(FormatOptions(configuredRule.EffectiveOptions))).Append(" |\n")
-            .Append("| Detected | ").Append(result.DetectedCount.ToString(CultureInfo.InvariantCulture)).Append(" |\n\n")
-            .Append("## Review questions\n\n");
+        builder.Append("# ").Append(EscapeLinkText(descriptor.Title)).Append("\n\n")
+            .Append(EscapeInline(descriptor.Purpose)).Append("\n\n")
+            .Append("Effective options: ").Append(FormatCodeSpan(FormatOptions(configuredRule.EffectiveOptions))).Append("\n\n")
+            .Append("Review questions:\n\n");
         foreach (var question in descriptor.ReviewQuestions)
         {
             builder.Append("- ").Append(EscapeInline(question)).Append("\n");
         }
 
+        var projectCountsBySource = result.Result.Findings
+            .GroupBy(static finding => finding.SourcePath, StringComparer.Ordinal)
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.Select(static finding => finding.ProjectPath).Distinct(StringComparer.Ordinal).Count(),
+                StringComparer.Ordinal);
+
+        builder.Append("\n| Source | Signal | Other Locations |\n| --- | --- | --- |\n");
         foreach (var finding in result.Result.Findings.OrderBy(static item => item.ProjectPath, StringComparer.Ordinal)
                      .ThenBy(static item => item.SourcePath, StringComparer.Ordinal)
                      .ThenBy(static item => item.StartLine)
                      .ThenBy(static item => item.SubjectId, StringComparer.Ordinal)
                      .ThenBy(static item => item.Discriminator, StringComparer.Ordinal))
         {
-            builder.Append("\n## ").Append(EscapeInline(finding.SubjectId)).Append(" — ").Append(EscapeInline(finding.Discriminator)).Append("\n\n")
-                .Append("| Property | Value |\n| --- | --- |\n")
-                .Append("| Project | ").Append(EscapeTable(finding.ProjectPath)).Append(" |\n")
-                .Append("| Source | [").Append(EscapeLinkText(finding.SourcePath)).Append(':')
+            builder.Append("| [").Append(EscapeLinkText(finding.SourcePath)).Append(':')
                 .Append(finding.StartLine.ToString(CultureInfo.InvariantCulture)).Append("](")
-                .Append(SourceLink(config.ProjectRoot, finding.SourcePath, finding.StartLine, reportDirectory)).Append(") |\n")
-                .Append("| Rationale | ").Append(EscapeTable(finding.Rationale)).Append(" |\n")
-                .Append("| Metrics | ").Append(EscapeTable(FormatMetrics(finding))).Append(" |\n\n")
-                .Append("### Evidence\n\n");
-            foreach (var evidence in finding.Evidence.OrderBy(static item => item.SourcePath, StringComparer.Ordinal)
-                         .ThenBy(static item => item.Line)
-                         .ThenBy(static item => item.Label, StringComparer.Ordinal)
-                         .ThenBy(static item => item.Detail, StringComparer.Ordinal)
-                         .ThenBy(static item => item.Snippet, StringComparer.Ordinal))
+                .Append(SourceLink(config.ProjectRoot, finding.SourcePath, finding.StartLine, reportDirectory)).Append(')');
+            if (projectCountsBySource[finding.SourcePath] > 1)
             {
-                builder.Append("- [").Append(EscapeLinkText(evidence.SourcePath)).Append(':')
-                    .Append(evidence.Line.ToString(CultureInfo.InvariantCulture)).Append("](")
-                    .Append(SourceLink(config.ProjectRoot, evidence.SourcePath, evidence.Line, reportDirectory)).Append(") — **")
-                    .Append(EscapeInline(evidence.Label)).Append("**: ").Append(EscapeInline(evidence.Detail))
-                    .Append("; code: ").Append(FormatCodeSpan(evidence.Snippet)).Append('\n');
+                builder.Append(" (").Append(EscapeTable(finding.ProjectPath)).Append(')');
             }
+
+            builder.Append(" | ").Append(EscapeTable(FormatSignal(configuredRule.RuleId, finding))).Append(" | ")
+                .Append(FormatAdditionalLocations(config.ProjectRoot, finding, reportDirectory)).Append(" |\n");
         }
 
         return builder.ToString();
@@ -217,9 +214,78 @@ public sealed class MarkdownReportWriter
         return linkPath + "#L" + line.ToString(CultureInfo.InvariantCulture);
     }
 
-    private static string FormatMetrics(FindingDraft finding) => string.Join(
-        ", ", finding.Metrics.OrderBy(static pair => pair.Key, StringComparer.Ordinal)
-            .Select(static pair => $"{pair.Key}={pair.Value.ToString("R", CultureInfo.InvariantCulture)}"));
+    private static string FormatSignal(string ruleId, FindingDraft finding)
+    {
+        if (ruleId == "dead-code-candidates")
+        {
+            return finding.Discriminator == "type-candidate"
+                ? "Type without known use"
+                : "Method without known use";
+        }
+
+        if (ruleId == "method-control-flow-outliers")
+        {
+            var signal = new StringBuilder();
+            var decisionCount = Metric(finding, "decisionCount");
+            var decisionCutoff = Metric(finding, "decisionCutoff");
+            var decisionConstructCount = Metric(finding, "decisionConstructCount");
+            if (decisionCount >= decisionCutoff && decisionConstructCount >= 2)
+            {
+                signal.Append(FormatNumber(decisionCount)).Append(" decisions across ")
+                    .Append(FormatNumber(decisionConstructCount)).Append(" constructs (cutoff ")
+                    .Append(FormatNumber(decisionCutoff)).Append(')');
+            }
+
+            var nesting = Metric(finding, "maxDecisionNesting");
+            var nestingCutoff = Metric(finding, "nestingCutoff");
+            if (nesting >= nestingCutoff)
+            {
+                if (signal.Length > 0)
+                {
+                    signal.Append("; ");
+                }
+
+                signal.Append("nesting ").Append(FormatNumber(nesting)).Append(" (cutoff ")
+                    .Append(FormatNumber(nestingCutoff)).Append(')');
+            }
+
+            return signal.ToString();
+        }
+
+        if (ruleId == "duplicate-code-candidates")
+        {
+            var similarity = Metric(finding, "similarityScore");
+            var minimumSimilarity = Metric(finding, "minimumSimilarityThreshold");
+            return $"{FormatNumber(Metric(finding, "memberCount"))} methods; {FormatPercent(similarity)} similarity (minimum {FormatPercent(minimumSimilarity)})";
+        }
+
+        return finding.Rationale;
+    }
+
+    private static double Metric(FindingDraft finding, string name) =>
+        finding.Metrics.TryGetValue(name, out var value) ? value : 0;
+
+    private static string FormatNumber(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private static string FormatPercent(double value) => (value * 100).ToString("0.0", CultureInfo.InvariantCulture) + "%";
+
+    private static string FormatAdditionalLocations(string projectRoot, FindingDraft finding, string reportDirectory)
+    {
+        var locations = finding.Evidence
+            .Where(evidence => evidence.SourcePath != finding.SourcePath || evidence.Line != finding.StartLine)
+            .Select(static evidence => (evidence.SourcePath, evidence.Line))
+            .Distinct()
+            .OrderBy(static location => location.SourcePath, StringComparer.Ordinal)
+            .ThenBy(static location => location.Line)
+            .ToArray();
+        if (locations.Length == 0)
+        {
+            return "—";
+        }
+
+        return string.Join(", ", locations.Select(location =>
+            $"[{EscapeLinkText(location.SourcePath)}:{location.Line.ToString(CultureInfo.InvariantCulture)}]({SourceLink(projectRoot, location.SourcePath, location.Line, reportDirectory)})"));
+    }
 
     private static string FormatOptions(RuleOptions options) => "{" + string.Join(
         ", ", options.Values.OrderBy(static pair => pair.Key, StringComparer.Ordinal)
@@ -287,11 +353,9 @@ public sealed class MarkdownReportWriter
         return builder.ToString();
     }
 
-    private static string EscapeLinkText(string value) => EscapeInline(value);
+    private static string EscapeLinkText(string value) => EscapeInline(value).Replace("\\-", "-", StringComparison.Ordinal);
 
     private static string EncodePathSegment(string segment) => Uri.EscapeDataString(segment);
-
-    private static string FormatTimestamp(DateTimeOffset value) => value.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture);
 
     private static string CreateRunId(DateTimeOffset value) => value.UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture)
         + "-" + Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();

@@ -62,13 +62,25 @@ public sealed class HostProcessIntegrationTests
         Assert.True(File.Exists(indexReportPath));
         var indexReport = await File.ReadAllTextAsync(indexReportPath);
         Assert.Contains(runId!, indexReport, StringComparison.Ordinal);
-        Assert.Contains($"| Detected | {detectedCount} |", indexReport, StringComparison.Ordinal);
-        Assert.Contains("[Markdown report](rules/method-control-flow-outliers.md)", indexReport, StringComparison.Ordinal);
+        var repositoryLine = Assert.Single(indexReport.Split('\n').Where(static line => line.StartsWith("- Repository:", StringComparison.Ordinal)));
+        var repositoryPath = repositoryLine["- Repository: `".Length..^1].Replace("\\\\", "\\", StringComparison.Ordinal);
+        Assert.True(Path.IsPathFullyQualified(repositoryPath));
+        Assert.Contains("- Solution: `AiNetReview.slnx`", indexReport, StringComparison.Ordinal);
         var ruleReportPath = Path.Combine(outputDirectory, runId!, "rules", "method-control-flow-outliers.md");
-        Assert.True(File.Exists(ruleReportPath));
-        var ruleReport = await File.ReadAllTextAsync(ruleReportPath);
-        Assert.Contains("# method\\-control\\-flow\\-outliers", ruleReport, StringComparison.Ordinal);
-        Assert.Matches("(?m)^\\| Detected \\| [0-9]+ \\|$", ruleReport);
+        if (detectedCount > 0)
+        {
+            Assert.Contains("[Method Control-Flow Outliers](rules/method-control-flow-outliers.md)", indexReport, StringComparison.Ordinal);
+            Assert.True(File.Exists(ruleReportPath));
+            var ruleReport = await File.ReadAllTextAsync(ruleReportPath);
+            Assert.Contains("# Method Control-Flow Outliers", ruleReport, StringComparison.Ordinal);
+            Assert.Contains("| Source | Signal | Other Locations |", ruleReport, StringComparison.Ordinal);
+            Assert.DoesNotContain("Metrics", ruleReport, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains("Keine Befunde gefunden.", indexReport, StringComparison.Ordinal);
+            Assert.False(File.Exists(ruleReportPath));
+        }
 
         var resultingRuns = Directory.GetDirectories(outputDirectory).Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
         Assert.Contains(runId, resultingRuns);
@@ -151,7 +163,8 @@ public sealed class HostProcessIntegrationTests
         Assert.StartsWith("reports/", indexPath, StringComparison.Ordinal);
         Assert.True(File.Exists(Path.Combine(projectRoot, indexPath!.Replace('/', Path.DirectorySeparatorChar))));
         Assert.Equal(0, response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
-        Assert.True(File.Exists(Path.Combine(projectRoot, "reports", runId!, "rules", "method-control-flow-outliers.md")));
+        Assert.Contains("Keine Befunde gefunden.", await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "index.md")), StringComparison.Ordinal);
+        Assert.False(Directory.Exists(Path.Combine(projectRoot, "reports", runId!, "rules")));
 
         var logPath = Assert.Single(Directory.GetFiles(Path.Combine(host.HostDirectory, "logs"), "ainetreview-*.log"));
         var logContents = await File.ReadAllTextAsync(logPath);

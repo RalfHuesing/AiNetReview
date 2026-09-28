@@ -39,7 +39,7 @@ public sealed class DeadCodeCandidatesRule : IReviewRule
         "dead-code-candidates",
         "Dead Code Candidates",
         1,
-        "Selects explicit C# types and ordinary methods without known direct or recognized indirect use in the loaded solution for human review.",
+        "Flags types and methods without known direct or recognized indirect use in the loaded solution.",
         "A candidate has no known direct semantic reference or recognized indirect binding in production, test, generated C#, or captured markup. This is a review signal, not proof that the declaration is unused.",
         [
             "Is the declaration reached through reflection, dependency injection, framework conventions, or markup?",

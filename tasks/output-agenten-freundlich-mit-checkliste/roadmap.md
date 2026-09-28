@@ -1,6 +1,6 @@
 # Roadmap: Agentenfreundliche Auditberichte
 
-- [ ] **Kompakte Markdown-Berichte und bearbeitbare Befundtabellen**
+- [x] **Kompakte Markdown-Berichte und bearbeitbare Befundtabellen**
   - Intention: Ein Agent findet nur relevante Regeldateien und kann offene Befunde dort als einzelne Tabellenzeilen abarbeiten.
   - Scope: `MarkdownReportWriter` und die beschreibenden Texte der drei Produktionsregeln an [Konzept.md](Konzept.md) anpassen: schlanker Index, getrennte Meldungen für null Befunde und null aktive Regeln, keine Dateien für leere Regeln, kurzer Regelkontext und eine Tabellenzeile pro Befund mit repräsentativem Quelllink, knappem Signal und nötigen weiteren Quelllinks. Der Index erklärt Löschen und Abschluss der Bearbeitung. Bestehende Quelllink-Escapes, deterministische Ordnung und atomare Veröffentlichung bleiben erhalten. Betroffene aktuelle `docs/`-Seiten und Tests im selben Slice anpassen.
   - Nicht: Keine Erkennungslogik, keine künstliche Schwere oder Wahrscheinlichkeit, keine Checkboxen oder Fortschrittsdatei; die manuelle `findings.json` wird erst im nächsten Punkt entfernt.

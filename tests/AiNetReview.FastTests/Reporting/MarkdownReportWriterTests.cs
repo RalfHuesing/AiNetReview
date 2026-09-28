@@ -15,7 +15,7 @@ using AiNetReview.Core.Rules;
 public sealed class MarkdownReportWriterTests
 {
     [Fact]
-    public async Task WriteAsync_WritesEmptyRuleReportWithSortedOptionsAndUtf8Lf()
+    public async Task WriteAsync_ReportsEmptyActiveRulesWithoutCreatingRuleFiles()
     {
         using var temp = TestTempDirectory.Create();
         var rule = new ReportRule("alpha-rule", "Alpha | Rule", "value|with `markdown`");
@@ -28,22 +28,66 @@ public sealed class MarkdownReportWriterTests
         ]));
 
         var indexBytes = await File.ReadAllBytesAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "index.md"));
-        Assert.Equal(3, Directory.GetFiles(Path.Combine(config.ResolvedOutputDirectory, report.RunId), "*", SearchOption.AllDirectories).Length);
+        Assert.Single(Directory.GetFiles(Path.Combine(config.ResolvedOutputDirectory, report.RunId), "*", SearchOption.AllDirectories));
         Assert.False(indexBytes.AsSpan().StartsWith(Encoding.UTF8.GetPreamble()));
         Assert.DoesNotContain((byte)'\r', indexBytes);
         var index = Encoding.UTF8.GetString(indexBytes);
         Assert.Contains($"# AiNetReview – {report.RunId}", index, StringComparison.Ordinal);
-        Assert.Contains("| Detected | 0 |", index, StringComparison.Ordinal);
-        Assert.Contains("Alpha \\| Rule", index, StringComparison.Ordinal);
-        Assert.Contains("value", index, StringComparison.Ordinal);
-        Assert.Contains("markdown", index, StringComparison.Ordinal);
-        Assert.True(index.IndexOf("Alpha \\| Rule", StringComparison.Ordinal) < index.IndexOf("Zeta Rule", StringComparison.Ordinal));
-        Assert.Contains("[Markdown report](rules/alpha-rule.md)", index, StringComparison.Ordinal);
-        Assert.True(index.IndexOf("\"alpha\"", StringComparison.Ordinal) < index.IndexOf("\"scenario\"", StringComparison.Ordinal));
-        var ruleReport = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "rules", "alpha-rule.md"));
-        Assert.Contains("| Detected | 0 |", ruleReport, StringComparison.Ordinal);
-        Assert.True(File.Exists(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "rules", "zeta-rule.md")));
+        Assert.Contains("- Run ID:", index, StringComparison.Ordinal);
+        var repositoryLine = Assert.Single(index.Split('\n').Where(static line => line.StartsWith("- Repository:", StringComparison.Ordinal)));
+        var repositoryPath = repositoryLine["- Repository: `".Length..^1].Replace("\\\\", "\\", StringComparison.Ordinal);
+        Assert.True(Path.IsPathFullyQualified(repositoryPath));
+        Assert.Contains("- Solution: `Sample.slnx`", index, StringComparison.Ordinal);
+        Assert.Contains("Keine Befunde gefunden.", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("Started", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("Detected", index, StringComparison.Ordinal);
+        Assert.Empty(Directory.GetDirectories(Path.Combine(config.ResolvedOutputDirectory, report.RunId)));
         Assert.Equal("reports/" + report.RunId + "/index.md", report.IndexPath);
+    }
+
+    [Fact]
+    public async Task WriteAsync_DistinguishesWhenNoRulesAreActive()
+    {
+        using var temp = TestTempDirectory.Create();
+        var rule = new ReportRule("inactive-rule", "Inactive Rule", "unused");
+        var config = CreateConfig(temp.DirectoryPath, false, rule);
+
+        var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([]));
+        var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
+        var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
+
+        Assert.Contains("Keine Prüfung fand statt", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("Keine Befunde gefunden", index, StringComparison.Ordinal);
+        Assert.Single(Directory.GetFiles(runDirectory, "*", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public async Task WriteAsync_LinksOnlyRulesWithFindingsAndWritesOneTableRowPerFinding()
+    {
+        using var temp = TestTempDirectory.Create();
+        var withFindings = new ReportRule("has-findings", "Has Findings", "active");
+        var withoutFindings = new ReportRule("empty-rule", "Empty Rule", "active");
+        var config = CreateConfig(temp.DirectoryPath, withFindings, withoutFindings);
+        var finding = Finding("Sample.cs", 2, "C:Sample", "A concise signal", "class Sample", "type-candidate");
+        var samePathInAnotherProject = new FindingDraft(
+            "Other/Sample.csproj", "Sample.cs", "C:Other", "type-candidate", 3, "A concise signal",
+            new Dictionary<string, double>(),
+            [new FindingEvidence("Sample.cs", 3, "Type declaration", "A candidate declaration.", "class Other")]);
+
+        var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
+            new RuleRunResult(withFindings.Descriptor.RuleId, new RuleResult([finding, samePathInAnotherProject])),
+            new RuleRunResult(withoutFindings.Descriptor.RuleId, RuleResult.Empty),
+        ]));
+        var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
+        var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
+        var ruleReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "rules", "has-findings.md"));
+
+        Assert.Contains("[Has Findings](rules/has-findings.md)", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("Empty Rule", index, StringComparison.Ordinal);
+        Assert.Single(Directory.GetFiles(Path.Combine(runDirectory, "rules")));
+        Assert.Equal(2, ruleReport.Split("| [", StringSplitOptions.None).Length - 1);
+        Assert.Contains("(Sample/Sample.csproj)", ruleReport, StringComparison.Ordinal);
+        Assert.Contains("(Other/Sample.csproj)", ruleReport, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -60,22 +104,31 @@ public sealed class MarkdownReportWriterTests
         ]));
         var markdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "rules", "fixture-rule.md"));
 
-        Assert.True(markdown.IndexOf("### Evidence", StringComparison.Ordinal) >= 0);
-        Assert.True(markdown.IndexOf("A — alpha", StringComparison.Ordinal) < markdown.IndexOf("Z — zeta", StringComparison.Ordinal));
+        Assert.Contains("| Source | Signal | Other Locations |", markdown, StringComparison.Ordinal);
+        Assert.True(markdown.IndexOf("[a file\\#1.cs:3]", StringComparison.Ordinal) < markdown.IndexOf("[z file\\#1.cs:9]", StringComparison.Ordinal));
+        Assert.Equal(2, markdown.Split("| [", StringSplitOptions.None).Length - 1);
         Assert.Contains("../../../a%20file%231.cs#L3", markdown, StringComparison.Ordinal);
         Assert.Contains("\\| rationale", markdown, StringComparison.Ordinal);
-        Assert.Contains("code: `` `snippet` ``", markdown, StringComparison.Ordinal);
-        Assert.Contains("code: ``second`snippet``", markdown, StringComparison.Ordinal);
-        Assert.True(markdown.IndexOf("aMetric=1", StringComparison.Ordinal) < markdown.IndexOf("zMetric=2", StringComparison.Ordinal));
-        Assert.True(markdown.IndexOf("A \\| label", StringComparison.Ordinal) < markdown.IndexOf("B \\| label", StringComparison.Ordinal));
-        Assert.Contains("| Detected | 2 |", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("Sample/Sample.csproj", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("aMetric", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("Metrics", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("detail", markdown, StringComparison.Ordinal);
+        Assert.Contains("Effective options:", markdown, StringComparison.Ordinal);
+        Assert.True(markdown.IndexOf("\"alpha\"", StringComparison.Ordinal) < markdown.IndexOf("\"scenario\"", StringComparison.Ordinal));
+        Assert.DoesNotContain("\\{", markdown, StringComparison.Ordinal);
+        var index = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "index.md"));
+        Assert.Contains("Working through findings", index, StringComparison.Ordinal);
+        Assert.Contains("explain the decision to the user", index, StringComparison.Ordinal);
+        Assert.Contains("All findings addressed", index, StringComparison.Ordinal);
     }
 
-    private static ReviewConfig CreateConfig(string root, params ReportRule[] rules)
+    private static ReviewConfig CreateConfig(string root, params ReportRule[] rules) => CreateConfig(root, true, rules);
+
+    private static ReviewConfig CreateConfig(string root, bool enabled, params ReportRule[] rules)
     {
         File.WriteAllText(Path.Combine(root, "Sample.slnx"), "<Solution />");
         var registry = new RuleRegistry(rules);
-        var entries = string.Join(',', rules.Select(static rule => "\"" + rule.Descriptor.RuleId + "\":{}"));
+        var entries = string.Join(',', rules.Select(rule => "\"" + rule.Descriptor.RuleId + "\":{" + (enabled ? string.Empty : "\"enabled\":false") + "}"));
         var config = "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"rules\":{" + entries + "}}";
         return new ReviewConfigValidator(registry).Validate(root, config);
     }

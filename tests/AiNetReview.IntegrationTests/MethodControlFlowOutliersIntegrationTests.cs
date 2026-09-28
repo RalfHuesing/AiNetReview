@@ -80,14 +80,13 @@ public sealed class MethodControlFlowOutliersIntegrationTests
             Directory.GetFiles(rulesDirectory).Select(Path.GetFileName).Order(StringComparer.Ordinal));
 
         var report = await File.ReadAllTextAsync(reportPath);
-        Assert.Contains("M:Sample.Sample.HighlyBranched(System.Int32)", report, StringComparison.Ordinal);
-        Assert.DoesNotContain("M:Sample.Sample.Simple(System.Int32)", report, StringComparison.Ordinal);
-        Assert.Contains("decisionCount=8", report, StringComparison.Ordinal);
-        Assert.Contains("maxDecisionNesting=1", report, StringComparison.Ordinal);
-        Assert.Contains("sourceSpanLines=", report, StringComparison.Ordinal);
+        Assert.Contains("8 decisions across", report, StringComparison.Ordinal);
+        Assert.Contains("(cutoff 8)", report, StringComparison.Ordinal);
+        Assert.DoesNotContain("sourceSpanLines", report, StringComparison.Ordinal);
         Assert.Contains("[Sample/Class1.cs:4](../../../Sample/Class1.cs#L4)", report, StringComparison.Ordinal);
-        Assert.Contains("**Method declaration**", report, StringComparison.Ordinal);
-        Assert.Contains("code: `public int HighlyBranched(int value)`", report, StringComparison.Ordinal);
+        Assert.Contains("| Source | Signal | Other Locations |", report, StringComparison.Ordinal);
+        Assert.DoesNotContain("HighlyBranched", report, StringComparison.Ordinal);
+        Assert.DoesNotContain("public int", report, StringComparison.Ordinal);
     }
 
     private static async Task RestoreProjectAsync(string projectFile, string workingDirectory)
