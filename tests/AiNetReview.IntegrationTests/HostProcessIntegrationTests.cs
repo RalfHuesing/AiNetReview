@@ -10,6 +10,72 @@ using System.Threading.Tasks;
 public sealed class HostProcessIntegrationTests
 {
     [Fact]
+    public async Task ProcessInvocation_WithRepositoryConfigurationPublishesAnIgnoredTimestampedRun()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var configPath = Path.Combine(repositoryRoot, "ainetreview.json");
+        var executablePath = Path.Combine(
+            repositoryRoot,
+            "src",
+            "AiNetReview",
+            "bin",
+            "Debug",
+            "net10.0",
+            OperatingSystem.IsWindows() ? "AiNetReview.exe" : "AiNetReview");
+        Assert.True(File.Exists(executablePath), $"The Debug host executable was not found at '{executablePath}'.");
+        Assert.True(File.Exists(configPath), $"The repository configuration was not found at '{configPath}'.");
+
+        var outputDirectory = Path.Combine(repositoryRoot, "audit-reporting");
+        var existingRuns = Directory.Exists(outputDirectory)
+            ? Directory.GetDirectories(outputDirectory).Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal)
+            : new HashSet<string?>(StringComparer.Ordinal);
+        var startInfo = new ProcessStartInfo(executablePath)
+        {
+            WorkingDirectory = Path.GetTempPath(),
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("review");
+        startInfo.ArgumentList.Add("--config");
+        startInfo.ArgumentList.Add(configPath);
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("AiNetReview Debug host process could not be started.");
+        var (stdout, stderr) = await ReadProcessOutputAsync(process);
+
+        Assert.Equal(0, process.ExitCode);
+        Assert.Empty(stderr);
+        using var response = JsonDocument.Parse(Assert.Single(stdout.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)));
+        Assert.Equal("completed", response.RootElement.GetProperty("status").GetString());
+        Assert.Equal(0, response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
+
+        var runId = response.RootElement.GetProperty("runId").GetString();
+        Assert.Matches("^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$", runId);
+        Assert.DoesNotContain(runId, existingRuns);
+
+        var expectedIndexPath = Path.Combine("audit-reporting", runId!, "index.md");
+        var indexPath = response.RootElement.GetProperty("indexPath").GetString();
+        Assert.Equal(expectedIndexPath.Replace(Path.DirectorySeparatorChar, '/'), indexPath);
+        var indexReportPath = Path.Combine(repositoryRoot, expectedIndexPath);
+        Assert.True(File.Exists(indexReportPath));
+        var indexReport = await File.ReadAllTextAsync(indexReportPath);
+        Assert.Contains(runId!, indexReport, StringComparison.Ordinal);
+        Assert.Contains("| Detected | 0 |", indexReport, StringComparison.Ordinal);
+        Assert.Contains("[Markdown report](rules/template-noop.md)", indexReport, StringComparison.Ordinal);
+        var ruleReportPath = Path.Combine(outputDirectory, runId!, "rules", "template-noop.md");
+        Assert.True(File.Exists(ruleReportPath));
+        var ruleReport = await File.ReadAllTextAsync(ruleReportPath);
+        Assert.Contains("# template\\-noop", ruleReport, StringComparison.Ordinal);
+        Assert.Contains("| Detected | 0 |", ruleReport, StringComparison.Ordinal);
+
+        var resultingRuns = Directory.GetDirectories(outputDirectory).Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
+        Assert.Contains(runId, resultingRuns);
+        Assert.All(existingRuns, existingRun => Assert.Contains(existingRun, resultingRuns));
+    }
+
+    [Fact]
     public async Task ProcessInvocation_WithInvalidCommand_LogsBesideHostAndKeepsStreamsFreeOfLogs()
     {
         using var host = IsolatedHost.Create();
@@ -199,6 +265,22 @@ public sealed class HostProcessIntegrationTests
         await RestoreProjectAsync(projectFile, project);
         await File.WriteAllTextAsync(Path.Combine(root, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         return root;
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current is not null)
+        {
+            if (File.Exists(Path.Combine(current.FullName, "AiNetReview.slnx")))
+            {
+                return current.FullName;
+            }
+
+            current = current.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate the AiNetReview repository root from the IntegrationTests output directory.");
     }
 
     private static async Task<string> CreateConfigAsync(string projectRoot)
