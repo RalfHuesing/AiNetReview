@@ -35,11 +35,32 @@ public sealed class ReviewCommand
         ArgumentNullException.ThrowIfNull(standardError);
 
         var root = new RootCommand();
+        var rootProjectPathArgument = new Argument<string?>("project-path")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+        };
+        var rootConfigOption = new Option<string?>("--config");
+        root.Arguments.Add(rootProjectPathArgument);
+        root.Options.Add(rootConfigOption);
+        root.SetAction(async (parseResult, token) => await ExecuteReviewAsync(
+            parseResult.GetValue(rootProjectPathArgument),
+            parseResult.GetValue(rootConfigOption),
+            services,
+            standardOutput,
+            standardError,
+            token).ConfigureAwait(false));
+
         var review = new Command("review");
-        var configOption = new Option<string>("--config") { Required = true };
-        review.Options.Add(configOption);
+        var reviewProjectPathArgument = new Argument<string?>("project-path")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+        };
+        var reviewConfigOption = new Option<string?>("--config");
+        review.Arguments.Add(reviewProjectPathArgument);
+        review.Options.Add(reviewConfigOption);
         review.SetAction(async (parseResult, token) => await ExecuteReviewAsync(
-            parseResult.GetValue(configOption),
+            parseResult.GetValue(reviewProjectPathArgument),
+            parseResult.GetValue(reviewConfigOption),
             services,
             standardOutput,
             standardError,
@@ -49,7 +70,7 @@ public sealed class ReviewCommand
         var parse = root.Parse(args);
         if (parse.Errors.Count > 0 || parse.UnmatchedTokens.Count > 0)
         {
-            await WriteErrorAsync(standardError, "INVALID_INPUT", "Expected 'review --config <absolute-path-to-ainetreview.json>'.")
+            await WriteErrorAsync(standardError, "INVALID_INPUT", "Expected 'ainetreview [project-path] [--config <path-to-ainetreview.json>]' or 'ainetreview review [project-path] [--config <path-to-ainetreview.json>]'.")
                 .ConfigureAwait(false);
             return InvalidInputExitCode;
         }
@@ -63,6 +84,7 @@ public sealed class ReviewCommand
     }
 
     private static async Task<int> ExecuteReviewAsync(
+        string? projectPath,
         string? configPath,
         IServiceProvider services,
         TextWriter standardOutput,
@@ -74,7 +96,30 @@ public sealed class ReviewCommand
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var config = services.GetRequiredService<ReviewConfigValidator>().Load(configPath ?? string.Empty);
+            var (projectRoot, absoluteConfigPath) = ResolvePaths(projectPath, configPath);
+            if (!File.Exists(absoluteConfigPath))
+            {
+                var solutionFileName = services.GetRequiredService<SolutionDiscovery>().Discover(projectRoot);
+                if (solutionFileName is null)
+                {
+                    throw new InvalidReviewInputException("No .sln or .slnx file was found directly under the project directory.");
+                }
+
+                var generatedConfig = services.GetRequiredService<DefaultReviewConfigGenerator>().Generate(solutionFileName);
+                try
+                {
+                    var created = await CreateConfigFileAsync(absoluteConfigPath, generatedConfig, cancellationToken).ConfigureAwait(false);
+                    logger.LogInformation(
+                        created ? "Created default review configuration at {ConfigPath}" : "Default review configuration already exists at {ConfigPath}",
+                        absoluteConfigPath);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    throw new InvalidReviewInputException("Default review configuration could not be created.", exception);
+                }
+            }
+
+            var config = services.GetRequiredService<ReviewConfigValidator>().Load(absoluteConfigPath);
             logger.LogInformation("Review started for {SolutionPath}", config.SolutionPath);
 
             LoadedSolution loaded;
@@ -158,12 +203,67 @@ public sealed class ReviewCommand
             await WriteErrorAsync(standardError, "INVALID_INPUT", exception.Message).ConfigureAwait(false);
             return InvalidInputExitCode;
         }
+        catch (DirectoryNotFoundException exception)
+        {
+            logger.LogWarning(exception, "Project directory was not found");
+            await WriteErrorAsync(standardError, "INVALID_INPUT", "Project directory does not exist.").ConfigureAwait(false);
+            return InvalidInputExitCode;
+        }
         catch (OperationCanceledException)
         {
             logger.LogInformation("Review cancelled by user");
             await WriteErrorAsync(standardError, "CANCELLED", "Review was cancelled.").ConfigureAwait(false);
             return CancelledExitCode;
         }
+    }
+
+    private static (string ProjectRoot, string ConfigPath) ResolvePaths(string? projectPath, string? configPath)
+    {
+        try
+        {
+            var absoluteConfigPath = configPath is null
+                ? null
+                : Path.GetFullPath(configPath, Environment.CurrentDirectory);
+            var projectRoot = Path.GetFullPath(
+                projectPath ?? (absoluteConfigPath is null ? Environment.CurrentDirectory : Path.GetDirectoryName(absoluteConfigPath)!),
+                Environment.CurrentDirectory);
+            var resolvedConfigPath = absoluteConfigPath ?? Path.Combine(projectRoot, "ainetreview.json");
+            var pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+            if (!Path.GetFileName(resolvedConfigPath).Equals("ainetreview.json", StringComparison.Ordinal)
+                || !Path.GetFullPath(Path.GetDirectoryName(resolvedConfigPath)!).Equals(projectRoot, pathComparison))
+            {
+                throw new InvalidReviewInputException("Configuration path must be 'ainetreview.json' directly under the project directory.");
+            }
+
+            return (projectRoot, resolvedConfigPath);
+        }
+        catch (InvalidReviewInputException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            throw new InvalidReviewInputException("Project or configuration path could not be resolved.", exception);
+        }
+    }
+
+    private static async Task<bool> CreateConfigFileAsync(string path, string contents, CancellationToken cancellationToken)
+    {
+        var streamCreated = false;
+        try
+        {
+            await using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            streamCreated = true;
+            await using var writer = new StreamWriter(stream);
+            await writer.WriteAsync(contents.AsMemory(), cancellationToken).ConfigureAwait(false);
+        }
+        catch (IOException) when (!streamCreated && File.Exists(path))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private static async Task WriteErrorAsync(TextWriter writer, string code, string message)

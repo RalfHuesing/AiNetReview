@@ -14,7 +14,7 @@
     - Alle neuen FastTests laufen grün (`dotnet test tests/AiNetReview.FastTests`).
     - Bestehende FastTests unbeeinflusst.
 
-- [ ] **Punkt 2 — CLI-Host Zero-Config, Pfad-Parameter und Bootstrap-Dateierzeugung (Host)**
+- [x] **Punkt 2 — CLI-Host Zero-Config, Pfad-Parameter und Bootstrap-Dateierzeugung (Host)**
   - Intention: Nahtlose Zero-Config Ausführung im CLI-Host: Automatisches Anlegen von `ainetreview.json` bei fehlender Konfiguration und Unterstützung vereinfachter CLI-Aufrufe.
   - Scope:
     - `ReviewCommand`: Erweiterung der Aufrufsyntax (`ainetreview`, `ainetreview review`, optionaler Positions-Pfadparameter `[project-path]`, optionales oder fehlendes `--config <pfad>`).

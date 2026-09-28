@@ -1,6 +1,10 @@
 # Command-line host
 
-The executable accepts one command: `ainetreview review --config <absolute-path-to-ainetreview.json>`. The option must identify an `ainetreview.json` file directly under the project root. The command synchronously validates the configuration, loads and checks the configured solution, runs its configured rules, and publishes the complete Markdown report set.
+The executable accepts `ainetreview`, `ainetreview [project-path]`, `ainetreview review`, and `ainetreview review [project-path]`. Both forms also accept the optional `--config <path-to-ainetreview.json>` option. Relative config paths resolve against the current working directory. When no project path is given, the current working directory is used. A supplied configuration path must identify an `ainetreview.json` file directly under the selected project root.
+
+When the configuration file does not exist, the host searches the project root's top level for `.slnx` and `.sln` files, generates `ainetreview.json` from the registered rules' defaults, and immediately runs the review with that file. Solution selection prefers a name matching the project directory, then `.slnx`, then ordinal filename order. If no solution is found, the command returns `INVALID_INPUT` with exit code `2` and does not create a configuration file.
+
+The command validates the configuration, loads and checks the configured solution, runs its configured rules, and publishes the complete Markdown report set.
 
 On success, stdout contains exactly one compact JSON line, for example:
 

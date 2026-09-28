@@ -9,7 +9,7 @@
 The solution `AiNetReview.slnx` contains five projects:
 
 - `src/AiNetReview.Core/`: Core library for configuration, analysis, rules, and current finding results.
-- `src/AiNetReview/`: Host executable with DI composition, the `review --config` command, and logging.
+- `src/AiNetReview/`: Host executable with DI composition, zero-config `review` command, and logging.
 - `tests/AiNetReview.TestKit/`: Shared test support infrastructure (e.g. isolated temp directory lifecycle and test helpers).
 - `tests/AiNetReview.FastTests/`: Unit and component test suite.
 - `tests/AiNetReview.IntegrationTests/`: End-to-end and host integration test suite.

@@ -10,6 +10,41 @@ using System.Threading.Tasks;
 public sealed class HostProcessIntegrationTests
 {
     [Fact]
+    public async Task ProcessInvocation_WithoutArgumentsBootstrapsConfigurationAndWritesOnlySuccessJsonToStdout()
+    {
+        using var host = IsolatedHost.Create();
+        var projectRoot = await CreateProjectAsync(host.HostDirectory, "namespace Sample; public sealed class SampleType { public void Run() { } }");
+
+        using var process = host.Start(projectRoot);
+        var (stdout, stderr) = await ReadProcessOutputAsync(process);
+
+        Assert.Equal(0, process.ExitCode);
+        Assert.Empty(stderr);
+        var outputLine = Assert.Single(stdout.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries));
+        using var response = JsonDocument.Parse(outputLine);
+        Assert.Equal("completed", response.RootElement.GetProperty("status").GetString());
+        var configPath = Path.Combine(projectRoot, "ainetreview.json");
+        Assert.True(File.Exists(configPath));
+        var generatedConfig = await File.ReadAllTextAsync(configPath);
+        Assert.Contains("\"solution\": \"Sample.slnx\"", generatedConfig, StringComparison.Ordinal);
+
+        var indexPath = Path.Combine(projectRoot, response.RootElement.GetProperty("indexPath").GetString()!.Replace('/', Path.DirectorySeparatorChar));
+        Assert.True(File.Exists(indexPath));
+        var logPath = Assert.Single(Directory.GetFiles(Path.Combine(host.HostDirectory, "logs"), "ainetreview-*.log"));
+        var logContents = await File.ReadAllTextAsync(logPath);
+        Assert.Contains("Created default review configuration", logContents, StringComparison.Ordinal);
+        Assert.DoesNotContain("Created default review configuration", stdout, StringComparison.Ordinal);
+        Assert.DoesNotContain("Created default review configuration", stderr, StringComparison.Ordinal);
+
+        using var reviewProcess = host.Start(projectRoot, "review");
+        var (reviewStdout, reviewStderr) = await ReadProcessOutputAsync(reviewProcess);
+        Assert.Equal(0, reviewProcess.ExitCode);
+        Assert.Empty(reviewStderr);
+        using var reviewResponse = JsonDocument.Parse(Assert.Single(reviewStdout.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)));
+        Assert.Equal("completed", reviewResponse.RootElement.GetProperty("status").GetString());
+    }
+
+    [Fact]
     public async Task ProcessInvocation_WithRepositoryConfigurationPublishesAnIgnoredTimestampedRun()
     {
         var repositoryRoot = SolutionRootLocator.Find();

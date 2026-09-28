@@ -15,6 +15,8 @@ public static class ServiceRegistration
     {
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<RuleRegistry>();
+        services.AddSingleton<SolutionDiscovery>();
+        services.AddSingleton<DefaultReviewConfigGenerator>();
         services.AddSingleton<ReviewConfigValidator>();
         services.AddSingleton<SolutionLoader>();
         services.AddSingleton<ReviewRunner>();
