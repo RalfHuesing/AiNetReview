@@ -10,4 +10,4 @@ The host provides the synchronous `review --config` command, initializes executa
 | Review | [Findings](review/findings.md) |
 | Development | [Build and tests](development/build-and-tests.md), [Adding rules](development/adding-rules.md) |
 
-Specifications remain under [`tasks/initial-infrastructure/`](../tasks/initial-infrastructure/README.md) until implemented.
+Planned specifications remain under [`tasks/`](../tasks/) until implemented.

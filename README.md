@@ -2,7 +2,6 @@
 
 AiNetReview is a local command-line tool that loads a C# solution, runs its configured review rules against one immutable source view, and publishes Markdown reports. Its first production review rule reports methods that stand out in control-flow decisions or nesting as candidates for human review.
 
-- [Initial infrastructure specification](tasks/initial-infrastructure/README.md)
 - [Current-state documentation](docs/README.md)
 - [Agent instructions](AGENTS.md)
 

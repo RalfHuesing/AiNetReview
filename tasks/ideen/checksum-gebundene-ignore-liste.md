@@ -1,6 +1,6 @@
 # Checksum-gebundene Ignore-Liste statt Finding-Historie
 
-Status: Produktidee, keine verbindliche Spezifikation und kein implementiertes Verhalten. Sie ist eine mögliche Vereinfachung des bisherigen [Finding- und Storage-Konzepts](../initial-infrastructure/AiNetReview-Konzept.md), falls echte Audits auf großen Repositories Bedarf für die Unterdrückung wiederholter Kandidaten zeigen.
+Status: Produktidee, keine verbindliche Spezifikation und kein implementiertes Verhalten. Sie ist eine mögliche Vereinfachung des bisherigen Finding- und Storage-Konzepts, falls echte Audits auf großen Repositories Bedarf für die Unterdrückung wiederholter Kandidaten zeigen.
 
 ## Motivation
 
@@ -31,7 +31,7 @@ Ein Hash über die **gesamte Datei** ist einfach und konservativ: Auch eine Änd
 
 Wenn sich die Bedeutung einer Regel ändert, darf eine alte Akzeptanz nicht still weitergelten. Eine Regelversion im Eintrag wäre ein einfacher Mechanismus. Ob Änderungen wirksamer Regeloptionen die Akzeptanz ebenfalls verfallen lassen, ist zu entscheiden.
 
-Die vorhandene `ainetreview.json` ist laut [Epic 1](../initial-infrastructure/epics/01-Eingaben-und-Host.md) eine streng validierte Eingabekonfiguration und wird vom Tool nicht verändert. Eine **separate Ignore-JSON** erscheint deshalb passender als ein vom CLI bearbeiteter Abschnitt in dieser Datei. Ablageort, Dateiname und Git-Handhabung bleiben offen; die Liste sollte leicht versionierbar sein und keine Git-Laufzeitabhängigkeit erzeugen.
+Die vorhandene `ainetreview.json` ist eine streng validierte Eingabekonfiguration und wird vom Tool nicht verändert. Eine **separate Ignore-JSON** erscheint deshalb passender als ein vom CLI bearbeiteter Abschnitt in dieser Datei. Ablageort, Dateiname und Git-Handhabung bleiben offen; die Liste sollte leicht versionierbar sein und keine Git-Laufzeitabhängigkeit erzeugen.
 
 ## Entscheidung anhand der Praxis
 

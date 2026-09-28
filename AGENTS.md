@@ -7,7 +7,6 @@ This repository contains product specifications, an implemented command-line hos
 - [Project status and entry points](README.md)
 - [Current-state documentation index](docs/README.md)
 - [Agent rules](.agents/rules/README.md)
-- [Initial infrastructure specification](tasks/initial-infrastructure/README.md)
 - [Optional task workflow](.agents/agent-workflow/README.md); use a step only when the task invokes it
 
 ## Required rules

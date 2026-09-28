@@ -16,5 +16,5 @@ alwaysApply: true
 
 ## AiNetLinter as a reference
 
-- Before implementing a matching infrastructure component, inspect its AiNetLinter implementation and relevant tests as directed by [Epic 4](../../tasks/initial-infrastructure/epics/04-Umsetzung-und-Abnahme.md#ainetlinter-als-referenz).
+- Before implementing a matching infrastructure component, inspect its AiNetLinter implementation and relevant tests.
 - Do not copy AiNetLinter architecture, rule semantics, build gates, custom protocol or CLI parsing, or code that conflicts with AiNetReview contracts. Adapt only useful mechanisms and verify them with AiNetReview tests.

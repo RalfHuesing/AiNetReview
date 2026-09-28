@@ -1,10 +1,10 @@
 # Ideen für erste fachliche Review-Signale
 
-Status: Ideensammlung, keine verbindliche Spezifikation und kein implementiertes Produktverhalten. Die [bestehende Konzeption](../initial-infrastructure/AiNetReview-Konzept.md) und ihre Epics bleiben maßgeblich. Der initiale Produktstand enthält bewusst noch keine fachliche Regel.
+Status: Ideensammlung, keine verbindliche Spezifikation und kein implementiertes Produktverhalten. Der initiale Produktstand enthielt bewusst noch keine fachliche Regel.
 
 ## Ziel
 
-AiNetReview soll einem Agenten nach einem Entwicklungstask Stellen zeigen, die eine Prüfung im Zusammenhang verdienen. Eine Messung ist weder ein Fehlernachweis noch ein Refactoring-Auftrag. Insbesondere sind feste Grenzen wie `max-method-length`, `max-class-length` oder `max-file-length` ungeeignet, wenn ihre Überschreitung als unmittelbar zu behebender Verstoß behandelt wird. Das [Relaunch-Konzept](../initial-infrastructure/Relaunch-Konzept.md) beschreibt das Risiko: Eine Methode wird wegen einer Längengrenze mechanisch geteilt, danach eine Datei wegen der nächsten Grenze in Partial-Klassen zerlegt, ohne die eigentliche Verantwortung zu prüfen.
+AiNetReview soll einem Agenten nach einem Entwicklungstask Stellen zeigen, die eine Prüfung im Zusammenhang verdienen. Eine Messung ist weder ein Fehlernachweis noch ein Refactoring-Auftrag. Insbesondere sind feste Grenzen wie `max-method-length`, `max-class-length` oder `max-file-length` ungeeignet, wenn ihre Überschreitung als unmittelbar zu behebender Verstoß behandelt wird. Das ursprüngliche Konzept beschreibt das Risiko: Eine Methode wird wegen einer Längengrenze mechanisch geteilt, danach eine Datei wegen der nächsten Grenze in Partial-Klassen zerlegt, ohne die eigentliche Verantwortung zu prüfen.
 
 Die erste fachliche Auswertung sollte deshalb alle nach einem nachvollziehbaren Kriterium relevanten Kandidaten liefern. Eine feste Höchstzahl würde weitere relevante Stellen verbergen. Der Agent liest die betroffenen Stellen und ihre Aufrufer, prüft Absicht und Verantwortung und bespricht erst dann mit dem Nutzer, ob überhaupt Handlungsbedarf besteht.
 
