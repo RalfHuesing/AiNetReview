@@ -30,4 +30,4 @@ Markup binding analysis and candidate selection; changes to the AiNetLinter repo
 - [x] Inspect current loader, context, configuration and relevant AiNetLinter markup behavior.
 - [x] Implement this scope and update affected current-state documentation in the same slice.
 - [x] Run focused tests and required project gates; review the diff and `git diff --check`.
-- [x] Close this leaf after acceptance is verified; keep the parent milestone open until its sibling leaf and audit are complete, then commit explicit task paths.
+- [x] The leaf and its roadmap link are closed, and this slice is committed; keep the parent milestone open until M1-T2 and the audit are complete.
