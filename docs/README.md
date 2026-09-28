@@ -1,6 +1,6 @@
 # Current-state documentation
 
-The host initializes executable-relative Serilog file logging, but command handling is still a placeholder. Core currently provides explicit rule registration, strict configuration validation, project path boundaries, Git-independent `.sln`/`.slnx` loading with compilation checks, and a stateless rule runner. Reports and the functional CLI are not implemented yet.
+The host initializes executable-relative Serilog file logging, but command handling is still a placeholder. Core currently provides explicit rule registration, strict configuration validation, project path boundaries, Git-independent `.sln`/`.slnx` loading with materialized source text and compilation checks, and a stateless rule runner. Reports and the functional CLI are not implemented yet.
 
 | Area | Pages |
 | --- | --- |

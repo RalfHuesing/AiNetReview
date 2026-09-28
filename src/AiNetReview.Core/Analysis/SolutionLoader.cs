@@ -46,10 +46,23 @@ public sealed class SolutionLoader
             }
 
             ValidateSourceBoundaries(solution, config);
-            foreach (var project in solution.Projects.Where(static project => project.Language == LanguageNames.CSharp))
+            var csharpProjects = solution.Projects
+                .Where(static project => project.Language == LanguageNames.CSharp)
+                .ToArray();
+            if (csharpProjects.Length == 0)
+            {
+                throw new AnalysisFailedException("Solution does not contain a C# project.");
+            }
+
+            solution = await MaterializeSourceTextsAsync(solution, csharpProjects, cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var project in csharpProjects)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var compilation = await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false)
+                var loadedProject = solution.GetProject(project.Id)
+                    ?? throw new AnalysisFailedException($"Project '{project.Name}' could not be read from the loaded solution.");
+                var compilation = await loadedProject.GetCompilationAsync(cancellationToken).ConfigureAwait(false)
                     ?? throw new AnalysisFailedException($"Compilation could not be created for project '{project.Name}'.");
                 var errors = compilation.GetDiagnostics(cancellationToken)
                     .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
@@ -87,6 +100,24 @@ public sealed class SolutionLoader
             workspace.Dispose();
             throw new AnalysisFailedException("Solution could not be loaded or analyzed completely.", ex);
         }
+    }
+
+    private static async Task<Solution> MaterializeSourceTextsAsync(
+        Solution solution,
+        IReadOnlyCollection<Project> csharpProjects,
+        CancellationToken cancellationToken)
+    {
+        foreach (var project in csharpProjects)
+        {
+            foreach (var document in project.Documents)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var sourceText = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
+                solution = solution.WithDocumentText(document.Id, sourceText, PreservationMode.PreserveIdentity);
+            }
+        }
+
+        return solution;
     }
 
     private static MSBuildWorkspace CreateWorkspace()

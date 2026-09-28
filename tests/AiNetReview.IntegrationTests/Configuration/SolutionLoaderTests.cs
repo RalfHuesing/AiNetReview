@@ -19,6 +19,7 @@ public sealed class SolutionLoaderTests
     {
         using var temp = TestTempDirectory.Create();
         var root = await CreateProjectAsync(temp, extension, "namespace Sample; public sealed class SampleType { }");
+        Assert.False(Directory.Exists(Path.Combine(root, ".git")));
         var config = new ReviewConfigValidator(Registry()).Validate(root, ConfigurationJson($"Sample{extension}"));
 
         using var loaded = await new SolutionLoader().LoadAsync(config);
@@ -34,13 +35,75 @@ public sealed class SolutionLoaderTests
         var root = await CreateProjectAsync(
             temp,
             ".slnx",
-            "namespace Sample; public sealed class Broken { Missing.Library.Type Value = new(); }",
+            "namespace Sample; public sealed class Broken { public int Value => Missing; }");
+        var config = new ReviewConfigValidator(Registry()).Validate(root, ConfigurationJson("Sample.slnx"));
+
+        var error = await Assert.ThrowsAsync<AnalysisFailedException>(() => new SolutionLoader().LoadAsync(config));
+
+        Assert.Contains("compilation error", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task LoadAsync_ReportsMissingProjectReferencesAsAnalysisFailure()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(
+            temp,
+            ".slnx",
+            "namespace Sample; public sealed class SampleType { public Missing.Library.Type Value { get; } = new(); }",
             addMissingReference: true);
         var config = new ReviewConfigValidator(Registry()).Validate(root, ConfigurationJson("Sample.slnx"));
 
         var error = await Assert.ThrowsAsync<AnalysisFailedException>(() => new SolutionLoader().LoadAsync(config));
 
         Assert.Contains("compilation error", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task LoadAsync_MapsMalformedSolutionToAnalysisFailure()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
+        var config = new ReviewConfigValidator(Registry()).Validate(root, ConfigurationJson("Sample.slnx"));
+        await File.WriteAllTextAsync(config.ResolvedSolutionPath, "<Solution><Project>");
+
+        var error = await Assert.ThrowsAsync<AnalysisFailedException>(() => new SolutionLoader().LoadAsync(config));
+
+        Assert.Contains("loaded", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task LoadAsync_RejectsSolutionWithoutCSharpProjects()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = temp.GetPath("empty-solution");
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "Empty.slnx"), "<Solution />");
+        var config = new ReviewConfigValidator(Registry()).Validate(root, ConfigurationJson("Empty.slnx"));
+
+        var error = await Assert.ThrowsAsync<AnalysisFailedException>(() => new SolutionLoader().LoadAsync(config));
+
+        Assert.Contains("does not contain a C# project", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task LoadAsync_MaterializesSourceTextBeforeReturningImmutableSolution()
+    {
+        using var temp = TestTempDirectory.Create();
+        const string originalSource = "namespace Sample; public sealed class OriginalType { }";
+        var root = await CreateProjectAsync(temp, ".slnx", originalSource);
+        var sourcePath = Path.Combine(root, "Sample", "Class1.cs");
+        var config = new ReviewConfigValidator(Registry()).Validate(root, ConfigurationJson("Sample.slnx"));
+
+        using var loaded = await new SolutionLoader().LoadAsync(config);
+        var document = Assert.Single(
+            Assert.Single(loaded.Solution.Projects).Documents,
+            candidate => string.Equals(candidate.FilePath, sourcePath, StringComparison.OrdinalIgnoreCase));
+        await File.WriteAllTextAsync(sourcePath, "namespace Sample; public sealed class ChangedType { }");
+
+        var loadedText = await document.GetTextAsync();
+
+        Assert.Equal(originalSource, loadedText.ToString());
     }
 
     [Fact]
