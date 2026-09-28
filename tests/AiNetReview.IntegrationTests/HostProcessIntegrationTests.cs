@@ -12,7 +12,7 @@ public sealed class HostProcessIntegrationTests
     [Fact]
     public async Task ProcessInvocation_WithRepositoryConfigurationPublishesAnIgnoredTimestampedRun()
     {
-        var repositoryRoot = FindRepositoryRoot();
+        var repositoryRoot = SolutionRootLocator.Find();
         var configPath = Path.Combine(repositoryRoot, "ainetreview.json");
         var executablePath = Path.Combine(
             repositoryRoot,
@@ -265,22 +265,6 @@ public sealed class HostProcessIntegrationTests
         await RestoreProjectAsync(projectFile, project);
         await File.WriteAllTextAsync(Path.Combine(root, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         return root;
-    }
-
-    private static string FindRepositoryRoot()
-    {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current is not null)
-        {
-            if (File.Exists(Path.Combine(current.FullName, "AiNetReview.slnx")))
-            {
-                return current.FullName;
-            }
-
-            current = current.Parent;
-        }
-
-        throw new DirectoryNotFoundException("Could not locate the AiNetReview repository root from the IntegrationTests output directory.");
     }
 
     private static async Task<string> CreateConfigAsync(string projectRoot)
