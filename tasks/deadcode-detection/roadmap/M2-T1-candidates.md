@@ -22,12 +22,12 @@ Indirect Reflection, DI or markup binding; suppression comments; automatic code 
 
 ## Acceptance
 
-- [ ] Focused tests cover true type and method candidates, extension methods, method groups, test/generated uses, type grouping, self-reference behavior and excluded declaration categories.
-- [ ] Tests cover both API policies and global versus local coverage uncertainty without copying the AiNetLinter test matrix.
+- [x] Focused tests cover true type and method candidates, extension methods, method groups, test/generated uses, type grouping, self-reference behavior and excluded declaration categories.
+- [x] Tests cover both API policies and global versus local coverage uncertainty without copying the AiNetLinter test matrix.
 
 ## Checklist
 
-- [ ] Inspect the current rule/option contracts and the relevant AiNetLinter candidate and API-policy behavior.
-- [ ] Implement this scope and update affected current-state documentation in the same slice.
-- [ ] Run focused tests and required project gates; review the diff and `git diff --check`.
-- [ ] Close this leaf and its parent roadmap checkbox only after acceptance is verified; commit explicit task paths.
+- [x] Inspect the current rule/option contracts and the relevant AiNetLinter candidate and API-policy behavior.
+- [x] Implement this scope and update affected current-state documentation in the same slice.
+- [x] Run focused tests and required project gates; review the diff and `git diff --check`.
+- [x] Close this leaf and its parent roadmap checkbox only after acceptance is verified; commit explicit task paths.

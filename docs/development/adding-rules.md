@@ -10,4 +10,6 @@ Rule IDs are lowercase ASCII slugs: lowercase letters and digits separated by si
 
 Rules that need shared type or method usage information can build `SolutionReferenceIndex` from the `ReviewContext`. It covers all C# projects and source-generated documents, preserves production/test and generated-source provenance, distinguishes method groups and containing-type references, and exposes symbol-local unresolved bindings. Index creation fails when a project compilation or document syntax/semantic model cannot be obtained.
 
+Core also defines `DeadCodeCandidatesRule`. Its candidate selection uses direct solution-wide references, groups an unused type with its methods, skips generated declarations and non-production projects, and protects public API by default through the `apiSurface` option. The production registration and indirect-use handling are separate implementation slices.
+
 Register product rules explicitly through `ServiceRegistration.AddAiNetReviewRules`. `ServiceRegistration.AddAiNetReviewServices` registers the shared `RuleRegistry`. The registry rejects invalid or duplicate rule IDs and exposes its rules in ordinal ID order. The integration test project can add its fixture rule through an explicit test-only DI registration; the production registration currently contains `method-control-flow-outliers`.

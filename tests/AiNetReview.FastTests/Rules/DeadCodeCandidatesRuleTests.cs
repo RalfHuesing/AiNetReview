@@ -1,0 +1,270 @@
+namespace AiNetReview.FastTests.Rules;
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Text.Json;
+using AiNetReview.Core.Analysis;
+using AiNetReview.Core.Rules.DeadCodeCandidates;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Text;
+
+public sealed class DeadCodeCandidatesRuleTests
+{
+    [Fact]
+    public async Task ExecuteAsync_GroupsUnreferencedTypeAndSelectsOnlyUnreferencedOrdinaryMethods()
+    {
+        using var fixture = CreateFixture(
+            ("Product", "Product", """
+                namespace Product;
+                internal sealed class Orphan
+                {
+                    public void MemberOne() { }
+                    private void MemberTwo() { }
+                    private void SelfReference() { _ = typeof(Orphan); }
+                }
+                public sealed class Used
+                {
+                    private void UnusedPrivate() { }
+                    public void UsedFromTest() { }
+                    private void MethodGroupTarget() { }
+                    private void Uncertain(string value) { }
+                    private void Unrelated() { }
+                    public void BindUncertainly() { Uncertain(42); }
+                }
+                internal static class Extensions
+                {
+                    public static void ExtensionTarget(this Used value) { }
+                    public static void ExtensionCandidate(this Used value) { }
+                }
+                """, null),
+            ("Product.Tests", "Product.Tests", """
+                using System;
+                using Product;
+                public sealed class References
+                {
+                    private readonly Action callback = Used.MethodGroupTarget;
+                    public void Run(Used value) { value.UsedFromTest(); }
+                }
+                """, null),
+            ("GeneratedConsumer", "GeneratedConsumer", """
+                using Product;
+                public sealed class GeneratedConsumer { public void Run(Used value) { value.ExtensionTarget(); } }
+                """, "GeneratedConsumer.g.cs"));
+        var rule = new DeadCodeCandidatesRule();
+
+        var result = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+
+        var orphan = Assert.Single(result.Findings, static finding => finding.SubjectId.Contains("Orphan", StringComparison.Ordinal));
+        Assert.Equal("type-candidate", orphan.Discriminator);
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("MemberOne", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("MemberTwo", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("SelfReference", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("UsedFromTest", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("MethodGroupTarget", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("ExtensionTarget", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Uncertain", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("UnusedPrivate", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Unrelated", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("ExtensionCandidate", StringComparison.Ordinal));
+        Assert.Equal(result.Findings.OrderBy(static finding => finding.ProjectPath, StringComparer.Ordinal)
+            .ThenBy(static finding => finding.SourcePath, StringComparer.Ordinal)
+            .ThenBy(static finding => finding.StartLine)
+            .ThenBy(static finding => finding.SubjectId, StringComparer.Ordinal).Select(static finding => finding.SubjectId),
+            result.Findings.Select(static finding => finding.SubjectId));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_UsesExternalLibraryApiPolicyByDefaultAndClosedSolutionIncludesPublicSurface()
+    {
+        using var fixture = CreateFixture(("Product", "Product", """
+            public sealed class PublicApi
+            {
+                public void PublicMethod() { }
+                protected void ProtectedMethod() { }
+                protected internal void ProtectedInternalMethod() { }
+                internal void InternalMethod() { }
+                private protected void PrivateProtectedMethod() { }
+            }
+            public sealed class UnusedPublicType { }
+            public sealed class ApiConsumer { public void Run(PublicApi value) { } }
+            internal sealed class InternalContainer { public void PublicMember() { } }
+            public sealed class Consumer { public void Run() { _ = new InternalContainer(); } }
+            """, null));
+        var rule = new DeadCodeCandidatesRule();
+
+        var defaultResult = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+        var closedResult = await rule.ExecuteAsync(
+            fixture.Context,
+            rule.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]),
+            CancellationToken.None);
+
+        Assert.DoesNotContain(defaultResult.Findings, static finding => finding.SubjectId == "T:UnusedPublicType");
+        Assert.DoesNotContain(defaultResult.Findings, static finding => finding.SubjectId.Contains("PublicMethod", StringComparison.Ordinal));
+        Assert.Contains(defaultResult.Findings, static finding => finding.SubjectId.Contains("InternalMethod", StringComparison.Ordinal));
+        Assert.Contains(defaultResult.Findings, static finding => finding.SubjectId.Contains("PrivateProtectedMethod", StringComparison.Ordinal));
+        Assert.Contains(closedResult.Findings, static finding => finding.SubjectId == "T:UnusedPublicType");
+        Assert.Contains(closedResult.Findings, static finding => finding.SubjectId.Contains("PublicMethod", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ExcludesInterfaceContractsImplementationsOverridesEntryPointsAndGeneratedDeclarations()
+    {
+        using var fixture = CreateFixture(("Product", "Product", """
+            public interface IContract { void ContractMethod(); }
+            public class Implementation : IContract
+            {
+                public void ContractMethod() { }
+                public virtual void BaseMethod() { }
+            }
+            public class Derived : Implementation
+            {
+                public override void BaseMethod() { }
+            }
+            public static class Program
+            {
+                public static void Main() { }
+            }
+            public class Referenced
+            {
+                public const int Constant = 1;
+                public int Field;
+                public int Property { get; set; }
+                public event Action? Changed;
+                public int this[int index] { get => index; set { } }
+                public Referenced() { }
+                public static Referenced operator +(Referenced left, Referenced right) => left;
+                ~Referenced() { }
+                public void Use() { }
+            }
+            public sealed class Consumer { public void Run(Referenced value) { value.Use(); _ = value.Property; } }
+            """, null), ("Product.Generated", "Product.Generated", """
+            namespace Generated;
+            public class GeneratedType { public void GeneratedMethod() { } }
+            """, "GeneratedThing.g.cs"));
+        var rule = new DeadCodeCandidatesRule();
+
+        var result = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("ContractMethod", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("BaseMethod", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Main", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("GeneratedType", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("GeneratedMethod", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Constant", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Field", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Property", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Changed", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Item", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains(".ctor", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("op_Addition", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Finalize", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_SkipsSymbolWithLocalBindingUncertaintyAndFailsWhenGlobalReferenceCoverageIsUnavailable()
+    {
+        using var fixture = CreateFixture(("Product", "Product", """
+            public class Example
+            {
+                private void Uncertain(string value) { }
+                private void Use() { Uncertain(42); }
+            }
+            """, null));
+        var rule = new DeadCodeCandidatesRule();
+
+        var localResult = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+        using var emptyWorkspace = new AdhocWorkspace();
+        using var root = TestTempDirectory.Create();
+        var noCoverage = new ReviewContext(emptyWorkspace.CurrentSolution, root.DirectoryPath);
+
+        await Assert.ThrowsAsync<AnalysisFailedException>(() =>
+            rule.ExecuteAsync(noCoverage, rule.Descriptor.ResolveOptions(), CancellationToken.None));
+        Assert.DoesNotContain(localResult.Findings, static finding => finding.SubjectId.Contains("Uncertain", StringComparison.Ordinal));
+        Assert.Contains(localResult.Findings, static finding => finding.SubjectId == "M:Example.Use");
+    }
+
+    [Fact]
+    public void Descriptor_AcceptsOnlySupportedApiSurfaceValues()
+    {
+        var descriptor = new DeadCodeCandidatesRule().Descriptor;
+
+        Assert.Equal("external_library", descriptor.ResolveOptions()["apiSurface"].GetString());
+        Assert.Equal("closed_solution", descriptor.ResolveOptions([
+            new("apiSurface", JsonSerializer.SerializeToElement("closed_solution")),
+        ])["apiSurface"].GetString());
+        Assert.Throws<ArgumentException>(() => descriptor.ResolveOptions([
+            new("apiSurface", JsonSerializer.SerializeToElement("Closed_Solution")),
+        ]));
+    }
+
+    private static RuleFixture CreateFixture(params (string Name, string Assembly, string Source, string? FileName)[] projects)
+    {
+        var workspace = new AdhocWorkspace();
+        var root = TestTempDirectory.Create();
+        var projectIds = projects.ToDictionary(static project => project.Name, static _ => ProjectId.CreateNewId(), StringComparer.Ordinal);
+        foreach (var spec in projects)
+        {
+            workspace.AddProject(ProjectInfo.Create(
+                projectIds[spec.Name],
+                VersionStamp.Create(),
+                spec.Name,
+                spec.Assembly,
+                LanguageNames.CSharp,
+                filePath: Path.Combine(root.DirectoryPath, spec.Name + ".csproj"),
+                compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+                parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
+                metadataReferences: PlatformReferences()));
+        }
+
+        foreach (var spec in projects)
+        {
+            var name = spec.FileName ?? spec.Name + ".cs";
+            workspace.AddDocument(DocumentInfo.Create(
+                DocumentId.CreateNewId(projectIds[spec.Name]),
+                name,
+                filePath: Path.Combine(root.DirectoryPath, name),
+                loader: TextLoader.From(TextAndVersion.Create(SourceText.From(spec.Source), VersionStamp.Create()))));
+        }
+
+        var solution = workspace.CurrentSolution;
+        var productionId = projectIds[projects[0].Name];
+        foreach (var referencedProject in projects.Skip(1))
+        {
+            solution = solution.AddProjectReference(projectIds[referencedProject.Name], new ProjectReference(productionId));
+        }
+
+        Assert.True(workspace.TryApplyChanges(solution));
+        return new RuleFixture(workspace, new ReviewContext(workspace.CurrentSolution, root.DirectoryPath), root);
+    }
+
+    private static IEnumerable<MetadataReference> PlatformReferences() =>
+        ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))!
+        .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+        .Where(static path =>
+        {
+            var name = Path.GetFileNameWithoutExtension(path);
+            return !name.StartsWith("xunit", StringComparison.OrdinalIgnoreCase)
+                && !name.StartsWith("nunit", StringComparison.OrdinalIgnoreCase)
+                && !name.StartsWith("mstest", StringComparison.OrdinalIgnoreCase)
+                && !name.StartsWith("microsoft.testplatform", StringComparison.OrdinalIgnoreCase)
+                && !name.StartsWith("microsoft.visualstudio.testplatform", StringComparison.OrdinalIgnoreCase)
+                && !name.StartsWith("microsoft.visualstudio.testtools.unittesting", StringComparison.OrdinalIgnoreCase)
+                && !name.StartsWith("microsoft.testing", StringComparison.OrdinalIgnoreCase);
+        })
+        .Select(static path => MetadataReference.CreateFromFile(path));
+
+    private sealed class RuleFixture(AdhocWorkspace workspace, ReviewContext context, IDisposable root) : IDisposable
+    {
+        public ReviewContext Context { get; } = context;
+
+        public void Dispose()
+        {
+            workspace.Dispose();
+            root.Dispose();
+        }
+    }
+}
