@@ -6,12 +6,15 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AiNetReview.Core.Configuration;
+using AiNetReview.Core.Findings;
 using AiNetReview.Core.Rules;
 using Microsoft.CodeAnalysis;
 
 /// <summary>Runs configured rules against one loaded solution without retaining results between calls.</summary>
 public sealed class ReviewRunner
 {
+    private readonly CurrentFindingValidator findingValidator = new();
+
     public async Task<ReviewRunResult> RunAsync(
         ReviewConfig config,
         LoadedSolution loadedSolution,
@@ -56,7 +59,12 @@ public sealed class ReviewRunner
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            results.Add(new RuleRunResult(configuredRule.RuleId, result));
+            var findings = await findingValidator.ValidateAndSortAsync(
+                configuredRule.RuleId,
+                context,
+                result.Findings,
+                cancellationToken).ConfigureAwait(false);
+            results.Add(new RuleRunResult(configuredRule.RuleId, new RuleResult(findings)));
         }
 
         return new ReviewRunResult(Array.AsReadOnly(results.ToArray()));
@@ -67,6 +75,12 @@ public sealed class ReviewRunner
         : StringComparer.Ordinal;
 }
 
-public sealed record RuleRunResult(string RuleId, RuleResult Result);
+public sealed record RuleRunResult(string RuleId, RuleResult Result)
+{
+    public int DetectedCount => Result.Findings.Count;
+}
 
-public sealed record ReviewRunResult(IReadOnlyList<RuleRunResult> Rules);
+public sealed record ReviewRunResult(IReadOnlyList<RuleRunResult> Rules)
+{
+    public int DetectedCount => Rules.Sum(static rule => rule.DetectedCount);
+}

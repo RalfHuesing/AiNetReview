@@ -27,19 +27,81 @@ public sealed class ReviewRunnerTests
 
         var firstRun = await runner.RunAsync(config, loaded);
         var repeatedRun = await runner.RunAsync(config, loaded);
+        var noOpRun = await runner.RunAsync(CreateConfig(root, [new TemplateNoOpRule()]), loaded);
 
         var firstResult = Assert.Single(firstRun.Rules).Result;
         var repeatedResult = Assert.Single(repeatedRun.Rules).Result;
+        Assert.Equal(2, firstRun.DetectedCount);
+        Assert.Equal(2, Assert.Single(firstRun.Rules).DetectedCount);
         Assert.Equal(2, firstResult.Findings.Count);
         Assert.Equal(2, repeatedResult.Findings.Count);
         Assert.Equal(
             firstResult.Findings.Select(static finding => finding.SubjectId),
             repeatedResult.Findings.Select(static finding => finding.SubjectId));
         Assert.All(firstResult.Findings, finding => Assert.Single(finding.Evidence));
+        Assert.Contains("FixtureCaseA", firstResult.Findings[0].SubjectId, StringComparison.Ordinal);
+        Assert.Contains("FixtureCaseB", firstResult.Findings[1].SubjectId, StringComparison.Ordinal);
 
         var emptyConfig = CreateConfig(root, [new FixtureFindingRule()], "none");
         var emptyRun = await runner.RunAsync(emptyConfig, loaded);
         Assert.Empty(Assert.Single(emptyRun.Rules).Result.Findings);
+        Assert.Equal(0, emptyRun.DetectedCount);
+        Assert.Equal(0, noOpRun.DetectedCount);
+        Assert.Empty(Assert.Single(noOpRun.Rules).Result.Findings);
+    }
+
+    [Fact]
+    public async Task RunAsync_ValidatesUniqueFindingsAndSortsThemDeterministically()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp);
+        var rule = new TestFindingRule("ordered-rule", [
+            CreateFinding("Sample/FixtureCases.cs", "B", 5, "FixtureCaseB"),
+            CreateFinding("Sample/FixtureCases.cs", "A", 4, "FixtureCaseA"),
+        ]);
+        var config = CreateConfig(root, [rule]);
+        using var loaded = await new SolutionLoader().LoadAsync(config);
+
+        var result = await new ReviewRunner().RunAsync(config, loaded);
+
+        var findings = Assert.Single(result.Rules).Result.Findings;
+        Assert.Equal(new[] { "A", "B" }, findings.Select(static finding => finding.SubjectId));
+    }
+
+    [Fact]
+    public async Task RunAsync_RejectsDuplicateAndInvalidFindingDrafts()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp);
+        var finding = CreateFinding("Sample/FixtureCases.cs", "A", 4, "FixtureCaseA");
+        using var loaded = await new SolutionLoader().LoadAsync(CreateConfig(root, [new TestFindingRule("duplicate-rule", [finding, finding])]));
+
+        await Assert.ThrowsAsync<AnalysisFailedException>(() => new ReviewRunner().RunAsync(
+            CreateConfig(root, [new TestFindingRule("duplicate-rule", [finding, finding])]), loaded));
+
+        var invalidEvidence = new FindingDraft(
+            "Sample/Sample.csproj",
+            "Sample/FixtureCases.cs",
+            "invalid",
+            "invalid",
+            4,
+            "Invalid fixture finding.",
+            new Dictionary<string, double> { ["metric"] = 1 },
+            [new FindingEvidence("Sample/FixtureCases.cs", 4, "Fixture", "Invalid source evidence", "not in loaded source")]);
+        await Assert.ThrowsAsync<AnalysisFailedException>(() => new ReviewRunner().RunAsync(
+            CreateConfig(root, [new TestFindingRule("invalid-rule", [invalidEvidence])]), loaded));
+
+        var invalidMetric = new FindingDraft(
+            "Sample/Sample.csproj",
+            "Sample/FixtureCases.cs",
+            "invalid-metric",
+            "invalid",
+            4,
+            "Invalid fixture finding.",
+            new Dictionary<string, double> { ["metric"] = double.NaN },
+            [new FindingEvidence("Sample/FixtureCases.cs", 4, "Fixture", "Valid source evidence", "FixtureCaseA")]);
+        await Assert.ThrowsAsync<AnalysisFailedException>(() => new ReviewRunner().RunAsync(
+            CreateConfig(root, [new TestFindingRule("invalid-metric-rule", [invalidMetric])]), loaded));
     }
 
     [Fact]
@@ -105,6 +167,16 @@ public sealed class ReviewRunnerTests
         return root;
     }
 
+    private static FindingDraft CreateFinding(string sourcePath, string id, int line, string snippet) => new(
+        "Sample/Sample.csproj",
+        sourcePath,
+        id,
+        "case",
+        line,
+        $"Fixture finding {id}.",
+        new Dictionary<string, double> { ["count"] = 1 },
+        [new FindingEvidence(sourcePath, line, "Fixture", $"Evidence for {id}", snippet)]);
+
     private static async Task RestoreAsync(string projectFile, string workingDirectory)
     {
         var startInfo = new ProcessStartInfo("dotnet")
@@ -154,6 +226,25 @@ public sealed class ReviewRunnerTests
             }
 
             return RuleResult.Empty;
+        }
+    }
+
+    private sealed class TestFindingRule : IReviewRule
+    {
+        private readonly IReadOnlyList<FindingDraft> findings;
+
+        internal TestFindingRule(string ruleId, IReadOnlyList<FindingDraft> findings)
+        {
+            this.findings = findings;
+            Descriptor = new RuleDescriptor(ruleId, "Finding Rule", 1, "Produces test findings.", "Counts fixture cases.", ["Are findings current?"]);
+        }
+
+        public RuleDescriptor Descriptor { get; }
+
+        public Task<RuleResult> ExecuteAsync(ReviewContext context, RuleOptions options, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new RuleResult(findings));
         }
     }
 }
