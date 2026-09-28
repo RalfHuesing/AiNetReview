@@ -11,19 +11,15 @@ public sealed class ReviewConfig
         string projectRoot,
         string solutionPath,
         string outputDirectory,
-        string storageDirectory,
         string resolvedSolutionPath,
         string resolvedOutputDirectory,
-        string resolvedStorageDirectory,
         IReadOnlyList<ConfiguredRule> rules)
     {
         ProjectRoot = projectRoot;
         SolutionPath = solutionPath;
         OutputDirectory = outputDirectory;
-        StorageDirectory = storageDirectory;
         ResolvedSolutionPath = resolvedSolutionPath;
         ResolvedOutputDirectory = resolvedOutputDirectory;
-        ResolvedStorageDirectory = resolvedStorageDirectory;
         Rules = rules;
     }
 
@@ -33,13 +29,9 @@ public sealed class ReviewConfig
 
     public string OutputDirectory { get; }
 
-    public string StorageDirectory { get; }
-
     public string ResolvedSolutionPath { get; }
 
     public string ResolvedOutputDirectory { get; }
-
-    public string ResolvedStorageDirectory { get; }
 
     public IReadOnlyList<ConfiguredRule> Rules { get; }
 }

@@ -14,16 +14,13 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 public sealed class FixtureFindingRule : IReviewRule
 {
-    private readonly string comparisonTextSuffix;
-
-    public FixtureFindingRule(int behaviorVersion = 1, string comparisonTextSuffix = "")
+    public FixtureFindingRule(int behaviorVersion = 1)
     {
-        this.comparisonTextSuffix = comparisonTextSuffix;
         Descriptor = new RuleDescriptor(
             ruleId: "fixture-finding",
             title: "Fixture Finding",
             behaviorVersion: behaviorVersion,
-            purpose: "Provides a test-only rule for verifying finding identity and reconciliation.",
+            purpose: "Provides a test-only rule for verifying current finding reports.",
             measurement: "Emits one finding for each named fixture method.",
             reviewQuestions: ["Does this fixture method still require review?"],
             options: [RuleOptionDescriptor.String("scenario", "Fixture scenario", "base")]);
@@ -79,7 +76,6 @@ public sealed class FixtureFindingRule : IReviewRule
                 }
 
                 var line = method.Identifier.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
-                var snapshot = method.ToFullString();
                 findings.Add(new FindingDraft(
                     projectPath,
                     sourcePath,
@@ -88,11 +84,7 @@ public sealed class FixtureFindingRule : IReviewRule
                     line,
                     $"Fixture scenario '{scenario}' requires review of {name}.",
                     new Dictionary<string, double> { ["caseCount"] = 1 },
-                    [new FindingEvidence(sourcePath, line, "Fixture case", name, text.Lines[line - 1].ToString())],
-                    snapshot,
-                    method.ToString() + "|scenario=" + scenario + "|" + comparisonTextSuffix,
-                    fingerprintVersion: 1,
-                    [sourcePath]));
+                    [new FindingEvidence(sourcePath, line, "Fixture case", name, text.Lines[line - 1].ToString())]));
             }
         }
 

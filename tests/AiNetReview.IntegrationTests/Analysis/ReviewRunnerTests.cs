@@ -1,12 +1,9 @@
 namespace AiNetReview.IntegrationTests.Analysis;
 
-using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using AiNetReview.Core.Analysis;
@@ -14,74 +11,39 @@ using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Findings;
 using AiNetReview.Core.Rules;
 using AiNetReview.Core.Rules.TemplateNoOp;
-using AiNetReview.Core.Storage;
 using AiNetReview.IntegrationTests.FixtureRules;
 
 public sealed class ReviewRunnerTests
 {
     [Fact]
-    public async Task RunAsync_ReconcilesTwoIndependentFindingsAndHashesSourceBytes()
+    public async Task RunAsync_ReturnsCurrentRuleResultsWithoutRetainingState()
     {
         using var temp = TestTempDirectory.Create();
         var root = await CreateProjectAsync(temp);
-        var store = new InMemoryFindingStore();
-        var firstRule = new FixtureFindingRule();
-        var config = CreateConfig(root, [firstRule], "base");
+        var rule = new FixtureFindingRule();
+        var config = CreateConfig(root, [rule], "base");
         using var loaded = await new SolutionLoader().LoadAsync(config);
-        var runner = new ReviewRunner(store);
+        var runner = new ReviewRunner();
 
         var firstRun = await runner.RunAsync(config, loaded);
-        var originalIds = firstRun.Observations.Select(static observation => observation.FindingId).ToArray();
-        var repeated = await runner.RunAsync(config, loaded);
+        var repeatedRun = await runner.RunAsync(config, loaded);
 
-        Assert.Equal(2, firstRun.Observations.Count);
-        Assert.Equal(2, firstRun.Events.Count);
-        Assert.All(firstRun.Events, change => Assert.Equal(FindingEventType.New, change.EventType));
-        Assert.Equal(2, originalIds.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(2, repeated.Observations.Count);
-        Assert.Empty(repeated.Events);
-        Assert.Equal(originalIds.Order(StringComparer.Ordinal), repeated.Observations.Select(static item => item.FindingId).Order(StringComparer.Ordinal));
-        var sourceBytes = await File.ReadAllBytesAsync(Path.Combine(root, "Sample", "FixtureCases.cs"));
-        var expectedHash = "sha256:" + Convert.ToHexString(SHA256.HashData(sourceBytes)).ToLowerInvariant();
-        Assert.All(firstRun.Observations, observation => Assert.Equal(expectedHash, Assert.Single(observation.SourceFiles).Sha256));
-        Assert.All(firstRun.Observations, observation => Assert.DoesNotContain('\r', observation.Snapshot));
-
-        var templateOnly = CreateConfig(root, [new TemplateNoOpRule()]);
-        var inactiveRuleRun = await runner.RunAsync(templateOnly, loaded);
-        Assert.Empty(inactiveRuleRun.Events);
-        Assert.Equal(2, inactiveRuleRun.CurrentFindings.Values.Count(static finding => finding.Identity.RuleId == "fixture-finding"));
-        Assert.All(inactiveRuleRun.CurrentFindings.Values.Where(static finding => finding.Identity.RuleId == "fixture-finding"),
-            finding => Assert.Equal(FindingState.Open, finding.State));
-
-        var optionChangedConfig = CreateConfig(root, [new FixtureFindingRule()], "variant");
-        var optionChanged = await runner.RunAsync(optionChangedConfig, loaded);
-        Assert.Equal(2, optionChanged.Events.Count);
-        Assert.All(optionChanged.Events, change => Assert.Equal(FindingEventType.Updated, change.EventType));
-        Assert.Equal(originalIds.Order(StringComparer.Ordinal), optionChanged.Observations.Select(static item => item.FindingId).Order(StringComparer.Ordinal));
-
-        var versionChangedConfig = CreateConfig(root, [new FixtureFindingRule(behaviorVersion: 2)], "variant");
-        var versionChanged = await runner.RunAsync(versionChangedConfig, loaded);
-        Assert.Equal(2, versionChanged.Events.Count);
-        Assert.All(versionChanged.Events, change => Assert.Equal(FindingEventType.Updated, change.EventType));
-
-        var changedRule = new FixtureFindingRule(comparisonTextSuffix: "changed behavior text");
-        var changedConfig = CreateConfig(root, [changedRule], "variant");
-        var changed = await runner.RunAsync(changedConfig, loaded);
-        Assert.Equal(2, changed.Events.Count);
-        Assert.All(changed.Events, change => Assert.Equal(FindingEventType.Updated, change.EventType));
-        Assert.Equal(originalIds.Order(StringComparer.Ordinal), changed.Observations.Select(static item => item.FindingId).Order(StringComparer.Ordinal));
+        var firstResult = Assert.Single(firstRun.Rules).Result;
+        var repeatedResult = Assert.Single(repeatedRun.Rules).Result;
+        Assert.Equal(2, firstResult.Findings.Count);
+        Assert.Equal(2, repeatedResult.Findings.Count);
+        Assert.Equal(
+            firstResult.Findings.Select(static finding => finding.SubjectId),
+            repeatedResult.Findings.Select(static finding => finding.SubjectId));
+        Assert.All(firstResult.Findings, finding => Assert.Single(finding.Evidence));
 
         var emptyConfig = CreateConfig(root, [new FixtureFindingRule()], "none");
-        var resolved = await runner.RunAsync(emptyConfig, loaded);
-        Assert.Empty(resolved.Observations);
-        Assert.Equal(2, resolved.Events.Count);
-        Assert.All(resolved.Events, change => Assert.Equal(FindingEventType.Resolved, change.EventType));
-        var stillResolved = await runner.RunAsync(emptyConfig, loaded);
-        Assert.Empty(stillResolved.Events);
+        var emptyRun = await runner.RunAsync(emptyConfig, loaded);
+        Assert.Empty(Assert.Single(emptyRun.Rules).Result.Findings);
     }
 
     [Fact]
-    public async Task RunAsync_OrdersRulesAndDoesNotCommitIncompleteRuns()
+    public async Task RunAsync_OrdersRulesAndPropagatesIncompleteRuns()
     {
         using var temp = TestTempDirectory.Create();
         var root = await CreateProjectAsync(temp);
@@ -90,32 +52,19 @@ public sealed class ReviewRunnerTests
         var zeta = new TestRule("zeta-rule", calls);
         var config = CreateConfig(root, [zeta, alpha]);
         using var loaded = await new SolutionLoader().LoadAsync(config);
-        var store = new CountingStore();
-        var runner = new ReviewRunner(store);
+        var runner = new ReviewRunner();
 
         var result = await runner.RunAsync(config, loaded);
 
         Assert.Equal(new[] { "alpha-rule", "zeta-rule" }, calls);
-        Assert.Empty(result.Observations);
-        Assert.Empty(result.Events);
-        Assert.Equal(1, store.CommitCount);
+        Assert.Equal(new[] { "alpha-rule", "zeta-rule" }, result.Rules.Select(static rule => rule.RuleId));
 
-        var failure = new TestRule("failure-rule", calls, throwOnRun: true);
-        var failureConfig = CreateConfig(root, [failure]);
-        await Assert.ThrowsAsync<AnalysisFailedException>(() => runner.RunAsync(failureConfig, loaded));
-        Assert.Equal(1, store.CommitCount);
+        var failure = CreateConfig(root, [new TestRule("failure-rule", calls, throwOnRun: true)]);
+        await Assert.ThrowsAsync<AnalysisFailedException>(() => runner.RunAsync(failure, loaded));
 
         using var cancellation = new CancellationTokenSource();
-        var cancelling = new TestRule("cancelling-rule", calls, cancel: cancellation);
-        var cancellationConfig = CreateConfig(root, [cancelling]);
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(cancellationConfig, loaded, cancellation.Token));
-        Assert.Equal(1, store.CommitCount);
-
-        var templateConfig = CreateConfig(root, [new TemplateNoOpRule()]);
-        var noop = await runner.RunAsync(templateConfig, loaded);
-        Assert.Empty(noop.Observations);
-        Assert.Empty(noop.Events);
-        Assert.Equal(2, store.CommitCount);
+        var cancelling = CreateConfig(root, [new TestRule("cancelling-rule", calls, cancel: cancellation)]);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(cancelling, loaded, cancellation.Token));
     }
 
     private static ReviewConfig CreateConfig(string root, IEnumerable<IReviewRule> rules, string? scenario = null)
@@ -129,7 +78,6 @@ public sealed class ReviewRunnerTests
               "schemaVersion": 1,
               "solution": "Sample.slnx",
               "outputDirectory": "reports",
-              "storageDirectory": ".review-store",
               "rules": { {{ruleJson}} }
             }
             """;
@@ -206,22 +154,6 @@ public sealed class ReviewRunnerTests
             }
 
             return RuleResult.Empty;
-        }
-    }
-
-    private sealed class CountingStore : IFindingStore
-    {
-        private readonly InMemoryFindingStore inner = new();
-
-        internal int CommitCount { get; private set; }
-
-        public Task<FindingStoreSnapshot> ReadAsync(string projectRoot, CancellationToken cancellationToken) =>
-            inner.ReadAsync(projectRoot, cancellationToken);
-
-        public Task CommitCompletedRunAsync(string projectRoot, FindingRunCommit run, CancellationToken cancellationToken)
-        {
-            CommitCount++;
-            return inner.CommitCompletedRunAsync(projectRoot, run, cancellationToken);
         }
     }
 }

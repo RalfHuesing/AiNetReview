@@ -11,7 +11,7 @@ public sealed class ReviewConfigValidator
 {
     private static readonly HashSet<string> RootProperties = new(StringComparer.Ordinal)
     {
-        "schemaVersion", "solution", "outputDirectory", "storageDirectory", "rules",
+        "schemaVersion", "solution", "outputDirectory", "rules",
     };
 
     private readonly RuleRegistry registry;
@@ -101,7 +101,6 @@ public sealed class ReviewConfigValidator
 
         var solutionValue = RequiredString(document, "solution");
         var outputValue = RequiredString(document, "outputDirectory");
-        var storageValue = RequiredString(document, "storageDirectory");
         if (!document.TryGetProperty("rules", out var configuredRules))
         {
             throw new InvalidReviewInputException("'rules' is required.");
@@ -126,15 +125,9 @@ public sealed class ReviewConfigValidator
         }
 
         var output = ProjectPathResolver.ResolveRelative(root, outputValue, "outputDirectory");
-        var storage = ProjectPathResolver.ResolveRelative(root, storageValue, "storageDirectory");
-        if (ProjectPathResolver.PathsOverlap(output, storage))
+        if (File.Exists(output))
         {
-            throw new InvalidReviewInputException("'outputDirectory' and 'storageDirectory' must be distinct and non-overlapping.");
-        }
-
-        if (File.Exists(output) || File.Exists(storage))
-        {
-            throw new InvalidReviewInputException("Output and storage paths must be directories.");
+            throw new InvalidReviewInputException("Output path must be a directory.");
         }
 
         var activeRules = new List<ConfiguredRule>();
@@ -164,13 +157,10 @@ public sealed class ReviewConfigValidator
         try
         {
             Directory.CreateDirectory(output);
-            Directory.CreateDirectory(storage);
             output = ProjectPathResolver.Canonicalize(output);
-            storage = ProjectPathResolver.Canonicalize(storage);
-            if (!ProjectPathResolver.IsWithin(root, output) || !ProjectPathResolver.IsWithin(root, storage) ||
-                ProjectPathResolver.PathsOverlap(output, storage))
+            if (!ProjectPathResolver.IsWithin(root, output))
             {
-                throw new InvalidReviewInputException("Output or storage directory resolves outside the project root.");
+                throw new InvalidReviewInputException("Output directory resolves outside the project root.");
             }
         }
         catch (InvalidReviewInputException)
@@ -179,17 +169,15 @@ public sealed class ReviewConfigValidator
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            throw new InvalidReviewInputException("Output or storage directory could not be created safely.", ex);
+            throw new InvalidReviewInputException("Output directory could not be created safely.", ex);
         }
 
         return new ReviewConfig(
             root,
             ProjectPathResolver.ToRelativeForwardSlashes(root, solution),
             ProjectPathResolver.ToRelativeForwardSlashes(root, output),
-            ProjectPathResolver.ToRelativeForwardSlashes(root, storage),
             solution,
             output,
-            storage,
             activeRules.AsReadOnly());
     }
 

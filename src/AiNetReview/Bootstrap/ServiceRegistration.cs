@@ -1,6 +1,5 @@
 namespace AiNetReview.Bootstrap;
 
-using AiNetReview.Core.Catalog;
 using AiNetReview.Core.Rules;
 using AiNetReview.Core.Rules.TemplateNoOp;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,7 +10,6 @@ public static class ServiceRegistration
     {
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<RuleRegistry>();
-        services.AddSingleton<CatalogWriter>();
         return services;
     }
 

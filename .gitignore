@@ -62,7 +62,6 @@ Thumbs.db
 *.dmp
 *.rp
 
-## AiNetReview Output and Locks
+## AiNetReview Output
 audit-reporting/
-**/.lock
 test-output/

@@ -46,7 +46,7 @@ public sealed class RuleDescriptorTests
     }
 
     [Fact]
-    public void Constructor_RejectsNonPositiveBehaviorVersionAndIncompleteCatalogMetadata()
+    public void Constructor_RejectsNonPositiveBehaviorVersionAndIncompleteRuleMetadata()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => CreateDescriptor(behaviorVersion: 0));
         Assert.Throws<ArgumentException>(() => new RuleDescriptor(

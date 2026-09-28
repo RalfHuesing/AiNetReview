@@ -64,9 +64,6 @@ internal static class ProjectPathResolver
             || canonicalPath.StartsWith(canonicalRoot + Path.DirectorySeparatorChar, PathComparison);
     }
 
-    internal static bool PathsOverlap(string first, string second) =>
-        IsWithin(first, second) || IsWithin(second, first);
-
     internal static string ToRelativeForwardSlashes(string root, string path) =>
         Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/');
 

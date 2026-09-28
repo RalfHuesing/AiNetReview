@@ -83,7 +83,6 @@ public sealed class SolutionLoaderTests
           "schemaVersion": 1,
           "solution": "{{solution}}",
           "outputDirectory": "{{outputDirectory}}",
-          "storageDirectory": ".review-store",
           "rules": { "template-noop": {} }
         }
         """;

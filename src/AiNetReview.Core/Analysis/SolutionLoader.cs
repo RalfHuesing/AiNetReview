@@ -144,10 +144,9 @@ public sealed class SolutionLoader
                 throw new AnalysisFailedException("A C# source document is outside the project root.");
             }
 
-            if (ProjectPathResolver.IsWithin(config.ResolvedOutputDirectory, sourcePath) ||
-                ProjectPathResolver.IsWithin(config.ResolvedStorageDirectory, sourcePath))
+            if (ProjectPathResolver.IsWithin(config.ResolvedOutputDirectory, sourcePath))
             {
-                throw new InvalidReviewInputException("Output and storage directories must not contain C# source files from the solution.");
+                throw new InvalidReviewInputException("Output directory must not contain C# source files from the solution.");
             }
         }
     }

@@ -27,7 +27,7 @@ public static class Program
         {
             var message = args is { Length: > 0 }
                 ? $"Unbekannter oder noch nicht implementierter Befehl '{args[0]}'."
-                : "Kein Befehl angegeben. Verf\u00fcgbare Befehle: review, catalog, mcp.";
+                : "Kein Befehl angegeben. Verf\u00fcgbarer Befehl: review.";
 
             await Console.Error.WriteLineAsync($"{{\"code\":\"INVALID_INPUT\",\"message\":\"{message}\"}}");
             return ExitCodeInvalidInput;
@@ -41,8 +41,6 @@ public static class Program
     private static string GetCommandCategory(string[] args) => args.FirstOrDefault() switch
     {
         "review" => "review",
-        "catalog" => "catalog",
-        "mcp" => "mcp",
         null => "none",
         _ => "unknown",
     };

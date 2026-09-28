@@ -37,21 +37,21 @@ public sealed class ReviewConfigValidatorTests
         Assert.EndsWith("Project.slnx", config.SolutionPath, StringComparison.Ordinal);
         Assert.Equal("Project.slnx", config.SolutionPath);
         Assert.Equal("reports/current", config.OutputDirectory);
-        Assert.Equal(".review-store", config.StorageDirectory);
         Assert.True(Directory.Exists(config.ResolvedOutputDirectory));
-        Assert.True(Directory.Exists(config.ResolvedStorageDirectory));
+        Assert.False(Directory.Exists(temp.GetPath(".review-store")));
         Assert.Single(config.Rules);
         Assert.Equal("template-noop", config.Rules[0].RuleId);
         Assert.Empty(config.Rules[0].EffectiveOptions.Values);
     }
 
     [Theory]
-    [InlineData("{\"schemaVersion\":1,\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"storageDirectory\":\"store\",\"rules\":{\"template-noop\":{}}}")]
-    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"storageDirectory\":\"store\",\"extra\":true,\"rules\":{\"template-noop\":{}}}")]
-    [InlineData("{\"schemaVersion\":2,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"storageDirectory\":\"store\",\"rules\":{\"template-noop\":{}}}")]
-    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"storageDirectory\":\"store\",\"rules\":{\"unknown\":{}}}")]
-    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"storageDirectory\":\"store\",\"rules\":{\"template-noop\":{\"unknown\":true}}}")]
-    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"storageDirectory\":\"store\",\"rules\":[]}")]
+    [InlineData("{\"schemaVersion\":1,\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"template-noop\":{}}}")]
+    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"extra\":true,\"rules\":{\"template-noop\":{}}}")]
+    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"storageDirectory\":\"store\",\"rules\":{\"template-noop\":{}}}")]
+    [InlineData("{\"schemaVersion\":2,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"template-noop\":{}}}")]
+    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"unknown\":{}}}")]
+    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"template-noop\":{\"unknown\":true}}}")]
+    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":[]} ")]
     public void Validate_RejectsInvalidJsonContract(string json)
     {
         using var temp = TestTempDirectory.Create();
@@ -61,12 +61,11 @@ public sealed class ReviewConfigValidatorTests
     }
 
     [Theory]
-    [InlineData("../outside.slnx", "out", "store")]
-    [InlineData("Project.slnx", "../outside", "store")]
-    [InlineData("Project.slnx", "out", "out/nested")]
-    [InlineData("Project.slnx", "C:/outside", "store")]
-    [InlineData("missing.slnx", "out", "store")]
-    public void Validate_RejectsInvalidPaths(string solution, string output, string storage)
+    [InlineData("../outside.slnx", "out")]
+    [InlineData("Project.slnx", "../outside")]
+    [InlineData("Project.slnx", "C:/outside")]
+    [InlineData("missing.slnx", "out")]
+    public void Validate_RejectsInvalidPaths(string solution, string output)
     {
         using var temp = TestTempDirectory.Create();
         temp.CreateFile("Project.slnx", "<Solution />");
@@ -76,7 +75,6 @@ public sealed class ReviewConfigValidatorTests
             schemaVersion = 1,
             solution,
             outputDirectory = output,
-            storageDirectory = storage,
             rules = new Dictionary<string, object> { ["template-noop"] = new { } },
         });
 
@@ -107,7 +105,6 @@ public sealed class ReviewConfigValidatorTests
             schemaVersion = 1,
             solution = "Project.slnx",
             outputDirectory = "escape/reports",
-            storageDirectory = "store",
             rules = new Dictionary<string, object> { ["template-noop"] = new { } },
         });
 
@@ -119,7 +116,6 @@ public sealed class ReviewConfigValidatorTests
           "schemaVersion": 1,
           "solution": "Project.slnx",
           "outputDirectory": "reports/./current",
-          "storageDirectory": ".review-store",
           "rules": { "template-noop": {} }
         }
         """;

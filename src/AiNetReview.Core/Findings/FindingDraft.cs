@@ -14,11 +14,7 @@ public sealed class FindingDraft
         int startLine,
         string rationale,
         IReadOnlyDictionary<string, double> metrics,
-        IEnumerable<FindingEvidence> evidence,
-        string snapshot,
-        string comparisonText,
-        int fingerprintVersion,
-        IEnumerable<string> sourceFiles)
+        IEnumerable<FindingEvidence> evidence)
     {
         ProjectPath = projectPath;
         SourcePath = sourcePath;
@@ -28,10 +24,6 @@ public sealed class FindingDraft
         Rationale = rationale;
         Metrics = new ReadOnlyDictionary<string, double>(new SortedDictionary<string, double>(metrics.ToDictionary(static pair => pair.Key, static pair => pair.Value), System.StringComparer.Ordinal));
         Evidence = Array.AsReadOnly(evidence.ToArray());
-        Snapshot = snapshot;
-        ComparisonText = comparisonText;
-        FingerprintVersion = fingerprintVersion;
-        SourceFiles = Array.AsReadOnly(sourceFiles.ToArray());
     }
 
     public string ProjectPath { get; }
@@ -50,13 +42,6 @@ public sealed class FindingDraft
 
     public IReadOnlyList<FindingEvidence> Evidence { get; }
 
-    public string Snapshot { get; }
-
-    public string ComparisonText { get; }
-
-    public int FingerprintVersion { get; }
-
-    public IReadOnlyList<string> SourceFiles { get; }
 }
 
 public sealed record FindingEvidence(string SourcePath, int Line, string Label, string Detail, string Snippet);
