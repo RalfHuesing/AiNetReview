@@ -58,4 +58,20 @@ The normal IntegrationTests script excludes tests tagged `Category=Performance` 
 
 The manual audit script runs only the integration test tagged `Category=Audit`. It selects a local, Git-ignored `audit-targets/<name>.json`, where `repositoryPath` is relative to the AiNetReview repository root or absolute, `solution` is relative to that target repository, and `rules` uses the normal rule configuration format. The optional top-level `enabled` field defaults to `true`; setting it to `false` makes the script exit before starting `dotnet test`, running rules, or publishing a report. Create one profile per repository and select it with `-Target <name>`; the target checkout does not need an `ainetreview.json` file. Markdown reports and a structured `findings.json` are written under `audit-reporting/<name>/<runId>/` in AiNetReview. Findings JSON is written after Markdown publication, so a JSON write failure can leave a complete Markdown run without its findings file. The JSON records its UTC generation time, repository and solution paths, optional Git commit and dirty-worktree state, run ID, counts, rule versions and effective options, and rule findings with identity, rationale, metrics, and evidence. Central Markdown source links resolve back to source files in the target repository.
 
+## Release Workflow
+
+AiNetReview publishes standalone Windows x64 release archives through a GitHub Actions workflow (`.github/workflows/release.yml`) triggered by version tags (`v*`).
+
+Automate the release process using the release script:
+
+```powershell
+# Validate working tree, run test suite, tag, and trigger GitHub release
+pwsh -File ./scripts/create-release.ps1
+
+# Dry-run mode to inspect planned steps without committing or tagging
+pwsh -File ./scripts/create-release.ps1 -DryRun
+```
+
+The script verifies a clean working tree, synchronizes with `origin/main`, runs `FastTests` and `IntegrationTests`, updates `<Version>` in `src/AiNetReview/AiNetReview.csproj`, tags `vX.Y.Z`, and pushes the tag to GitHub where `.github/workflows/release.yml` publishes `AiNetReview-win-x64.zip`.
+
 Agents and automation tools can inspect the static log files in `temp/` directly.
