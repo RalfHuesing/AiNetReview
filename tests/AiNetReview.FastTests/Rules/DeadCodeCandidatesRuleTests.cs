@@ -193,12 +193,211 @@ public sealed class DeadCodeCandidatesRuleTests
         var descriptor = new DeadCodeCandidatesRule().Descriptor;
 
         Assert.Equal("external_library", descriptor.ResolveOptions()["apiSurface"].GetString());
+        Assert.Empty(descriptor.ResolveOptions()["entryPointAttributes"].EnumerateArray());
         Assert.Equal("closed_solution", descriptor.ResolveOptions([
             new("apiSurface", JsonSerializer.SerializeToElement("closed_solution")),
         ])["apiSurface"].GetString());
         Assert.Throws<ArgumentException>(() => descriptor.ResolveOptions([
             new("apiSurface", JsonSerializer.SerializeToElement("Closed_Solution")),
         ]));
+        Assert.Throws<ArgumentException>(() => descriptor.ResolveOptions([
+            new("entryPointAttributes", JsonSerializer.SerializeToElement(new[] { "Unqualified" })),
+        ]));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ProtectsFixedAndConfiguredEntryPointAttributesBySemanticIdentity()
+    {
+        using var fixture = CreateFixture(("Product", "Product", """
+            namespace Contracts { public sealed class EntryPointAttribute : System.Attribute { } }
+            namespace Fake { public sealed class JSInvokableAttribute : System.Attribute { } }
+            internal sealed class Entrypoints
+            {
+                [Contracts.EntryPoint] private void Configured() { }
+                [System.Runtime.CompilerServices.ModuleInitializer] private static void Fixed() { }
+                [Microsoft.JSInterop.JSInvokable] public static void JavaScriptEntry() { }
+                [Fake.EntryPoint] private void SameSimpleName() { }
+                private void Ordinary() { }
+            }
+            """, null));
+        var rule = new DeadCodeCandidatesRule();
+        var options = rule.Descriptor.ResolveOptions([
+            new("apiSurface", JsonSerializer.SerializeToElement("closed_solution")),
+            new("entryPointAttributes", JsonSerializer.SerializeToElement(new[] { "Contracts.EntryPointAttribute" })),
+        ]);
+
+        var result = await rule.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Configured", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Fixed", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("JavaScriptEntry", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("SameSimpleName", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Ordinary", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_UsesSnapshotRazorBindingsAndFailsOnUnevaluableXaml()
+    {
+        using var fixture = CreateFixture(("Product", "Product", """
+            namespace Ui;
+            internal sealed class Widget
+            {
+                private void HandleClick() { }
+                private void Unrelated() { }
+            }
+            """, null));
+        var markupPath = Path.Combine(fixture.Context.ProjectRoot, "Widget.razor");
+        await File.WriteAllTextAsync(markupPath, "<Widget @onclick=\"Unrelated\" />");
+        var snapshotContext = new ReviewContext(
+            fixture.Context.Solution,
+            fixture.Context.ProjectRoot,
+            [new MarkupDocumentSnapshot(markupPath, "<Widget @onclick=\"HandleClick\" />")]);
+        var rule = new DeadCodeCandidatesRule();
+        var options = rule.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
+
+        var result = await rule.ExecuteAsync(snapshotContext, options, CancellationToken.None);
+
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId == "T:Ui.Widget");
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("HandleClick", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Unrelated", StringComparison.Ordinal));
+
+        var invalidMarkup = new ReviewContext(
+            fixture.Context.Solution,
+            fixture.Context.ProjectRoot,
+            [new MarkupDocumentSnapshot(Path.ChangeExtension(markupPath, ".xaml"), "<Widget")]);
+        await Assert.ThrowsAsync<AnalysisFailedException>(() => rule.ExecuteAsync(invalidMarkup, options, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReflectionProtectsKnownBindingAndLimitsDynamicUncertaintyToTheTargetType()
+    {
+        using var fixture = CreateFixture(("Product", "Product", """
+            using System;
+            internal sealed class Reflected
+            {
+                private void Bound() { }
+                private void Dynamic() { }
+                private void Other() { }
+            }
+            internal sealed class Reflection
+            {
+                private void Run(string name)
+                {
+                    _ = typeof(Reflected).GetMethod("Bound", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                    _ = typeof(Reflected).GetMethod(name);
+                }
+            }
+            internal sealed class Independent { private void Candidate() { } }
+            """, null));
+        var rule = new DeadCodeCandidatesRule();
+        var options = rule.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
+
+        var result = await rule.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Reflected", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Bound", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Dynamic", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Other", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Independent", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DiRegistrationProtectsRegisteredType()
+    {
+        using var fixture = CreateFixture(("Product", "Product", """
+            using Microsoft.Extensions.DependencyInjection;
+            internal sealed class RegisteredService { private void Entry() { } }
+            internal sealed class Composition { private IServiceCollection Register(IServiceCollection services) => services.AddSingleton<RegisteredService>(); }
+            internal sealed class IndependentService { private void Candidate() { } }
+            """, null));
+        var rule = new DeadCodeCandidatesRule();
+        var options = rule.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
+
+        var result = await rule.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId == "T:RegisteredService");
+        Assert.Contains(result.Findings, static finding => finding.SubjectId == "T:IndependentService");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_RegisteredMiddlewareProtectsFrameworkEntryMethod()
+    {
+        using var fixture = CreateFixture(("Product", "Product", """
+            using Microsoft.AspNetCore.Builder;
+            using Microsoft.AspNetCore.Http;
+            using Microsoft.AspNetCore.Mvc;
+            using System.Threading.Tasks;
+            internal sealed class Middleware
+            {
+                public Task InvokeAsync(HttpContext context) => Task.CompletedTask;
+                public void Orphan() { }
+            }
+            internal static class Startup
+            {
+                private static void Configure(IApplicationBuilder app) => app.UseMiddleware<Middleware>();
+            }
+            internal sealed class Controller
+            {
+                [HttpGet] private void RouteEntry() { }
+                private void ControllerOrphan() { }
+            }
+            internal sealed class Independent { private void Candidate() { } }
+            """, null));
+        var rule = new DeadCodeCandidatesRule();
+        var options = rule.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
+
+        var result = await rule.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("InvokeAsync", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("RouteEntry", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("ControllerOrphan", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Orphan", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Independent", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_XamlCodeBehindAndHandlersUseMarkupSnapshot()
+    {
+        using var fixture = CreateFixture(("Product", "Product", """
+            namespace Ui;
+            internal sealed class Page { private void Clicked() { } private void Unrelated() { } }
+            internal sealed class Button { public event System.EventHandler? Click; }
+            """, null));
+        var path = Path.Combine(fixture.Context.ProjectRoot, "Page.xaml");
+        var snapshot = """
+            <ui:Page xmlns:ui="clr-namespace:Ui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="Ui.Page">
+              <ui:Button Click="Clicked" />
+            </ui:Page>
+            """;
+        var context = new ReviewContext(fixture.Context.Solution, fixture.Context.ProjectRoot, [new MarkupDocumentSnapshot(path, snapshot)]);
+        var rule = new DeadCodeCandidatesRule();
+        var options = rule.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
+
+        var result = await rule.ExecuteAsync(context, options, CancellationToken.None);
+
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId == "T:Ui.Page");
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Clicked", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Unrelated", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_JavascriptInvocationWithUnresolvedNameOnlyMakesMatchingMethodsUncertain()
+    {
+        using var fixture = CreateFixture(("Product", "Product", """
+            internal sealed class JsApi { private void Invoke() { } private void Other() { } }
+            internal sealed class Independent { private void Candidate() { } }
+            """, null));
+        var path = Path.Combine(fixture.Context.ProjectRoot, "interop.js");
+        var context = new ReviewContext(fixture.Context.Solution, fixture.Context.ProjectRoot,
+            [new MarkupDocumentSnapshot(path, "DotNet.invokeMethodAsync('Product', 'Invoke');")]);
+        var rule = new DeadCodeCandidatesRule();
+        var options = rule.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
+
+        var result = await rule.ExecuteAsync(context, options, CancellationToken.None);
+
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Invoke", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Other", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Independent", StringComparison.Ordinal));
     }
 
     private static RuleFixture CreateFixture(params (string Name, string Assembly, string Source, string? FileName)[] projects)
@@ -217,7 +416,8 @@ public sealed class DeadCodeCandidatesRuleTests
                 filePath: Path.Combine(root.DirectoryPath, spec.Name + ".csproj"),
                 compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
                 parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
-                metadataReferences: PlatformReferences()));
+                metadataReferences: PlatformReferences().Append(
+                    MetadataReference.CreateFromFile(typeof(Microsoft.JSInterop.JSInvokableAttribute).Assembly.Location))));
         }
 
         foreach (var spec in projects)

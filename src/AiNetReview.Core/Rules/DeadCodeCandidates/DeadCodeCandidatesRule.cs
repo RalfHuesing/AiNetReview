@@ -12,7 +12,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
-/// <summary>Selects explicit types and ordinary methods with no known direct solution use for human review.</summary>
+/// <summary>Selects explicit types and ordinary methods without known direct or recognized indirect solution use.</summary>
 public sealed class DeadCodeCandidatesRule : IReviewRule
 {
     private const string ExternalLibrary = "external_library";
@@ -25,17 +25,27 @@ public sealed class DeadCodeCandidatesRule : IReviewRule
         static value => value.ValueKind == JsonValueKind.String
             && value.GetString() is ExternalLibrary or ClosedSolution);
 
+    private static readonly RuleOptionDescriptor EntryPointAttributesOption = new(
+        "entryPointAttributes",
+        "Additional fully qualified attribute type names that mark declarations as indirect entry points.",
+        JsonSerializer.SerializeToElement(Array.Empty<string>()),
+        static value => value.ValueKind == JsonValueKind.Array
+            && value.EnumerateArray().All(static item => item.ValueKind == JsonValueKind.String
+                && !string.IsNullOrWhiteSpace(item.GetString())
+                && StringComparer.Ordinal.Equals(item.GetString(), item.GetString()!.Trim())
+                && item.GetString()!.Contains('.', StringComparison.Ordinal)));
+
     public RuleDescriptor Descriptor { get; } = new(
         "dead-code-candidates",
         "Dead Code Candidates",
         1,
-        "Selects explicit C# types and ordinary methods without known direct use in the loaded solution for human review.",
-        "A candidate has no known direct semantic reference in production, test, or generated C# code. This is a review signal, not proof that the declaration is unused.",
+        "Selects explicit C# types and ordinary methods without known direct or recognized indirect use in the loaded solution for human review.",
+        "A candidate has no known direct semantic reference or recognized indirect binding in production, test, generated C#, or captured markup. This is a review signal, not proof that the declaration is unused.",
         [
             "Is the declaration reached through reflection, dependency injection, framework conventions, or markup?",
             "Does code outside the analyzed solution use this declaration?",
         ],
-        [ApiSurfaceOption]);
+        [ApiSurfaceOption, EntryPointAttributesOption]);
 
     public async Task<RuleResult> ExecuteAsync(
         ReviewContext context,
@@ -48,6 +58,10 @@ public sealed class DeadCodeCandidatesRule : IReviewRule
 
         var apiSurface = options["apiSurface"].GetString()!;
         var referenceIndex = await SolutionReferenceIndex.CreateAsync(context, cancellationToken).ConfigureAwait(false);
+        var indirectUsage = await DeadCodeIndirectUsageIndex.CreateAsync(
+            context,
+            options["entryPointAttributes"].EnumerateArray().Select(static item => item.GetString()!).ToArray(),
+            cancellationToken).ConfigureAwait(false);
         var findings = new List<FindingDraft>();
         var projects = context.Solution.Projects
             .Where(static project => project.Language == LanguageNames.CSharp)
@@ -83,9 +97,12 @@ public sealed class DeadCodeCandidatesRule : IReviewRule
                 methods ??= [];
 
                 var typeCoverage = referenceIndex.GetCoverage(type.Symbol);
-                var typeHasExternalUse = typeCoverage.References.Any(static reference => !reference.IsSelfReference);
+                var typeHasExternalUse = typeCoverage.References.Any(static reference => !reference.IsSelfReference)
+                    || indirectUsage.IsProtected(type.Symbol);
                 var typeHasUncertainty = typeCoverage.HasUnresolvedBindings
-                    || methods.Any(method => referenceIndex.GetCoverage(method.Symbol).HasUnresolvedBindings);
+                    || indirectUsage.HasUncertainty(type.Symbol)
+                    || methods.Any(method => referenceIndex.GetCoverage(method.Symbol).HasUnresolvedBindings
+                        || indirectUsage.HasUncertainty(method.Symbol));
                 if (!typeHasExternalUse && !typeHasUncertainty && !IsApiProtected(type.Symbol, apiSurface))
                 {
                     findings.Add(CreateFinding(type, "type-candidate"));
@@ -96,13 +113,15 @@ public sealed class DeadCodeCandidatesRule : IReviewRule
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     if (IsCompilerEntryPoint((IMethodSymbol)method.Symbol, entryPoint)
-                        || IsApiProtected(method.Symbol, apiSurface))
+                        || IsApiProtected(method.Symbol, apiSurface)
+                        || indirectUsage.IsProtected(method.Symbol))
                     {
                         continue;
                     }
 
                     var coverage = referenceIndex.GetCoverage(method.Symbol);
-                    if (!coverage.HasUnresolvedBindings && coverage.References.Count == 0)
+                    if (!coverage.HasUnresolvedBindings && !indirectUsage.HasUncertainty(method.Symbol)
+                        && coverage.References.Count == 0 && !indirectUsage.IsProtected(method.Symbol))
                     {
                         findings.Add(CreateFinding(method, "method-candidate"));
                     }
@@ -112,13 +131,15 @@ public sealed class DeadCodeCandidatesRule : IReviewRule
             foreach (var method in declarations.Methods.Where(method => !methodsByType.ContainsKey(((IMethodSymbol)method.Symbol).ContainingType)))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (IsCompilerEntryPoint((IMethodSymbol)method.Symbol, entryPoint) || IsApiProtected(method.Symbol, apiSurface))
+                if (IsCompilerEntryPoint((IMethodSymbol)method.Symbol, entryPoint) || IsApiProtected(method.Symbol, apiSurface)
+                    || indirectUsage.IsProtected(method.Symbol))
                 {
                     continue;
                 }
 
                 var coverage = referenceIndex.GetCoverage(method.Symbol);
-                if (!coverage.HasUnresolvedBindings && coverage.References.Count == 0)
+                if (!coverage.HasUnresolvedBindings && !indirectUsage.HasUncertainty(method.Symbol)
+                    && coverage.References.Count == 0)
                 {
                     findings.Add(CreateFinding(method, "method-candidate"));
                 }
@@ -237,7 +258,7 @@ public sealed class DeadCodeCandidatesRule : IReviewRule
             declaration.SubjectId,
             discriminator,
             declaration.StartLine,
-            "No direct semantic use was found in the loaded solution. Review possible indirect or external uses before drawing a conclusion.",
+            "No direct semantic use or recognized indirect binding was found in the loaded solution. Review possible external uses before drawing a conclusion.",
             new Dictionary<string, double>(StringComparer.Ordinal),
             [new FindingEvidence(
                 declaration.SourcePath,

@@ -9,6 +9,6 @@ Source of truth: [Konzept.md](Konzept.md). The AiNetLinter implementation and te
 
 - [ ] **Milestone 2 — Candidate rule and published findings** (aggregate: close only after all leaves and the audit pass)
   - [x] [M2-T1 — Candidate selection and direct usage](roadmap/M2-T1-candidates.md)
-  - [ ] [M2-T2 — Indirect usage and suppression](roadmap/M2-T2-indirect-usage.md)
+  - [x] [M2-T2 — Indirect usage](roadmap/M2-T2-indirect-usage.md)
   - [ ] [M2-T3 — Registration, findings and end-to-end acceptance](roadmap/M2-T3-publication.md)
   - [ ] **M2 audit** — Read the complete feature diff, focused tests, report output, current `docs/` pages and [Konzept.md](Konzept.md). Check the candidate and exclusion boundaries, configuration defaults, safety behavior, deterministic findings, empty-run semantics and failed-run publication behavior. Record actionable gaps; close this box only when the feature is verified. The audit changes no production code.
