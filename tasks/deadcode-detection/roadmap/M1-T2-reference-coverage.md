@@ -22,12 +22,16 @@ Dead-code candidate filtering, markup parsing, MCP continuation/budget behavior,
 
 ## Acceptance
 
-- [ ] Focused tests demonstrate references across production and test projects, method-group references, generated C# references, and self-reference provenance.
-- [ ] Tests demonstrate global coverage failure versus symbol-local uncertainty and preserve the existing rule's results.
+- [x] Focused tests demonstrate references across production and test projects, method-group references, generated C# references, and self-reference provenance.
+- [x] Tests demonstrate global coverage failure versus symbol-local uncertainty and preserve the existing rule's results.
 
 ## Checklist
 
-- [ ] Inspect the loaded-solution, classifier and runner contracts and the relevant AiNetLinter reference tests.
-- [ ] Implement this scope and update affected current-state documentation in the same slice.
-- [ ] Run focused tests and required project gates; review the diff and `git diff --check`.
-- [ ] Close this leaf and its parent roadmap checkbox only after acceptance is verified; commit explicit task paths.
+- [x] Inspect the loaded-solution, classifier and runner contracts and the relevant AiNetLinter reference tests.
+- [x] Implement this scope and update affected current-state documentation in the same slice.
+- [x] Run focused tests and required project gates; review the diff and `git diff --check`.
+- [x] Close this leaf and its parent roadmap checkbox only after acceptance is verified; commit explicit task paths.
+
+## Abschlussnachweis
+
+`SolutionReferenceIndex` indexes references from loaded C# documents and source-generated documents, with project role, generated-source, method-group, enclosing-symbol and self-reference provenance. Globally unavailable project/document semantic coverage throws `AnalysisFailedException`; unresolved candidate bindings stay local to affected symbols. FastTests cover complete zero-reference results and unchanged output from the existing rule. The solution build, full FastTests and IntegrationTests passed before commit.
