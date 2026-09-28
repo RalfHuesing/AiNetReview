@@ -23,7 +23,11 @@ public sealed class FixtureFindingRule : IReviewRule
             purpose: "Provides a test-only rule for verifying current finding reports.",
             measurement: "Emits one finding for each named fixture method.",
             reviewQuestions: ["Does this fixture method still require review?"],
-            options: [RuleOptionDescriptor.String("scenario", "Fixture scenario", "base")]);
+            options: [RuleOptionDescriptor.String(
+                "scenario",
+                "Fixture scenario",
+                "base",
+                static value => !string.IsNullOrWhiteSpace(value))]);
     }
 
     public RuleDescriptor Descriptor { get; }

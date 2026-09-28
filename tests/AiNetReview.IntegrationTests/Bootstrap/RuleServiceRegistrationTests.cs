@@ -1,6 +1,9 @@
 namespace AiNetReview.IntegrationTests.Bootstrap;
 
+using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using AiNetReview.Bootstrap;
 using AiNetReview.Core.Rules;
 using AiNetReview.Core.Rules.TemplateNoOp;
@@ -40,5 +43,21 @@ public sealed class RuleServiceRegistrationTests
 
         Assert.Equal(new[] { "fixture-finding", "template-noop" }, registry.Rules.Select(static rule => rule.Descriptor.RuleId));
         Assert.IsType<FixtureFindingRule>(registry.GetRequired("fixture-finding"));
+    }
+
+    [Fact]
+    public void FixtureRule_UsesBaseScenarioByDefaultAndRejectsEmptyScenarios()
+    {
+        var descriptor = new FixtureFindingRule().Descriptor;
+
+        Assert.Equal("base", descriptor.ResolveOptions()["scenario"].GetString());
+        Assert.Throws<ArgumentException>(() => descriptor.ResolveOptions(
+        [
+            KeyValuePair.Create("scenario", JsonSerializer.SerializeToElement(string.Empty)),
+        ]));
+        Assert.Throws<ArgumentException>(() => descriptor.ResolveOptions(
+        [
+            KeyValuePair.Create("scenario", JsonSerializer.SerializeToElement(" ")),
+        ]));
     }
 }
