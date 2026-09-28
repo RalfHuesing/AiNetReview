@@ -22,12 +22,12 @@ Markup binding analysis and candidate selection; changes to the AiNetLinter repo
 
 ## Acceptance
 
-- [ ] Integration tests cover an included file that is not a Roslyn `AdditionalDocument`, a file changed after load, conditional capture, path and reparse boundaries, skipped directories, unreadable files, and both size limits.
-- [ ] Snapshot failures produce no successful review result or published report; configurations without `dead-code-candidates` need no markup capture.
+- [x] Integration tests cover an included file that is not a Roslyn `AdditionalDocument`, a file changed after load, conditional capture, path and reparse boundaries, skipped directories, unreadable files, and both size limits.
+- [x] Snapshot failures produce no successful review result or published report; configurations without `dead-code-candidates` need no markup capture.
 
 ## Checklist
 
-- [ ] Inspect current loader, context, configuration and relevant AiNetLinter markup behavior.
-- [ ] Implement this scope and update affected current-state documentation in the same slice.
-- [ ] Run focused tests and required project gates; review the diff and `git diff --check`.
-- [ ] Close this leaf and its parent roadmap checkbox only after acceptance is verified; commit explicit task paths.
+- [x] Inspect current loader, context, configuration and relevant AiNetLinter markup behavior.
+- [x] Implement this scope and update affected current-state documentation in the same slice.
+- [x] Run focused tests and required project gates; review the diff and `git diff --check`.
+- [x] Close this leaf after acceptance is verified; keep the parent milestone open until its sibling leaf and audit are complete, then commit explicit task paths.

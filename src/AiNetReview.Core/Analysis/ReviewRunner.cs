@@ -31,7 +31,7 @@ public sealed class ReviewRunner
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var context = new ReviewContext(solution, config.ProjectRoot);
+        var context = new ReviewContext(solution, config.ProjectRoot, loadedSolution.MarkupDocuments);
         var results = new List<RuleRunResult>();
         foreach (var configuredRule in config.Rules.OrderBy(static rule => rule.RuleId, StringComparer.Ordinal))
         {

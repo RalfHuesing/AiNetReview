@@ -16,7 +16,7 @@ The solution `AiNetReview.slnx` contains five projects:
 
 Core, Host, and TestKit expose their internal members to both test assemblies through `InternalsVisibleTo`. This supports tests of internal components as the implementation grows.
 
-FastTests cover the shared source classifier's recognized and rejected test-project names, paths, and reference assemblies; generated file path and header markers; generated symbol attributes; and checked project-root-relative path conversion. Rule tests also verify that test projects and generated documents are excluded from the production method comparison group.
+FastTests cover the shared source classifier's recognized and rejected test-project names, paths, and reference assemblies; generated file path and header markers; generated symbol attributes; and checked project-root-relative path conversion. Rule tests also verify that test projects and generated documents are excluded from the production method comparison group. `SolutionLoaderTests` cover conditional markup capture, snapshot stability, project discovery boundaries, unreadable inputs, and markup size limits.
 
 ## Building
 

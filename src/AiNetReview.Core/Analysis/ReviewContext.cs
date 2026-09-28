@@ -8,7 +8,10 @@ using Microsoft.CodeAnalysis;
 
 public sealed class ReviewContext
 {
-    public ReviewContext(Solution solution, string projectRoot)
+    public ReviewContext(
+        Solution solution,
+        string projectRoot,
+        IReadOnlyList<MarkupDocumentSnapshot>? markupDocuments = null)
     {
         ArgumentNullException.ThrowIfNull(solution);
         ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
@@ -19,6 +22,7 @@ public sealed class ReviewContext
 
         Solution = solution;
         ProjectRoot = Path.GetFullPath(projectRoot);
+        MarkupDocuments = markupDocuments ?? Array.Empty<MarkupDocumentSnapshot>();
         CSharpDocuments = Array.AsReadOnly(solution.Projects
             .Where(static project => project.Language == LanguageNames.CSharp)
             .SelectMany(static project => project.Documents)
@@ -28,6 +32,9 @@ public sealed class ReviewContext
     public Solution Solution { get; }
 
     public string ProjectRoot { get; }
+
+    /// <summary>Gets markup content captured by the solution loader.</summary>
+    public IReadOnlyList<MarkupDocumentSnapshot> MarkupDocuments { get; }
 
     /// <summary>Gets the C# documents available in the loaded solution snapshot.</summary>
     public IReadOnlyList<Document> CSharpDocuments { get; }

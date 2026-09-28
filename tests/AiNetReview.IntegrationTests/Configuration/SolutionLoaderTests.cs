@@ -1,6 +1,7 @@
 namespace AiNetReview.IntegrationTests.Configuration;
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -139,14 +140,201 @@ public sealed class SolutionLoaderTests
         Assert.Contains("must not contain C# source files", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static RuleRegistry Registry() => new([new MethodControlFlowOutliersRule()]);
+    [Fact]
+    public async Task LoadAsync_CapturesProjectMarkupOutsideRoslynAdditionalDocuments()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
+        var markupPath = Path.Combine(root, "Sample", "Views", "Page.razor");
+        Directory.CreateDirectory(Path.GetDirectoryName(markupPath)!);
+        await File.WriteAllTextAsync(markupPath, "<button @onclick=\"Save\">Save</button>");
+        var config = Config(root, markupRule: true);
 
-    private static string ConfigurationJson(string solution, string outputDirectory = "reports") => $$"""
+        using var loaded = await new SolutionLoader().LoadAsync(config);
+
+        Assert.DoesNotContain(Assert.Single(loaded.Solution.Projects).AdditionalDocuments,
+            document => string.Equals(document.FilePath, markupPath, StringComparison.OrdinalIgnoreCase));
+        var snapshot = Assert.Single(loaded.MarkupDocuments);
+        Assert.Equal(markupPath, snapshot.FilePath);
+        Assert.Equal("<button @onclick=\"Save\">Save</button>", snapshot.Text);
+    }
+
+    [Fact]
+    public async Task LoadAsync_MarkupSnapshotDoesNotChangeWhenFileChangesAfterLoad()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
+        var markupPath = Path.Combine(root, "Sample", "View.xaml");
+        await File.WriteAllTextAsync(markupPath, "<Window Title=\"Original\" />");
+        var config = Config(root, markupRule: true);
+
+        using var loaded = await new SolutionLoader().LoadAsync(config);
+        await File.WriteAllTextAsync(markupPath, "<Window Title=\"Changed\" />");
+
+        Assert.Equal("<Window Title=\"Original\" />", Assert.Single(loaded.MarkupDocuments).Text);
+    }
+
+    [Fact]
+    public async Task ReviewRunner_ProvidesLoadedMarkupSnapshotToRules()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
+        await File.WriteAllTextAsync(Path.Combine(root, "Sample", "View.razor"), "snapshot content");
+        var rule = new MarkupFixtureRule();
+        var config = new ReviewConfigValidator(new RuleRegistry([new MethodControlFlowOutliersRule(), rule]))
+            .Validate(root, ConfigurationJson("Sample.slnx", rules: "\"dead-code-candidates\": {}"));
+        using var loaded = await new SolutionLoader().LoadAsync(config);
+
+        await new ReviewRunner().RunAsync(config, loaded);
+
+        Assert.Equal("snapshot content", Assert.Single(rule.MarkupDocuments).Text);
+    }
+
+    [Fact]
+    public async Task LoadAsync_DoesNotCaptureMarkupWithoutConfiguredRule()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
+        var markupPath = Path.Combine(root, "Sample", "View.js");
+        await File.WriteAllTextAsync(markupPath, new string('x', 1024 * 1024 + 1));
+        var config = Config(root, markupRule: false);
+
+        using var loaded = await new SolutionLoader().LoadAsync(config);
+
+        Assert.Empty(loaded.MarkupDocuments);
+    }
+
+    [Fact]
+    public async Task LoadAsync_SkipsBuildDependencyAndNestedProjectDirectories()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
+        var projectRoot = Path.Combine(root, "Sample");
+        var includedPath = Path.Combine(projectRoot, "Views", "Page.razor");
+        Directory.CreateDirectory(Path.GetDirectoryName(includedPath)!);
+        await File.WriteAllTextAsync(includedPath, "included");
+        foreach (var directory in new[] { "bin", "obj", "node_modules", ".git", "nested" })
+        {
+            var skipped = Path.Combine(projectRoot, directory);
+            Directory.CreateDirectory(skipped);
+            await File.WriteAllTextAsync(Path.Combine(skipped, "Page.razor"), "skipped");
+        }
+
+        await File.WriteAllTextAsync(Path.Combine(projectRoot, "nested", "Foreign.csproj"), "<Project />");
+        using var loaded = await new SolutionLoader().LoadAsync(Config(root, markupRule: true));
+
+        var markup = Assert.Single(loaded.MarkupDocuments);
+        Assert.Equal(includedPath, markup.FilePath);
+        Assert.Equal("included", markup.Text);
+    }
+
+    [Fact]
+    public async Task LoadAsync_DoesNotFollowReparsePointDirectory()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
+        var projectRoot = Path.Combine(root, "Sample");
+        var outside = temp.GetPath("outside-markup");
+        Directory.CreateDirectory(outside);
+        await File.WriteAllTextAsync(Path.Combine(outside, "Outside.razor"), "outside");
+        var link = Path.Combine(projectRoot, "linked-markup");
+        try
+        {
+            Directory.CreateSymbolicLink(link, outside);
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or IOException or PlatformNotSupportedException)
+        {
+            if (!OperatingSystem.IsWindows() || !TryCreateJunction(link, outside))
+            {
+                throw Xunit.Sdk.SkipException.ForSkip("The test host cannot create a reparse-point directory.");
+            }
+        }
+
+        Assert.True((File.GetAttributes(link) & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint);
+
+        using var loaded = await new SolutionLoader().LoadAsync(Config(root, markupRule: true));
+
+        Assert.Empty(loaded.MarkupDocuments);
+    }
+
+    [Fact]
+    public async Task LoadAsync_FailsWhenMarkupCannotBeRead()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
+        var markupPath = Path.Combine(root, "Sample", "Locked.razor");
+        await File.WriteAllTextAsync(markupPath, "locked");
+        var config = Config(root, markupRule: true);
+        await using var locked = new FileStream(markupPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        var error = await Assert.ThrowsAsync<AnalysisFailedException>(() => new SolutionLoader().LoadAsync(config));
+
+        Assert.Contains("markup file could not be read", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task LoadAsync_FailsWhenMarkupFileCountExceedsLimit()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
+        var markupRoot = Path.Combine(root, "Sample", "Markup");
+        Directory.CreateDirectory(markupRoot);
+        for (var index = 0; index <= 2_000; index++)
+        {
+            await File.WriteAllTextAsync(Path.Combine(markupRoot, $"{index:D4}.js"), "x");
+        }
+
+        var error = await Assert.ThrowsAsync<AnalysisFailedException>(
+            () => new SolutionLoader().LoadAsync(Config(root, markupRule: true)));
+
+        Assert.Contains("2,000", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task LoadAsync_FailsWhenMarkupFileExceedsByteLimit()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
+        await File.WriteAllTextAsync(Path.Combine(root, "Sample", "Oversized.js"), new string('x', 1024 * 1024 + 1));
+
+        var error = await Assert.ThrowsAsync<AnalysisFailedException>(
+            () => new SolutionLoader().LoadAsync(Config(root, markupRule: true)));
+
+        Assert.Contains("1 MiB", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task LoadAsync_FailsWhenAdditionalMarkupPathIsOutsideProjectRoot()
+    {
+        using var temp = TestTempDirectory.Create();
+        var outsideMarkup = temp.CreateFile("external.razor", "outside");
+        var root = await CreateProjectAsync(
+            temp,
+            ".slnx",
+            "namespace Sample; public sealed class SampleType { }",
+            externalMarkup: outsideMarkup);
+
+        var error = await Assert.ThrowsAsync<AnalysisFailedException>(
+            () => new SolutionLoader().LoadAsync(Config(root, markupRule: true)));
+
+        Assert.Contains("outside", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static ReviewConfig Config(string root, bool markupRule) =>
+        new ReviewConfigValidator(Registry(markupRule)).Validate(
+            root,
+            ConfigurationJson("Sample.slnx", rules: markupRule ? "\"dead-code-candidates\": {}" : null));
+
+    private static RuleRegistry Registry(bool includeMarkupRule = false) => includeMarkupRule
+        ? new RuleRegistry([new MethodControlFlowOutliersRule(), new MarkupFixtureRule()])
+        : new RuleRegistry([new MethodControlFlowOutliersRule()]);
+
+    private static string ConfigurationJson(string solution, string outputDirectory = "reports", string? rules = null) => $$"""
         {
           "schemaVersion": 1,
           "solution": "{{solution}}",
           "outputDirectory": "{{outputDirectory}}",
-          "rules": { "method-control-flow-outliers": {} }
+          "rules": { {{(rules is null ? "\"method-control-flow-outliers\": {}" : rules)}} }
         }
         """;
 
@@ -156,7 +344,8 @@ public sealed class SolutionLoaderTests
         string source,
         string? externalSource = null,
         bool addMissingReference = false,
-        bool sourceInOutputDirectory = false)
+        bool sourceInOutputDirectory = false,
+        string? externalMarkup = null)
     {
         var root = temp.GetPath("mini-project");
         var projectDirectory = Path.Combine(root, "Sample");
@@ -168,8 +357,11 @@ public sealed class SolutionLoaderTests
         var missingReference = addMissingReference
             ? "<ItemGroup><Reference Include=\"Missing.Library\" /></ItemGroup>"
             : string.Empty;
+        var externalMarkupItem = externalMarkup is null
+            ? string.Empty
+            : $"<ItemGroup><AdditionalFiles Include=\"{SecurityElementEscape(externalMarkup)}\" /></ItemGroup>";
         await File.WriteAllTextAsync(projectFile,
-            $"<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>{externalItem}{missingReference}</Project>");
+            $"<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>{externalItem}{missingReference}{externalMarkupItem}</Project>");
         await File.WriteAllTextAsync(Path.Combine(projectDirectory, "Class1.cs"), source);
         if (sourceInOutputDirectory)
         {
@@ -233,4 +425,56 @@ public sealed class SolutionLoaderTests
         value.Replace("&", "&amp;", StringComparison.Ordinal)
             .Replace("<", "&lt;", StringComparison.Ordinal)
             .Replace("\"", "&quot;", StringComparison.Ordinal);
+
+    private static bool TryCreateJunction(string link, string target)
+    {
+        var startInfo = new ProcessStartInfo("cmd.exe")
+        {
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+        };
+        startInfo.ArgumentList.Add("/c");
+        startInfo.ArgumentList.Add("mklink");
+        startInfo.ArgumentList.Add("/J");
+        startInfo.ArgumentList.Add(link);
+        startInfo.ArgumentList.Add(target);
+        try
+        {
+            using var process = Process.Start(startInfo);
+            if (process is null)
+            {
+                return false;
+            }
+
+            process.WaitForExit();
+            return process.ExitCode == 0;
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return false;
+        }
+    }
+
+    private sealed class MarkupFixtureRule : IReviewRule
+    {
+        public IReadOnlyList<MarkupDocumentSnapshot> MarkupDocuments { get; private set; } = Array.Empty<MarkupDocumentSnapshot>();
+
+        public RuleDescriptor Descriptor { get; } = new(
+            "dead-code-candidates",
+            "Fixture",
+            1,
+            "Fixture rule for loader snapshot tests.",
+            "Fixture behavior.",
+            ["Is the snapshot available?"]);
+
+        public Task<RuleResult> ExecuteAsync(
+            ReviewContext context,
+            RuleOptions options,
+            System.Threading.CancellationToken cancellationToken)
+        {
+            MarkupDocuments = context.MarkupDocuments;
+            return Task.FromResult(RuleResult.Empty);
+        }
+    }
 }

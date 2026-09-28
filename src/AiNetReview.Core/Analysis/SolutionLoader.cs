@@ -14,6 +14,7 @@ using Microsoft.CodeAnalysis.MSBuild;
 
 public sealed class SolutionLoader
 {
+    private const string MarkupRuleId = "dead-code-candidates";
     private static readonly object MsBuildRegistrationLock = new();
 
     public async Task<LoadedSolution> LoadAsync(ReviewConfig config, CancellationToken cancellationToken = default)
@@ -57,6 +58,10 @@ public sealed class SolutionLoader
             solution = await MaterializeSourceTextsAsync(solution, csharpProjects, cancellationToken)
                 .ConfigureAwait(false);
 
+            var markupDocuments = config.Rules.Any(static rule => string.Equals(rule.RuleId, MarkupRuleId, StringComparison.Ordinal))
+                ? await MarkupSnapshotLoader.CaptureAsync(csharpProjects, config.ProjectRoot, cancellationToken).ConfigureAwait(false)
+                : Array.Empty<MarkupDocumentSnapshot>();
+
             foreach (var project in csharpProjects)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -78,7 +83,7 @@ public sealed class SolutionLoader
                 }
             }
 
-            return new LoadedSolution(workspace, solution);
+            return new LoadedSolution(workspace, solution, markupDocuments);
         }
         catch (OperationCanceledException)
         {

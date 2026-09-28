@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
+using AiNetReview.Core.Analysis;
 using AiNetReview.Bootstrap;
 using AiNetReview.Cli;
 using AiNetReview.Core.Rules;
@@ -149,6 +150,48 @@ public sealed class HostAdapterIntegrationTests
             provider.GetRequiredService<RuleRegistry>().Rules.Select(static rule => rule.Descriptor.RuleId));
     }
 
+    [Fact]
+    public async Task ReviewCommand_WhenMarkupSnapshotFailsPublishesNoRun()
+    {
+        using var tempDirectory = TestTempDirectory.Create("ainet-host-adapter-markup-failure-");
+        var projectRoot = tempDirectory.GetPath("adapter-project");
+        var projectDirectory = Path.Combine(projectRoot, "Sample");
+        Directory.CreateDirectory(projectDirectory);
+        var projectFile = Path.Combine(projectDirectory, "Sample.csproj");
+        await File.WriteAllTextAsync(projectFile,
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
+        await File.WriteAllTextAsync(Path.Combine(projectDirectory, "Class1.cs"),
+            "namespace Sample; public sealed class Sample { }");
+        await RestoreProjectAsync(projectFile, projectDirectory);
+        await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
+        var markupPath = Path.Combine(projectDirectory, "Locked.razor");
+        await File.WriteAllTextAsync(markupPath, "unreadable during snapshot");
+        var configPath = Path.Combine(projectRoot, "ainetreview.json");
+        await File.WriteAllTextAsync(configPath,
+            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{}}}");
+        var services = new ServiceCollection();
+        services.AddAiNetReviewServices();
+        services.AddAiNetReviewRules();
+        services.AddSingleton<IReviewRule, MarkupFixtureRule>();
+        services.AddLogging();
+        await using var provider = services.BuildServiceProvider();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        await using var locked = new FileStream(markupPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        var exitCode = await new ReviewCommand().InvokeAsync(
+            ["review", "--config", configPath],
+            provider,
+            output,
+            error);
+
+        Assert.Equal(3, exitCode);
+        Assert.Empty(output.ToString());
+        using var response = JsonDocument.Parse(error.ToString());
+        Assert.Equal("ANALYSIS_FAILED", response.RootElement.GetProperty("code").GetString());
+        Assert.Empty(Directory.GetDirectories(Path.Combine(projectRoot, "reports")));
+    }
+
     private static async Task RestoreProjectAsync(string projectFile, string workingDirectory)
     {
         var startInfo = new ProcessStartInfo("dotnet")
@@ -199,4 +242,20 @@ public sealed class HostAdapterIntegrationTests
 
     private static Task<string> ReadRuleReportAsync(string projectRoot, string runId) =>
         File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId, "rules", "fixture-finding.md"));
+
+    private sealed class MarkupFixtureRule : IReviewRule
+    {
+        public RuleDescriptor Descriptor { get; } = new(
+            "dead-code-candidates",
+            "Fixture",
+            1,
+            "Fixture rule for markup snapshot publication coverage.",
+            "Fixture behavior.",
+            ["Is the snapshot available?"]);
+
+        public Task<RuleResult> ExecuteAsync(
+            ReviewContext context,
+            RuleOptions options,
+            CancellationToken cancellationToken) => Task.FromResult(RuleResult.Empty);
+    }
 }
