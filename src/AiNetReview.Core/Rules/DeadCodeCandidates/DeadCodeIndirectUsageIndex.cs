@@ -267,12 +267,6 @@ internal sealed class DeadCodeIndirectUsageIndex
 
     private void MarkUncertain(ISymbol symbol) => uncertainSymbols.Add(DeadCodeSymbolNormalizer.Normalize(symbol));
 
-    private void MarkTypeAndMethodsUncertain(INamedTypeSymbol type)
-    {
-        MarkUncertain(type);
-        foreach (var method in type.GetMembers().OfType<IMethodSymbol>()) MarkUncertain(method);
-    }
-
     private static bool HasEntryPointAttribute(ISymbol symbol, IReadOnlyList<INamedTypeSymbol> attributeTypes) =>
         symbol.GetAttributes().Any(attribute => attribute.AttributeClass is { } actual
             && attributeTypes.Any(expected => SymbolEqualityComparer.Default.Equals(actual, expected)));
