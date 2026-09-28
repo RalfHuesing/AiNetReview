@@ -84,7 +84,7 @@ Der **erste Umsetzungsschritt** ist eine eigenständig verifizierte Bereinigung 
 
 - `src/AiNetReview.Core/Storage/`, `src/AiNetReview/Mcp/`, `src/AiNetReview.Core/Catalog/` und `src/AiNetReview/Cli/CatalogCommand.cs`;
 - `FingerprintService`, `FindingObservationFactory`, `FindingIdentity` und `StateMachine` einschließlich ihrer ausschließlich darauf bezogenen Tests;
-- Storage-/MCP-/Katalog-Registrierungen, Zustandsschnittstellen und -felder aus Runner, Konfiguration, DI und Host sowie die darauf bezogenen Testpfade;
+- `FindingDraft`-Felder `Snapshot`, `ComparisonText`, `FingerprintVersion` und `SourceFiles`; `ReviewConfig`-Felder `StorageDirectory` und `ResolvedStorageDirectory`; Storage-/MCP-/Katalog-Registrierungen, Zustandsschnittstellen und -felder aus Runner, DI und Host sowie die darauf bezogenen Testpfade;
 - ausschließlich hierfür benötigte NuGet-Pakete, insbesondere `ModelContextProtocol`, und überholte Aussagen in `docs/`, Repository-Regeln, Beispielen und `.gitignore`.
 
 Angefangene, auch uncommittete Storage-Arbeit wird nicht fertiggestellt. `FindingDraft`, Solution-Lader, Regelregistry, Runner und Logging werden nur insoweit behalten und angepasst, wie sie die neuen Verträge erfüllen. Vor einer neuen Produktfunktion sind die Bereinigung, der Build und die betroffenen Fast- und IntegrationTests abgeschlossen. Kein Produktpfad referenziert danach die entfernten Komponenten oder ein Storage-Verzeichnis. Diese Bereinigung erfolgt durch neue überprüfbare Änderungen; ein pauschales Zurücksetzen gemischter Git-Commits ist nicht Teil des Vertrags.
