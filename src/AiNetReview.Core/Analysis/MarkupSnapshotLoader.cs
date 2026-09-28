@@ -50,6 +50,8 @@ internal static class MarkupSnapshotLoader
                 throw new AnalysisFailedException($"Project '{project.Name}' is outside the configured project root.");
             }
 
+            var buildOutputDirectories = GetBuildOutputDirectories(project);
+
             foreach (var document in project.Documents.Concat(project.AdditionalDocuments))
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -63,12 +65,12 @@ internal static class MarkupSnapshotLoader
                     throw new AnalysisFailedException($"Markup document in project '{project.Name}' has no physical path.");
                 }
 
-                AddCandidate(candidates, document.FilePath, directory, configuredProjectRoot);
+                ValidateAdditionalDocumentPath(document.FilePath, directory, configuredProjectRoot);
             }
 
-            foreach (var path in EnumerateMarkupFiles(directory, cancellationToken))
+            foreach (var path in EnumerateMarkupFiles(directory, buildOutputDirectories, cancellationToken))
             {
-                AddCandidate(candidates, path, directory, configuredProjectRoot);
+                AddCandidate(candidates, path, directory, configuredProjectRoot, buildOutputDirectories);
                 if (candidates.Count > MaximumFiles)
                 {
                     throw new AnalysisFailedException("Markup snapshot exceeds the 2,000 file limit.");
@@ -92,7 +94,10 @@ internal static class MarkupSnapshotLoader
         return Array.AsReadOnly(snapshots.ToArray());
     }
 
-    private static IEnumerable<string> EnumerateMarkupFiles(string projectRoot, CancellationToken cancellationToken)
+    private static IEnumerable<string> EnumerateMarkupFiles(
+        string projectRoot,
+        IReadOnlyCollection<string> buildOutputDirectories,
+        CancellationToken cancellationToken)
     {
         var pending = new Stack<string>();
         pending.Push(projectRoot);
@@ -125,7 +130,7 @@ internal static class MarkupSnapshotLoader
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var name = Path.GetFileName(child);
-                if (SkippedDirectoryNames.Contains(name))
+                if (SkippedDirectoryNames.Contains(name) || IsWithinAnyDirectory(buildOutputDirectories, child))
                 {
                     continue;
                 }
@@ -148,8 +153,14 @@ internal static class MarkupSnapshotLoader
         ISet<string> candidates,
         string path,
         string projectRoot,
-        string configuredProjectRoot)
+        string configuredProjectRoot,
+        IReadOnlyCollection<string> buildOutputDirectories)
     {
+        if (HasReparsePointPathComponent(path, projectRoot))
+        {
+            return;
+        }
+
         try
         {
             if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
@@ -176,11 +187,160 @@ internal static class MarkupSnapshotLoader
             return;
         }
 
+        if (IsWithinNestedProject(projectRoot, canonicalPath)
+            || IsWithinAnyDirectory(buildOutputDirectories, canonicalPath))
+        {
+            return;
+        }
+
         candidates.Add(canonicalPath);
         if (candidates.Count > MaximumFiles)
         {
             throw new AnalysisFailedException("Markup snapshot exceeds the 2,000 file limit.");
         }
+    }
+
+    private static void ValidateAdditionalDocumentPath(string path, string projectRoot, string configuredProjectRoot)
+    {
+        if (HasReparsePointPathComponent(path, projectRoot))
+        {
+            return;
+        }
+
+        try
+        {
+            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            {
+                return;
+            }
+        }
+        catch (Exception exception) when (IsFileSystemFailure(exception))
+        {
+            throw new AnalysisFailedException("A markup file could not be inspected safely.", exception);
+        }
+
+        var canonicalPath = Canonicalize(path, "A markup file path could not be resolved safely.");
+        if (!IsWithin(projectRoot, canonicalPath, "A markup file path could not be checked safely.")
+            || !IsWithin(configuredProjectRoot, canonicalPath, "A markup file path could not be checked safely."))
+        {
+            throw new AnalysisFailedException("A markup file is outside its analyzed project root.");
+        }
+    }
+
+    private static IReadOnlyCollection<string> GetBuildOutputDirectories(Project project)
+    {
+        var directories = new HashSet<string>(PathComparer);
+        AddOutputDirectory(project.OutputFilePath);
+        AddOutputDirectory(project.OutputRefFilePath);
+
+        var generatedEditorConfigName = $"{Path.GetFileNameWithoutExtension(project.FilePath)}.GeneratedMSBuildEditorConfig.editorconfig";
+        foreach (var document in project.AnalyzerConfigDocuments)
+        {
+            if (document.FilePath is not null
+                && Path.GetFileName(document.FilePath).Equals(generatedEditorConfigName, StringComparison.OrdinalIgnoreCase))
+            {
+                AddOutputDirectory(document.FilePath);
+            }
+        }
+
+        return directories;
+
+        void AddOutputDirectory(string? filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return;
+            }
+
+            try
+            {
+                var directory = Path.GetDirectoryName(Path.GetFullPath(filePath));
+                if (directory is not null)
+                {
+                    directories.Add(Path.TrimEndingDirectorySeparator(directory));
+                }
+            }
+            catch (Exception exception) when (IsFileSystemFailure(exception))
+            {
+                throw new AnalysisFailedException("A project build output directory could not be resolved safely.", exception);
+            }
+        }
+    }
+
+    private static bool HasReparsePointPathComponent(string path, string projectRoot)
+    {
+        string fullPath;
+        try
+        {
+            fullPath = Path.GetFullPath(path);
+        }
+        catch (Exception exception) when (IsFileSystemFailure(exception))
+        {
+            throw new AnalysisFailedException("A markup file path could not be inspected safely.", exception);
+        }
+
+        if (!IsLexicallyWithin(projectRoot, fullPath))
+        {
+            return false;
+        }
+
+        var current = fullPath;
+        while (IsLexicallyWithin(projectRoot, current))
+        {
+            try
+            {
+                if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                {
+                    return true;
+                }
+            }
+            catch (Exception exception) when (IsFileSystemFailure(exception))
+            {
+                throw new AnalysisFailedException("A markup path component could not be inspected safely.", exception);
+            }
+
+            if (PathComparer.Equals(current, projectRoot))
+            {
+                break;
+            }
+
+            current = Path.GetDirectoryName(current)
+                ?? throw new AnalysisFailedException("A markup path component could not be resolved safely.");
+        }
+
+        return false;
+    }
+
+    private static bool IsWithinNestedProject(string projectRoot, string path)
+    {
+        var current = Path.GetDirectoryName(path);
+        while (current is not null && !PathComparer.Equals(current, projectRoot))
+        {
+            if (!IsLexicallyWithin(projectRoot, current))
+            {
+                return false;
+            }
+
+            if (ContainsNestedProject(current))
+            {
+                return true;
+            }
+
+            current = Path.GetDirectoryName(current);
+        }
+
+        return false;
+    }
+
+    private static bool IsWithinAnyDirectory(IEnumerable<string> directories, string path) =>
+        directories.Any(directory => IsLexicallyWithin(directory, path));
+
+    private static bool IsLexicallyWithin(string root, string path)
+    {
+        var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        var normalizedPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        return PathComparer.Equals(normalizedRoot, normalizedPath)
+            || normalizedPath.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, PathComparison);
     }
 
     private static async Task<string> ReadFileAsync(string path, CancellationToken cancellationToken)
@@ -259,4 +419,8 @@ internal static class MarkupSnapshotLoader
     private static StringComparer PathComparer => OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase
         : StringComparer.Ordinal;
+
+    private static StringComparison PathComparison => OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
 }

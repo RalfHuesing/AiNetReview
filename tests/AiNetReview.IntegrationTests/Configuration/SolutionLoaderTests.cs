@@ -229,6 +229,85 @@ public sealed class SolutionLoaderTests
     }
 
     [Fact]
+    public async Task LoadAsync_DoesNotCaptureAdditionalMarkupThroughReparsePointAncestor()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
+        var projectRoot = Path.Combine(root, "Sample");
+        var hiddenTarget = Path.Combine(projectRoot, "hidden-markup");
+        Directory.CreateDirectory(hiddenTarget);
+        await File.WriteAllTextAsync(Path.Combine(hiddenTarget, "Page.razor"), "hidden target");
+        await File.WriteAllTextAsync(Path.Combine(hiddenTarget, "Foreign.csproj"), "<Project />");
+        File.SetAttributes(hiddenTarget, File.GetAttributes(hiddenTarget) | FileAttributes.Hidden);
+
+        var link = Path.Combine(projectRoot, "linked-markup");
+        try
+        {
+            Directory.CreateSymbolicLink(link, hiddenTarget);
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or IOException or PlatformNotSupportedException)
+        {
+            if (!OperatingSystem.IsWindows() || !TryCreateJunction(link, hiddenTarget))
+            {
+                throw Xunit.Sdk.SkipException.ForSkip("The test host cannot create a reparse-point directory.");
+            }
+        }
+
+        await AppendProjectXmlAsync(root,
+            "<ItemGroup><AdditionalFiles Include=\"linked-markup/Page.razor\" /></ItemGroup>");
+
+        using var loaded = await new SolutionLoader().LoadAsync(Config(root, markupRule: true));
+
+        Assert.Contains(
+            Assert.Single(loaded.Solution.Projects).AdditionalDocuments,
+            document => string.Equals(Path.GetFileName(document.FilePath), "Page.razor", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(loaded.MarkupDocuments);
+    }
+
+    [Fact]
+    public async Task LoadAsync_DoesNotCaptureAdditionalMarkupFromNestedForeignProject()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
+        var nestedRoot = Path.Combine(root, "Sample", "nested");
+        Directory.CreateDirectory(nestedRoot);
+        await File.WriteAllTextAsync(Path.Combine(nestedRoot, "Page.razor"), "foreign project");
+        await File.WriteAllTextAsync(Path.Combine(nestedRoot, "Foreign.csproj"), "<Project />");
+        await AppendProjectXmlAsync(root,
+            "<ItemGroup><AdditionalFiles Include=\"nested/Page.razor\" /></ItemGroup>");
+
+        using var loaded = await new SolutionLoader().LoadAsync(Config(root, markupRule: true));
+
+        Assert.Empty(loaded.MarkupDocuments);
+    }
+
+    [Fact]
+    public async Task LoadAsync_SkipsCustomBuildOutputAndIntermediateDirectories()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(
+            temp,
+            ".slnx",
+            "namespace Sample; public sealed class SampleType { }",
+            customBuildPaths: true);
+        var projectRoot = Path.Combine(root, "Sample");
+        foreach (var directory in new[]
+                 {
+                     Path.Combine("artifacts", "custom-output", "Debug", "net10.0"),
+                     Path.Combine("artifacts", "custom-intermediate", "Debug", "net10.0"),
+                 })
+        {
+            var path = Path.Combine(projectRoot, directory);
+            Directory.CreateDirectory(path);
+            await File.WriteAllTextAsync(Path.Combine(path, "Generated.razor"), "build output");
+        }
+
+        using var loaded = await new SolutionLoader().LoadAsync(Config(root, markupRule: true));
+
+        Assert.Empty(loaded.MarkupDocuments);
+    }
+
+    [Fact]
     public async Task LoadAsync_DoesNotFollowReparsePointDirectory()
     {
         using var temp = TestTempDirectory.Create();
@@ -345,11 +424,24 @@ public sealed class SolutionLoaderTests
         string? externalSource = null,
         bool addMissingReference = false,
         bool sourceInOutputDirectory = false,
-        string? externalMarkup = null)
+        string? externalMarkup = null,
+        bool customBuildPaths = false)
     {
         var root = temp.GetPath("mini-project");
         var projectDirectory = Path.Combine(root, "Sample");
         Directory.CreateDirectory(projectDirectory);
+        if (customBuildPaths)
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "Directory.Build.props"), """
+                <Project>
+                  <PropertyGroup>
+                    <BaseOutputPath>artifacts/custom-output/</BaseOutputPath>
+                    <BaseIntermediateOutputPath>artifacts/custom-intermediate/</BaseIntermediateOutputPath>
+                  </PropertyGroup>
+                </Project>
+                """);
+        }
+
         var projectFile = Path.Combine(projectDirectory, "Sample.csproj");
         var externalItem = externalSource is null
             ? string.Empty
@@ -399,6 +491,13 @@ public sealed class SolutionLoaderTests
         }
 
         return root;
+    }
+
+    private static async Task AppendProjectXmlAsync(string root, string xml)
+    {
+        var projectPath = Path.Combine(root, "Sample", "Sample.csproj");
+        var project = await File.ReadAllTextAsync(projectPath);
+        await File.WriteAllTextAsync(projectPath, project.Replace("</Project>", xml + "</Project>", StringComparison.Ordinal));
     }
 
     private static async Task RestoreAsync(string projectFile, string workingDirectory)
