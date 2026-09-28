@@ -260,15 +260,15 @@ internal sealed class DeadCodeMarkupUsageCollector
 
     private void Protect(ISymbol symbol)
     {
-        symbol = DeadCodeIndirectUsageIndex.Normalize(symbol);
+        symbol = DeadCodeSymbolNormalizer.Normalize(symbol);
         protectedSymbols.Add(symbol);
         if (symbol.ContainingType is { } containingType)
         {
-            protectedSymbols.Add(DeadCodeIndirectUsageIndex.Normalize(containingType));
+            protectedSymbols.Add(DeadCodeSymbolNormalizer.Normalize(containingType));
         }
     }
 
-    private void MarkUncertain(ISymbol symbol) => uncertainSymbols.Add(DeadCodeIndirectUsageIndex.Normalize(symbol));
+    private void MarkUncertain(ISymbol symbol) => uncertainSymbols.Add(DeadCodeSymbolNormalizer.Normalize(symbol));
 
     private void MarkTypeAndMethodsUncertain(INamedTypeSymbol type)
     {

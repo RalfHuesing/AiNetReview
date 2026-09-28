@@ -1,7 +1,6 @@
 namespace AiNetReview.Core.Rules.DeadCodeCandidates;
 
 using System.Collections.Generic;
-using System.Linq;
 using Microsoft.CodeAnalysis;
 
 /// <summary>Enumerates source types in a compilation assembly, including nested types.</summary>

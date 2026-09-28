@@ -25,9 +25,9 @@ internal sealed class DeadCodeIndirectUsageIndex
     {
     }
 
-    public bool IsProtected(ISymbol symbol) => protectedSymbols.Contains(Normalize(symbol));
+    public bool IsProtected(ISymbol symbol) => protectedSymbols.Contains(DeadCodeSymbolNormalizer.Normalize(symbol));
 
-    public bool HasUncertainty(ISymbol symbol) => uncertainSymbols.Contains(Normalize(symbol));
+    public bool HasUncertainty(ISymbol symbol) => uncertainSymbols.Contains(DeadCodeSymbolNormalizer.Normalize(symbol));
 
     private void Merge(DeadCodeMarkupUsage markupUsage)
     {
@@ -257,25 +257,21 @@ internal sealed class DeadCodeIndirectUsageIndex
 
     private void Protect(ISymbol symbol)
     {
-        symbol = Normalize(symbol);
+        symbol = DeadCodeSymbolNormalizer.Normalize(symbol);
         protectedSymbols.Add(symbol);
         if (symbol.ContainingType is { } containingType)
         {
-            protectedSymbols.Add(Normalize(containingType));
+            protectedSymbols.Add(DeadCodeSymbolNormalizer.Normalize(containingType));
         }
     }
 
-    private void MarkUncertain(ISymbol symbol) => uncertainSymbols.Add(Normalize(symbol));
+    private void MarkUncertain(ISymbol symbol) => uncertainSymbols.Add(DeadCodeSymbolNormalizer.Normalize(symbol));
 
     private void MarkTypeAndMethodsUncertain(INamedTypeSymbol type)
     {
         MarkUncertain(type);
         foreach (var method in type.GetMembers().OfType<IMethodSymbol>()) MarkUncertain(method);
     }
-
-    internal static ISymbol Normalize(ISymbol symbol) => symbol is IMethodSymbol { ReducedFrom: { } reduced }
-        ? reduced.OriginalDefinition
-        : symbol.OriginalDefinition;
 
     private static bool HasEntryPointAttribute(ISymbol symbol, IReadOnlyList<INamedTypeSymbol> attributeTypes) =>
         symbol.GetAttributes().Any(attribute => attribute.AttributeClass is { } actual
