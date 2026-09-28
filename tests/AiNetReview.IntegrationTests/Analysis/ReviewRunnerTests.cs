@@ -10,7 +10,6 @@ using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Findings;
 using AiNetReview.Core.Rules;
-using AiNetReview.Core.Rules.TemplateNoOp;
 using AiNetReview.IntegrationTests.FixtureRules;
 
 public sealed class ReviewRunnerTests
@@ -27,7 +26,7 @@ public sealed class ReviewRunnerTests
 
         var firstRun = await runner.RunAsync(config, loaded);
         var repeatedRun = await runner.RunAsync(config, loaded);
-        var noOpRun = await runner.RunAsync(CreateConfig(root, [new TemplateNoOpRule()]), loaded);
+        var emptyRuleRun = await runner.RunAsync(CreateConfig(root, [new TestRule("empty-rule", [])]), loaded);
 
         var firstResult = Assert.Single(firstRun.Rules).Result;
         var repeatedResult = Assert.Single(repeatedRun.Rules).Result;
@@ -46,8 +45,8 @@ public sealed class ReviewRunnerTests
         var emptyRun = await runner.RunAsync(emptyConfig, loaded);
         Assert.Empty(Assert.Single(emptyRun.Rules).Result.Findings);
         Assert.Equal(0, emptyRun.DetectedCount);
-        Assert.Equal(0, noOpRun.DetectedCount);
-        Assert.Empty(Assert.Single(noOpRun.Rules).Result.Findings);
+        Assert.Equal(0, emptyRuleRun.DetectedCount);
+        Assert.Empty(Assert.Single(emptyRuleRun.Rules).Result.Findings);
     }
 
     [Fact]

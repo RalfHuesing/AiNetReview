@@ -145,7 +145,7 @@ public sealed class HostAdapterIntegrationTests
         var report = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "rules", "fixture-finding.md"));
         Assert.Contains("fixturecasea", report, StringComparison.Ordinal);
         Assert.Equal(
-            new[] { "fixture-finding", "template-noop" },
+            new[] { "fixture-finding", "method-control-flow-outliers" },
             provider.GetRequiredService<RuleRegistry>().Rules.Select(static rule => rule.Descriptor.RuleId));
     }
 

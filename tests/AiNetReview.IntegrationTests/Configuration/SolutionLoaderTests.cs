@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Rules;
-using AiNetReview.Core.Rules.TemplateNoOp;
+using AiNetReview.Core.Rules.MethodControlFlowOutliers;
 
 public sealed class SolutionLoaderTests
 {
@@ -139,14 +139,14 @@ public sealed class SolutionLoaderTests
         Assert.Contains("must not contain C# source files", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static RuleRegistry Registry() => new([new TemplateNoOpRule()]);
+    private static RuleRegistry Registry() => new([new MethodControlFlowOutliersRule()]);
 
     private static string ConfigurationJson(string solution, string outputDirectory = "reports") => $$"""
         {
           "schemaVersion": 1,
           "solution": "{{solution}}",
           "outputDirectory": "{{outputDirectory}}",
-          "rules": { "template-noop": {} }
+          "rules": { "method-control-flow-outliers": {} }
         }
         """;
 

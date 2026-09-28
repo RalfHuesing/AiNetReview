@@ -6,11 +6,11 @@ using System.IO;
 using System.Text.Json;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Rules;
-using AiNetReview.Core.Rules.TemplateNoOp;
+using AiNetReview.Core.Rules.MethodControlFlowOutliers;
 
 public sealed class ReviewConfigValidatorTests
 {
-    private static RuleRegistry Registry() => new([new TemplateNoOpRule()]);
+    private static RuleRegistry Registry() => new([new MethodControlFlowOutliersRule()]);
 
     [Fact]
     public void Load_RequiresAbsoluteAinetreviewFileAtProjectRoot()
@@ -39,18 +39,18 @@ public sealed class ReviewConfigValidatorTests
         Assert.Equal("reports/current", config.OutputDirectory);
         Assert.True(Directory.Exists(config.ResolvedOutputDirectory));
         Assert.Single(config.Rules);
-        Assert.Equal("template-noop", config.Rules[0].RuleId);
-        Assert.Empty(config.Rules[0].EffectiveOptions.Values);
+        Assert.Equal("method-control-flow-outliers", config.Rules[0].RuleId);
+        Assert.Equal(90, config.Rules[0].EffectiveOptions["percentile"].GetInt32());
     }
 
     [Theory]
-    [InlineData("{\"schemaVersion\":1,\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"template-noop\":{}}}")]
-    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"template-noop\":{\"option\":1,\"option\":2}}}")]
-    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"template-noop\":{},\"template-noop\":{}}}")]
-    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"extra\":true,\"rules\":{\"template-noop\":{}}}")]
-    [InlineData("{\"schemaVersion\":2,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"template-noop\":{}}}")]
+    [InlineData("{\"schemaVersion\":1,\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"method-control-flow-outliers\":{}}}")]
+    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"method-control-flow-outliers\":{\"option\":1,\"option\":2}}}")]
+    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"method-control-flow-outliers\":{},\"method-control-flow-outliers\":{}}}")]
+    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"extra\":true,\"rules\":{\"method-control-flow-outliers\":{}}}")]
+    [InlineData("{\"schemaVersion\":2,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"method-control-flow-outliers\":{}}}")]
     [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"unknown\":{}}}")]
-    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"template-noop\":{\"unknown\":true}}}")]
+    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"method-control-flow-outliers\":{\"unknown\":true}}}")]
     [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":[]} ")]
     public void Validate_RejectsInvalidJsonContract(string json)
     {
@@ -75,7 +75,7 @@ public sealed class ReviewConfigValidatorTests
             schemaVersion = 1,
             solution,
             outputDirectory = output,
-            rules = new Dictionary<string, object> { ["template-noop"] = new { } },
+            rules = new Dictionary<string, object> { ["method-control-flow-outliers"] = new { } },
         });
 
         Assert.Throws<InvalidReviewInputException>(() => new ReviewConfigValidator(Registry()).Validate(temp.DirectoryPath, json));
@@ -93,7 +93,7 @@ public sealed class ReviewConfigValidatorTests
             schemaVersion = 1,
             solution = fieldName == "solution" ? "Project\0.slnx" : "Project.slnx",
             outputDirectory = fieldName == "outputDirectory" ? "reports\0invalid" : "reports",
-            rules = new Dictionary<string, object> { ["template-noop"] = new { } },
+            rules = new Dictionary<string, object> { ["method-control-flow-outliers"] = new { } },
         });
 
         Assert.Throws<InvalidReviewInputException>(() => new ReviewConfigValidator(Registry()).Validate(temp.DirectoryPath, json));
@@ -112,7 +112,7 @@ public sealed class ReviewConfigValidatorTests
             schemaVersion = 1,
             solution = fieldName == "solution" ? "nested\\Project.slnx" : "nested/Project.slnx",
             outputDirectory = fieldName == "outputDirectory" ? "nested\\reports" : "reports",
-            rules = new Dictionary<string, object> { ["template-noop"] = new { } },
+            rules = new Dictionary<string, object> { ["method-control-flow-outliers"] = new { } },
         });
 
         Assert.Throws<InvalidReviewInputException>(() => new ReviewConfigValidator(Registry()).Validate(temp.DirectoryPath, json));
@@ -142,7 +142,7 @@ public sealed class ReviewConfigValidatorTests
             schemaVersion = 1,
             solution = "Project.slnx",
             outputDirectory = "escape/reports",
-            rules = new Dictionary<string, object> { ["template-noop"] = new { } },
+            rules = new Dictionary<string, object> { ["method-control-flow-outliers"] = new { } },
         });
 
         Assert.Throws<InvalidReviewInputException>(() => new ReviewConfigValidator(Registry()).Validate(temp.DirectoryPath, json));
@@ -153,7 +153,7 @@ public sealed class ReviewConfigValidatorTests
           "schemaVersion": 1,
           "solution": "Project.slnx",
           "outputDirectory": "reports/./current",
-          "rules": { "template-noop": {} }
+          "rules": { "method-control-flow-outliers": {} }
         }
         """;
 }

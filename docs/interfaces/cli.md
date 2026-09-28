@@ -12,4 +12,4 @@ On success, stdout contains exactly one compact JSON line, for example:
 
 Serilog initializes before parsing. Its only sink writes to `<AppContext.BaseDirectory>/logs/`, independent of the current directory, configuration path, and project root. The daily file rotates at 10 MiB, keeps at most 30 files, and supports concurrent processes. Log events include command, run ID when available, and failure context; configuration contents and source text are not logged. If logging cannot start, the process returns `LOGGING_FAILED` with code `4`.
 
-The adapter accepts injected services and input/output streams. IntegrationTests use this same adapter with a test-only fixture rule; the executable composition root registers only `template-noop`. The contract is specified in [Epic 1](../../tasks/initial-infrastructure/epics/01-Eingaben-und-Host.md#cli).
+The adapter accepts injected services and input/output streams. IntegrationTests use this same adapter with a test-only fixture rule; the executable composition root registers `method-control-flow-outliers`. The contract is specified in [Epic 1](../../tasks/initial-infrastructure/epics/01-Eingaben-und-Host.md#cli).

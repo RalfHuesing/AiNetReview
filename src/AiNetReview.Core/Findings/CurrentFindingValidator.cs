@@ -32,7 +32,7 @@ public sealed class CurrentFindingValidator
                 throw Invalid("A C# project has no project file path.");
             }
 
-            projectPaths.Add(project.Id, ToRelativePath(context.ProjectRoot, project.FilePath));
+            projectPaths.Add(project.Id, context.GetProjectRelativePath(project.FilePath));
             foreach (var document in project.Documents)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -41,7 +41,7 @@ public sealed class CurrentFindingValidator
                     continue;
                 }
 
-                var relativePath = ToRelativePath(context.ProjectRoot, document.FilePath);
+                var relativePath = context.GetProjectRelativePath(document.FilePath);
                 var text = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
                 if (!sourceDocuments.TryGetValue(relativePath, out var documents))
                 {
@@ -164,17 +164,6 @@ public sealed class CurrentFindingValidator
         && !path.Contains('\\')
         && path.Split('/').All(static segment => segment.Length > 0 && segment is not "." and not "..");
 
-    private static string ToRelativePath(string projectRoot, string path)
-    {
-        var relative = Path.GetRelativePath(projectRoot, Path.GetFullPath(path));
-        if (Path.IsPathRooted(relative) || relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, PathComparison))
-        {
-            throw Invalid("A loaded source path is outside the project root.");
-        }
-
-        return relative.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
-    }
-
     private static void ValidateLine(int line, int lineCount, string name)
     {
         if (line < 1 || line > lineCount)
@@ -196,10 +185,6 @@ public sealed class CurrentFindingValidator
     private static StringComparer PathComparer => OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase
         : StringComparer.Ordinal;
-
-    private static StringComparison PathComparison => OperatingSystem.IsWindows()
-        ? StringComparison.OrdinalIgnoreCase
-        : StringComparison.Ordinal;
 
     private readonly record struct FindingKey(string RuleId, string ProjectPath, string SourcePath, string SubjectId, string Discriminator);
 

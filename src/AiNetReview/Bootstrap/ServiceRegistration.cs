@@ -1,7 +1,7 @@
 namespace AiNetReview.Bootstrap;
 
 using AiNetReview.Core.Rules;
-using AiNetReview.Core.Rules.TemplateNoOp;
+using AiNetReview.Core.Rules.MethodControlFlowOutliers;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Reporting;
@@ -23,7 +23,7 @@ public static class ServiceRegistration
     public static IServiceCollection AddAiNetReviewRules(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.AddSingleton<IReviewRule, TemplateNoOpRule>();
+        services.AddSingleton<IReviewRule, MethodControlFlowOutliersRule>();
         return services;
     }
 }

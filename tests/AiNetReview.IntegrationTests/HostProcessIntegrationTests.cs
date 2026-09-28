@@ -49,7 +49,7 @@ public sealed class HostProcessIntegrationTests
         Assert.Empty(stderr);
         using var response = JsonDocument.Parse(Assert.Single(stdout.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)));
         Assert.Equal("completed", response.RootElement.GetProperty("status").GetString());
-        Assert.Equal(0, response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
+        var detectedCount = response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32();
 
         var runId = response.RootElement.GetProperty("runId").GetString();
         Assert.Matches("^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$", runId);
@@ -62,13 +62,13 @@ public sealed class HostProcessIntegrationTests
         Assert.True(File.Exists(indexReportPath));
         var indexReport = await File.ReadAllTextAsync(indexReportPath);
         Assert.Contains(runId!, indexReport, StringComparison.Ordinal);
-        Assert.Contains("| Detected | 0 |", indexReport, StringComparison.Ordinal);
-        Assert.Contains("[Markdown report](rules/template-noop.md)", indexReport, StringComparison.Ordinal);
-        var ruleReportPath = Path.Combine(outputDirectory, runId!, "rules", "template-noop.md");
+        Assert.Contains($"| Detected | {detectedCount} |", indexReport, StringComparison.Ordinal);
+        Assert.Contains("[Markdown report](rules/method-control-flow-outliers.md)", indexReport, StringComparison.Ordinal);
+        var ruleReportPath = Path.Combine(outputDirectory, runId!, "rules", "method-control-flow-outliers.md");
         Assert.True(File.Exists(ruleReportPath));
         var ruleReport = await File.ReadAllTextAsync(ruleReportPath);
-        Assert.Contains("# template\\-noop", ruleReport, StringComparison.Ordinal);
-        Assert.Contains("| Detected | 0 |", ruleReport, StringComparison.Ordinal);
+        Assert.Contains("# method\\-control\\-flow\\-outliers", ruleReport, StringComparison.Ordinal);
+        Assert.Contains($"| Detected | {detectedCount} |", ruleReport, StringComparison.Ordinal);
 
         var resultingRuns = Directory.GetDirectories(outputDirectory).Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
         Assert.Contains(runId, resultingRuns);
@@ -130,7 +130,7 @@ public sealed class HostProcessIntegrationTests
     }
 
     [Fact]
-    public async Task ProcessInvocation_WithValidTemplateNoOpConfigPublishesOneCompleteEmptyReport()
+    public async Task ProcessInvocation_WithValidRuleConfigPublishesOneCompleteReport()
     {
         using var host = IsolatedHost.Create();
         var projectRoot = await CreateProjectAsync(host.HostDirectory, "public sealed class Sample { }");
@@ -150,7 +150,8 @@ public sealed class HostProcessIntegrationTests
         var indexPath = response.RootElement.GetProperty("indexPath").GetString();
         Assert.StartsWith("reports/", indexPath, StringComparison.Ordinal);
         Assert.True(File.Exists(Path.Combine(projectRoot, indexPath!.Replace('/', Path.DirectorySeparatorChar))));
-        Assert.True(File.Exists(Path.Combine(projectRoot, "reports", runId!, "rules", "template-noop.md")));
+        Assert.Equal(0, response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
+        Assert.True(File.Exists(Path.Combine(projectRoot, "reports", runId!, "rules", "method-control-flow-outliers.md")));
 
         var logPath = Assert.Single(Directory.GetFiles(Path.Combine(host.HostDirectory, "logs"), "ainetreview-*.log"));
         var logContents = await File.ReadAllTextAsync(logPath);
@@ -191,7 +192,7 @@ public sealed class HostProcessIntegrationTests
         var output = fieldName == "outputDirectory" ? "reports\\u0000invalid" : "reports";
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
         await File.WriteAllTextAsync(configPath,
-            "{\"schemaVersion\":1,\"solution\":\"" + solution + "\",\"outputDirectory\":\"" + output + "\",\"rules\":{\"template-noop\":{}}}");
+            "{\"schemaVersion\":1,\"solution\":\"" + solution + "\",\"outputDirectory\":\"" + output + "\",\"rules\":{\"method-control-flow-outliers\":{}}}");
 
         using var process = host.Start(host.CreateWorkingDirectory(), "review", "--config", configPath);
         var (stdout, stderr) = await ReadProcessOutputAsync(process);
@@ -271,7 +272,7 @@ public sealed class HostProcessIntegrationTests
     {
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
         await File.WriteAllTextAsync(configPath,
-            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"template-noop\":{}}}");
+            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"method-control-flow-outliers\":{}}}");
         return configPath;
     }
 

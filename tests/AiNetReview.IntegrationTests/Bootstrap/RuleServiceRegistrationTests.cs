@@ -6,14 +6,14 @@ using System.Linq;
 using System.Text.Json;
 using AiNetReview.Bootstrap;
 using AiNetReview.Core.Rules;
-using AiNetReview.Core.Rules.TemplateNoOp;
+using AiNetReview.Core.Rules.MethodControlFlowOutliers;
 using AiNetReview.IntegrationTests.FixtureRules;
 using Microsoft.Extensions.DependencyInjection;
 
 public sealed class RuleServiceRegistrationTests
 {
     [Fact]
-    public void ProductionRuleRegistration_ContainsOnlyTemplateNoOp()
+    public void ProductionRuleRegistration_ContainsOnlyMethodControlFlowOutliers()
     {
         var services = new ServiceCollection();
         services.AddAiNetReviewServices();
@@ -24,9 +24,9 @@ public sealed class RuleServiceRegistrationTests
         var registry = provider.GetRequiredService<RuleRegistry>();
 
         var rule = Assert.Single(rules);
-        Assert.IsType<TemplateNoOpRule>(rule);
+        Assert.IsType<MethodControlFlowOutliersRule>(rule);
         Assert.Single(registry.Rules);
-        Assert.Same(rule, registry.GetRequired("template-noop"));
+        Assert.Same(rule, registry.GetRequired("method-control-flow-outliers"));
         Assert.False(registry.TryGet("fixture-finding", out _));
     }
 
@@ -41,7 +41,7 @@ public sealed class RuleServiceRegistrationTests
 
         var registry = provider.GetRequiredService<RuleRegistry>();
 
-        Assert.Equal(new[] { "fixture-finding", "template-noop" }, registry.Rules.Select(static rule => rule.Descriptor.RuleId));
+        Assert.Equal(new[] { "fixture-finding", "method-control-flow-outliers" }, registry.Rules.Select(static rule => rule.Descriptor.RuleId));
         Assert.IsType<FixtureFindingRule>(registry.GetRequired("fixture-finding"));
     }
 

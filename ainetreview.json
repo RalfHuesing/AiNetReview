@@ -3,6 +3,6 @@
   "solution": "AiNetReview.slnx",
   "outputDirectory": "audit-reporting",
   "rules": {
-    "template-noop": {}
+    "method-control-flow-outliers": {}
   }
 }
