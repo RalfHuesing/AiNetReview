@@ -25,7 +25,8 @@ public sealed class HostProcessIntegrationTests
         var logDirectory = Path.Combine(host.HostDirectory, "logs");
         var logPath = Assert.Single(Directory.GetFiles(logDirectory, "ainetreview-*.log"));
         var logContents = await File.ReadAllTextAsync(logPath);
-        Assert.Contains("Host started for unknown", logContents, StringComparison.Ordinal);
+        Assert.Contains("Host started", logContents, StringComparison.Ordinal);
+        Assert.Contains("\"Command\":\"unknown\"", logContents, StringComparison.Ordinal);
         Assert.False(Directory.Exists(Path.Combine(workingDirectory, "logs")));
         Assert.DoesNotContain("Host started", stdout, StringComparison.Ordinal);
         Assert.DoesNotContain("Host started", stderr, StringComparison.Ordinal);
@@ -87,8 +88,11 @@ public sealed class HostProcessIntegrationTests
 
         var logPath = Assert.Single(Directory.GetFiles(Path.Combine(host.HostDirectory, "logs"), "ainetreview-*.log"));
         var logContents = await File.ReadAllTextAsync(logPath);
-        Assert.Contains("Host started for review", logContents, StringComparison.Ordinal);
-        Assert.Contains(runId!, logContents, StringComparison.Ordinal);
+        Assert.Contains("Host started", logContents, StringComparison.Ordinal);
+        var logEvents = logContents.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        Assert.All(logEvents, line => Assert.Contains("\"Command\":\"review\"", line, StringComparison.Ordinal));
+        var completion = Assert.Single(logEvents.Where(static line => line.Contains("Review completed", StringComparison.Ordinal)));
+        Assert.Contains("\"RunId\":\"" + runId + "\"", completion, StringComparison.Ordinal);
         Assert.False(Directory.Exists(Path.Combine(workingDirectory, "logs")));
     }
 
@@ -107,6 +111,35 @@ public sealed class HostProcessIntegrationTests
         using var error = JsonDocument.Parse(Assert.Single(stderr.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)));
         Assert.Equal("ANALYSIS_FAILED", error.RootElement.GetProperty("code").GetString());
         Assert.Empty(Directory.GetDirectories(Path.Combine(projectRoot, "reports")));
+    }
+
+    [Theory]
+    [InlineData("solution")]
+    [InlineData("outputDirectory")]
+    public async Task ProcessInvocation_WithNullCharacterInConfiguredPathReturnsInvalidInput(string fieldName)
+    {
+        using var host = IsolatedHost.Create();
+        var projectRoot = Path.Combine(host.HostDirectory, "invalid-path-project");
+        Directory.CreateDirectory(projectRoot);
+        var solution = fieldName == "solution" ? "Project\\u0000.slnx" : "Project.slnx";
+        var output = fieldName == "outputDirectory" ? "reports\\u0000invalid" : "reports";
+        var configPath = Path.Combine(projectRoot, "ainetreview.json");
+        await File.WriteAllTextAsync(configPath,
+            "{\"schemaVersion\":1,\"solution\":\"" + solution + "\",\"outputDirectory\":\"" + output + "\",\"rules\":{\"template-noop\":{}}}");
+
+        using var process = host.Start(host.CreateWorkingDirectory(), "review", "--config", configPath);
+        var (stdout, stderr) = await ReadProcessOutputAsync(process);
+
+        Assert.Equal(2, process.ExitCode);
+        Assert.Empty(stdout);
+        using var error = JsonDocument.Parse(Assert.Single(stderr.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)));
+        Assert.Equal("INVALID_INPUT", error.RootElement.GetProperty("code").GetString());
+        Assert.False(Directory.Exists(Path.Combine(projectRoot, "reports")));
+        var logPath = Assert.Single(Directory.GetFiles(Path.Combine(host.HostDirectory, "logs"), "ainetreview-*.log"));
+        var logContents = await File.ReadAllTextAsync(logPath);
+        var operationalEvent = Assert.Single(logContents.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+            .Where(static line => line.Contains("Invalid review input", StringComparison.Ordinal)));
+        Assert.Contains("\"Command\":\"review\"", operationalEvent, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -130,7 +163,7 @@ public sealed class HostProcessIntegrationTests
         }
 
         var logPath = Assert.Single(Directory.GetFiles(Path.Combine(host.HostDirectory, "logs"), "ainetreview-*.log"));
-        var startupCount = (await File.ReadAllTextAsync(logPath)).Split("Host started for unknown", StringSplitOptions.None).Length - 1;
+        var startupCount = (await File.ReadAllTextAsync(logPath)).Split("Host started", StringSplitOptions.None).Length - 1;
         Assert.Equal(processes.Length, startupCount);
     }
 

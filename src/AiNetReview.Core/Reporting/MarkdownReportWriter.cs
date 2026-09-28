@@ -199,7 +199,7 @@ public sealed class MarkdownReportWriter
                     .Append(evidence.Line.ToString(CultureInfo.InvariantCulture)).Append("](")
                     .Append(SourceLink(evidence.SourcePath, evidence.Line)).Append(") — **")
                     .Append(EscapeInline(evidence.Label)).Append("**: ").Append(EscapeInline(evidence.Detail))
-                    .Append("; code: `").Append(EscapeInline(evidence.Snippet)).Append("`\n");
+                    .Append("; code: ").Append(FormatCodeSpan(evidence.Snippet)).Append('\n');
             }
         }
 
@@ -231,6 +231,31 @@ public sealed class MarkdownReportWriter
     };
 
     private static string EscapeTable(string value) => EscapeInline(value);
+
+    private static string FormatCodeSpan(string value)
+    {
+        var content = value.Replace("\r", string.Empty, StringComparison.Ordinal).Replace('\n', ' ');
+        var longestBacktickRun = 0;
+        var currentBacktickRun = 0;
+        foreach (var character in content)
+        {
+            if (character == '`')
+            {
+                currentBacktickRun++;
+                longestBacktickRun = Math.Max(longestBacktickRun, currentBacktickRun);
+            }
+            else
+            {
+                currentBacktickRun = 0;
+            }
+        }
+
+        var delimiter = new string('`', longestBacktickRun + 1);
+        var needsPadding = content.Length > 0 && (content[0] is '`' or ' ' || content[^1] is '`' or ' ');
+        return needsPadding
+            ? delimiter + " " + content + " " + delimiter
+            : delimiter + content + delimiter;
+    }
 
     private static string EscapeInline(string value)
     {

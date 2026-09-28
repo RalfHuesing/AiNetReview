@@ -28,6 +28,7 @@ internal static class HostLogging
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Information()
             .Enrich.FromLogContext()
+            .Enrich.WithProperty("Command", command)
             .WriteTo.File(
                 Path.Combine(logDirectory, LogFileName),
                 rollingInterval: RollingInterval.Day,
@@ -38,7 +39,7 @@ internal static class HostLogging
                 outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}")
             .CreateLogger();
 
-        Log.Information("Host started for {Command}", command);
+        Log.Information("Host started");
     }
 
     internal static ValueTask CloseAndFlushAsync() => Log.CloseAndFlushAsync();

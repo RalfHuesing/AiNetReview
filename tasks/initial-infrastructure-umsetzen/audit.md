@@ -1,35 +1,34 @@
 # Final audit — initial infrastructure implementation
 
 Date: 2026-09-28
-Base: `9fb0bd643d1c96b837995b16e338256f2f5f07dd`
-Audited HEAD: `d672e67d4eb817a491022f05d82e1c9d770aec0c`
+Correction base: `dd2e8e43173691a3ed8b118f7a75db6475465b7b`
 
-The final audit compared the implementation diff, current-state documentation, recorded verification evidence, ready implementation concept, approved concept, all four epics, and repository rules. The recorded build, FastTests, IntegrationTests, performance run, and self-analysis evidence covers the stated environments and commands. The production registration boundary, report publication transaction, older-run preservation, source materialization, path containment, and fixture-only rule registration are reflected in implementation and targeted tests.
+The correction worktree was reviewed against the ready implementation concept, approved concept, Epics 1, 3, and 4, applicable repository rules, current-state documentation, and the original audit findings. All four findings below are resolved. The final build, FastTests, IntegrationTests, performance gate, and self-analysis were rerun against the corrected implementation.
 
-The Final audit checkbox in `roadmap.md` remains open because these findings need resolution and verification.
+## Findings and resolution
 
-## Findings
+### [P2] Backticks in evidence snippets can break report Markdown — resolved
 
-### [P2] Backticks in evidence snippets can break report Markdown
+Evidence snippets now use a code-span delimiter one backtick longer than the longest backtick run in the content. Edge spaces or backticks receive the CommonMark padding needed to keep closing delimiters separate from snippet content. The regression test checks snippets containing both leading and trailing backtick runs; it would fail against the original single-backtick output.
 
-[MarkdownReportWriter.cs](../../src/AiNetReview.Core/Reporting/MarkdownReportWriter.cs#L198) inserts evidence snippets inside a single-backtick code span and applies `EscapeInline` at line 202. That helper backslash-escapes backticks (lines 235–253), but backslash escapes do not protect delimiters inside Markdown code spans. A valid source line whose snippet contains a backtick can therefore terminate the code span and alter the rendered report structure. The existing assertion in [MarkdownReportWriterTests.cs](../../tests/AiNetReview.FastTests/Reporting/MarkdownReportWriterTests.cs#L67) checks the emitted backslashes as text; it does not validate rendered Markdown. Epic 3 requires source and evidence content to be escaped so it cannot damage Markdown structure.
+### [P2] Invalid path characters can escape input-error classification — resolved
 
-### [P2] Invalid path characters can escape input-error classification
+`ProjectPathResolver.ResolveRelative` translates `ArgumentException` from path canonicalization into `InvalidReviewInputException`. FastTests cover NUL characters in both `solution` and `outputDirectory`. Process tests encode each NUL in JSON and verify `INVALID_INPUT`, exit code 2, empty stdout, and no report publication.
 
-[ProjectPathResolver.cs](../../src/AiNetReview.Core/Configuration/ProjectPathResolver.cs#L55) calls `Canonicalize` on user-provided `solution` and `outputDirectory` values without translating `ArgumentException` into `InvalidReviewInputException`. For example, JSON can encode a NUL in either path (`"Project\u0000.slnx"`); `Path.GetFullPath` throws. [ReviewConfigValidator.Validate](../../src/AiNetReview.Core/Configuration/ReviewConfigValidator.cs#L73) only translates `JsonException`, and [ReviewCommand](../../src/AiNetReview/Cli/ReviewCommand.cs#L150) only maps `InvalidReviewInputException` to `INVALID_INPUT`. The exception reaches the host-level fallback and is reported as `ANALYSIS_FAILED` (exit 3), although Epic 1 requires malformed configuration paths to be `INVALID_INPUT` (exit 2). The current path tests cover rooted, traversal, backslash, and symlink cases, but not invalid path characters or CLI classification.
+### [P2] Performance test samples current memory instead of measuring peak private bytes — resolved
 
-### [P2] Performance test samples current memory instead of measuring peak private bytes
+The Windows performance gate now calls `GetProcessMemoryInfo` after process completion and reads `PROCESS_MEMORY_COUNTERS_EX.PeakPagefileUsage`, the process lifetime peak commit charge. Windows documents this counter as the peak committed private memory for the process ([Microsoft documentation](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-process_memory_counters_ex)). The test rejects a zero measurement. On Windows 10.0.26200.0, the rerun measured 0.26 GiB for the 180,024-line load in 7.07 seconds; exit was 0 and report publication succeeded, within the 10-minute and 6-GiB limits.
 
-[InfrastructureLoadTests.cs](../../tests/AiNetReview.IntegrationTests/Performance/InfrastructureLoadTests.cs#L70) updates the reported peak from `Process.PrivateMemorySize64` every 10 ms (lines 71–88). This is a sample of current private memory and can miss short-lived peaks between polls; it does not provide the process's actual peak private bytes required by Epic 4. Consequently, the recorded 0.26 GiB result is not sufficient evidence that the 6 GiB peak limit was met, even though elapsed time, generated load, publication, and successful exit are checked. The release gate needs a source of peak usage or must describe and justify a measurement that captures it.
+### [P2] Operational log events omit the command field — resolved
 
-### [P2] Operational log events omit the command field
+The host enriches every event with the command. Startup no longer consumes the command as a message-template token, so it remains an explicit event property. The completion event pushes the known `RunId` into the log context as a property. Process tests verify the command property on every event for a successful invocation, the run ID property on its completion event, the `unknown` command on startup, and command metadata on an invalid-input event.
 
-[HostLogging.Initialize](../../src/AiNetReview/HostLogging.cs#L28) enables `FromLogContext`, but only the startup event at line 41 carries `Command`. Subsequent start, cancellation, analysis-error, report-error, and completion events in [ReviewCommand](../../src/AiNetReview/Cli/ReviewCommand.cs#L76) do not attach that property; only completion includes `RunId` (line 138). Epic 1 specifies that log events include the command, run ID when available, and failure context. Existing process tests check that startup includes the command and that a successful run ID appears somewhere in the log, but do not assert the metadata on operational events.
+## Verification evidence
 
-## Evidence reviewed
-
-- Roadmap reports successful build, FastTests, IntegrationTests, separate performance test, and self-analysis on Windows 10.0.26200.0 / .NET SDK 10.0.400.
-- The performance implementation generates six C# projects and records the source line count and process result; the memory metric limitation is described above.
-- The productive composition root adds only `TemplateNoOpRule`; the fixture rule is defined and registered by IntegrationTests.
-- The report writer writes per-run temporary directories and atomically renames them after report files are closed; publication tests cover collisions, concurrency, previous-run preservation, and pre-publication failure cleanup.
-- Loader and runner tests cover load/compile failures, source mutation after materialization, findings and evidence validation, cancellation, and rule exceptions.
+- The required failing-first regressions were observed: the Markdown assertion failed on the old rendering, and both NUL path cases threw raw `ArgumentException` instead of `InvalidReviewInputException`.
+- `pwsh -File ./scripts/build.ps1`: passed, 0 warnings and 0 errors.
+- `pwsh -File ./scripts/test-fast.ps1`: passed, 61/61.
+- `pwsh -File ./scripts/test-integration.ps1`: passed, 32/32.
+- `pwsh -File ./scripts/test-performance.ps1`: passed, 1/1. Windows 10.0.26200.0, .NET SDK 10.0.400, 32 logical CPUs, and 125.65 GiB available RAM; 180,024 non-comment C# code lines across 6 documents and 6 projects; production EXE 7.07 seconds, 0.26 GiB lifetime peak private commit charge, exit 0.
+- Self-analysis: `src/AiNetReview/bin/Debug/net10.0/AiNetReview.exe review --config <repo-root>/ainetreview.json` analyzed `AiNetReview.slnx`, published a zero-finding report, and exited 0 (run `20260928T084401Z-5f5b15ba`). The temporary root config and report were removed.
+- The production registration remains limited to `TemplateNoOpRule`; the fixture rule stays test-only. Existing tests continue to cover atomic report publication and cleanup, prior-run preservation, source materialization, compilation checks, and finding validation.

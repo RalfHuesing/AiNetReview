@@ -28,9 +28,9 @@ TreatWarningsAsErrors and Nullable reference types are enabled across all projec
 
 ## Host Logging
 
-The host initializes Serilog before command parsing. Its only sink writes `ainetreview-<date>.log` under the host executable's `logs/` directory, independent of the working directory. Files roll daily and at 10 MiB, retain at most 30 files, and allow concurrent host processes to write. If the directory or active log file cannot be opened for writing, the host exits with code `4` and writes a `LOGGING_FAILED` JSON error to stderr without writing to stdout. Process-level coverage is in `HostProcessIntegrationTests`.
+The host initializes Serilog before command parsing. Its only sink writes `ainetreview-<date>.log` under the host executable's `logs/` directory, independent of the working directory. Every event carries the command; completion also carries the run ID. Files roll daily and at 10 MiB, retain at most 30 files, and allow concurrent host processes to write. If the directory or active log file cannot be opened for writing, the host exits with code `4` and writes a `LOGGING_FAILED` JSON error to stderr without writing to stdout. Process-level coverage is in `HostProcessIntegrationTests`.
 
-The host integration tests also run the production executable against generated projects and check JSON stream shape, exit codes, publication on a complete empty run, no publication after analysis failure, executable-relative logs, size rotation, and concurrent processes. `HostAdapterIntegrationTests` runs the same CLI adapter with an explicitly registered fixture rule and repeats scans after changing source and options, checking current findings and preservation of earlier reports.
+The host integration tests also run the production executable against generated projects and check JSON stream shape, exit codes, invalid path classification (including NUL characters), publication on a complete empty run, no publication after analysis failure, command and run-ID log metadata, executable-relative logs, size rotation, and concurrent processes. `HostAdapterIntegrationTests` runs the same CLI adapter with an explicitly registered fixture rule and repeats scans after changing source and options, checking current findings and preservation of earlier reports.
 
 `.editorconfig` enables build errors for selected resource, async/task, threading, API-result, and regex-timeout defects. It explicitly disables design, complexity-related, context-dependent performance, and cancellation-forwarding diagnostics as build gates. The selected technical diagnostics apply to test projects and TestKit; suppress a verified false positive at its specific location.
 
@@ -49,6 +49,6 @@ pwsh -File ./scripts/test-integration.ps1
 pwsh -File ./scripts/test-performance.ps1
 ```
 
-The normal IntegrationTests script excludes the test tagged `Category=Performance`; the dedicated performance script runs that deterministic 180,000-line test against the production executable. It records elapsed time, peak private bytes, source document count, project count, and machine capacity in the test output. Release acceptance requires at most 10 minutes and 6 GiB peak private bytes.
+The normal IntegrationTests script excludes the test tagged `Category=Performance`; the dedicated performance script runs that deterministic 180,000-line test against the production executable. On Windows it reads the process lifetime peak commit charge using `GetProcessMemoryInfo` and `PROCESS_MEMORY_COUNTERS_EX.PeakPagefileUsage`, alongside elapsed time, source document count, project count, and machine capacity. Release acceptance requires at most 10 minutes and 6 GiB peak private bytes. [Microsoft documents this counter as the lifetime peak commit charge](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-process_memory_counters_ex).
 
 Agents and automation tools can inspect the static log files in `temp/` directly.

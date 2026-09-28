@@ -10,6 +10,7 @@ using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Reporting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Serilog.Context;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 
@@ -68,6 +69,7 @@ public sealed class ReviewCommand
         TextWriter standardError,
         CancellationToken cancellationToken)
     {
+        using var commandScope = LogContext.PushProperty("Command", "review");
         var logger = services.GetRequiredService<ILogger<ReviewCommand>>();
         try
         {
@@ -135,7 +137,10 @@ public sealed class ReviewCommand
                     return FailedOutputExitCode;
                 }
 
-                logger.LogInformation("Review completed with {DetectedCount} finding(s) in run {RunId}", result.DetectedCount, report.RunId);
+                using (LogContext.PushProperty("RunId", report.RunId))
+                {
+                    logger.LogInformation("Review completed with {DetectedCount} finding(s)", result.DetectedCount);
+                }
                 var response = JsonSerializer.Serialize(new
                 {
                     status = "completed",

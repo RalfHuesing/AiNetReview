@@ -84,6 +84,24 @@ public sealed class ReviewConfigValidatorTests
     [Theory]
     [InlineData("solution")]
     [InlineData("outputDirectory")]
+    public void Validate_RejectsPathsContainingNullCharacters(string fieldName)
+    {
+        using var temp = TestTempDirectory.Create();
+        temp.CreateFile("Project.slnx", "<Solution />");
+        var json = JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            solution = fieldName == "solution" ? "Project\0.slnx" : "Project.slnx",
+            outputDirectory = fieldName == "outputDirectory" ? "reports\0invalid" : "reports",
+            rules = new Dictionary<string, object> { ["template-noop"] = new { } },
+        });
+
+        Assert.Throws<InvalidReviewInputException>(() => new ReviewConfigValidator(Registry()).Validate(temp.DirectoryPath, json));
+    }
+
+    [Theory]
+    [InlineData("solution")]
+    [InlineData("outputDirectory")]
     public void Validate_RejectsBackslashesInProjectRelativePaths(string fieldName)
     {
         using var temp = TestTempDirectory.Create();

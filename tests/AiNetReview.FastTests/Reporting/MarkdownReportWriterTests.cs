@@ -53,7 +53,7 @@ public sealed class MarkdownReportWriterTests
         var rule = new ReportRule("fixture-rule", "Fixture", "safe");
         var config = CreateConfig(temp.DirectoryPath, rule);
         var z = Finding("z file#1.cs", 9, "Z", "last|rationale", "second`snippet", "zeta");
-        var a = Finding("a file#1.cs", 3, "A", "first | rationale", "first `snippet`", "alpha");
+        var a = Finding("a file#1.cs", 3, "A", "first | rationale", "`snippet`", "alpha");
 
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
             new RuleRunResult(rule.Descriptor.RuleId, new RuleResult([z, a])),
@@ -64,7 +64,8 @@ public sealed class MarkdownReportWriterTests
         Assert.True(markdown.IndexOf("A — alpha", StringComparison.Ordinal) < markdown.IndexOf("Z — zeta", StringComparison.Ordinal));
         Assert.Contains("../../../a%20file%231.cs#L3", markdown, StringComparison.Ordinal);
         Assert.Contains("\\| rationale", markdown, StringComparison.Ordinal);
-        Assert.Contains("first \\`snippet\\`", markdown, StringComparison.Ordinal);
+        Assert.Contains("code: `` `snippet` ``", markdown, StringComparison.Ordinal);
+        Assert.Contains("code: ``second`snippet``", markdown, StringComparison.Ordinal);
         Assert.True(markdown.IndexOf("aMetric=1", StringComparison.Ordinal) < markdown.IndexOf("zMetric=2", StringComparison.Ordinal));
         Assert.True(markdown.IndexOf("A \\| label", StringComparison.Ordinal) < markdown.IndexOf("B \\| label", StringComparison.Ordinal));
         Assert.Contains("| Detected | 2 |", markdown, StringComparison.Ordinal);

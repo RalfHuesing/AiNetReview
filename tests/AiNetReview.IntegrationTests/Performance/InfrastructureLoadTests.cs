@@ -2,6 +2,7 @@ namespace AiNetReview.IntegrationTests.Performance;
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -9,6 +10,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 
 public sealed class InfrastructureLoadTests(ITestOutputHelper output)
 {
@@ -67,26 +69,8 @@ public sealed class InfrastructureLoadTests(ITestOutputHelper output)
         var stdoutTask = process.StandardOutput.ReadToEndAsync();
         var stderrTask = process.StandardError.ReadToEndAsync();
         var timer = Stopwatch.StartNew();
-        long peakPrivateBytes = 0;
-        while (true)
-        {
-            try
-            {
-                process.Refresh();
-                peakPrivateBytes = Math.Max(peakPrivateBytes, process.PrivateMemorySize64);
-                if (process.HasExited)
-                {
-                    break;
-                }
-            }
-            catch (InvalidOperationException)
-            {
-                break;
-            }
-
-            await Task.Delay(10);
-        }
-
+        await process.WaitForExitAsync();
+        var peakPrivateBytes = GetPeakPrivateBytes(process);
         timer.Stop();
         var stdout = await stdoutTask;
         var stderr = await stderrTask;
@@ -103,6 +87,7 @@ public sealed class InfrastructureLoadTests(ITestOutputHelper output)
         Assert.Equal(ProjectCount, documentCount);
         Assert.True(physicalCodeLines >= RequiredCodeLines,
             $"The generated solution has {physicalCodeLines:N0} code lines; at least {RequiredCodeLines:N0} are required.");
+        Assert.True(peakPrivateBytes > 0, "Windows must report a nonzero process peak commit charge.");
 
         output.WriteLine($"Environment: Windows {Environment.OSVersion.Version}; {processorCount} logical CPUs; {FormatGiB(totalMemoryBytes)} GiB available RAM.");
         output.WriteLine($"Load: {physicalCodeLines:N0} non-comment C# code lines; {documentCount} documents; {ProjectCount} projects.");
@@ -112,6 +97,37 @@ public sealed class InfrastructureLoadTests(ITestOutputHelper output)
         Assert.True(peakPrivateBytes <= 6L * 1024 * 1024 * 1024,
             $"Peak private bytes were {FormatGiB(peakPrivateBytes)} GiB; limit is 6 GiB.");
     }
+
+    private static long GetPeakPrivateBytes(Process process)
+    {
+        var counters = new ProcessMemoryCountersEx { Size = (uint)Marshal.SizeOf<ProcessMemoryCountersEx>() };
+        if (!GetProcessMemoryInfo(process.Handle, ref counters, counters.Size))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not read the process peak private-byte counter.");
+        }
+
+        return checked((long)counters.PeakPagefileUsage);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ProcessMemoryCountersEx
+    {
+        internal uint Size;
+        internal uint PageFaultCount;
+        internal nuint PeakWorkingSetSize;
+        internal nuint WorkingSetSize;
+        internal nuint QuotaPeakPagedPoolUsage;
+        internal nuint QuotaPagedPoolUsage;
+        internal nuint QuotaPeakNonPagedPoolUsage;
+        internal nuint QuotaNonPagedPoolUsage;
+        internal nuint PagefileUsage;
+        internal nuint PeakPagefileUsage;
+        internal nuint PrivateUsage;
+    }
+
+    [DllImport("psapi.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetProcessMemoryInfo(IntPtr process, ref ProcessMemoryCountersEx counters, uint size);
 
     private static async Task RestoreAsync(string solutionPath, string workingDirectory)
     {

@@ -52,7 +52,16 @@ internal static class ProjectPathResolver
             throw new InvalidReviewInputException($"'{fieldName}' must identify a path below the project root.");
         }
 
-        var candidate = Canonicalize(Path.Combine([projectRoot, .. cleaned]));
+        string candidate;
+        try
+        {
+            candidate = Canonicalize(Path.Combine([projectRoot, .. cleaned]));
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidReviewInputException($"'{fieldName}' contains invalid path characters.", exception);
+        }
+
         if (!IsWithin(projectRoot, candidate))
         {
             throw new InvalidReviewInputException($"'{fieldName}' resolves outside the project root.");
