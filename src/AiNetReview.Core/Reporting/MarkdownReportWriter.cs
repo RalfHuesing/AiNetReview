@@ -65,7 +65,7 @@ public sealed class MarkdownReportWriter
                     var ruleResult = resultById[configuredRule.RuleId];
                     var rulePath = Path.Combine(temporaryPath, "rules", configuredRule.RuleId + ".md");
                     Directory.CreateDirectory(Path.GetDirectoryName(rulePath)!);
-                    await WriteUtf8Async(rulePath, FormatRuleReport(configuredRule, ruleResult), cancellationToken)
+                    await WriteUtf8Async(rulePath, FormatRuleReport(config, configuredRule, ruleResult, Path.GetDirectoryName(rulePath)!), cancellationToken)
                         .ConfigureAwait(false);
                 }
 
@@ -157,7 +157,7 @@ public sealed class MarkdownReportWriter
         return builder.ToString();
     }
 
-    private static string FormatRuleReport(ConfiguredRule configuredRule, RuleRunResult result)
+    private static string FormatRuleReport(ReviewConfig config, ConfiguredRule configuredRule, RuleRunResult result, string reportDirectory)
     {
         var descriptor = configuredRule.Rule.Descriptor;
         var builder = new StringBuilder();
@@ -185,7 +185,7 @@ public sealed class MarkdownReportWriter
                 .Append("| Project | ").Append(EscapeTable(finding.ProjectPath)).Append(" |\n")
                 .Append("| Source | [").Append(EscapeLinkText(finding.SourcePath)).Append(':')
                 .Append(finding.StartLine.ToString(CultureInfo.InvariantCulture)).Append("](")
-                .Append(SourceLink(finding.SourcePath, finding.StartLine)).Append(") |\n")
+                .Append(SourceLink(config.ProjectRoot, finding.SourcePath, finding.StartLine, reportDirectory)).Append(") |\n")
                 .Append("| Rationale | ").Append(EscapeTable(finding.Rationale)).Append(" |\n")
                 .Append("| Metrics | ").Append(EscapeTable(FormatMetrics(finding))).Append(" |\n\n")
                 .Append("### Evidence\n\n");
@@ -197,7 +197,7 @@ public sealed class MarkdownReportWriter
             {
                 builder.Append("- [").Append(EscapeLinkText(evidence.SourcePath)).Append(':')
                     .Append(evidence.Line.ToString(CultureInfo.InvariantCulture)).Append("](")
-                    .Append(SourceLink(evidence.SourcePath, evidence.Line)).Append(") — **")
+                    .Append(SourceLink(config.ProjectRoot, evidence.SourcePath, evidence.Line, reportDirectory)).Append(") — **")
                     .Append(EscapeInline(evidence.Label)).Append("**: ").Append(EscapeInline(evidence.Detail))
                     .Append("; code: ").Append(FormatCodeSpan(evidence.Snippet)).Append('\n');
             }
@@ -206,7 +206,16 @@ public sealed class MarkdownReportWriter
         return builder.ToString();
     }
 
-    private static string SourceLink(string sourcePath, int line) => "../../../" + EncodeRelativePath(sourcePath) + "#L" + line.ToString(CultureInfo.InvariantCulture);
+    private static string SourceLink(string projectRoot, string sourcePath, int line, string reportDirectory)
+    {
+        var absoluteSourcePath = Path.GetFullPath(Path.Combine(projectRoot, sourcePath.Replace('/', Path.DirectorySeparatorChar)));
+        var relativePath = Path.GetRelativePath(reportDirectory, absoluteSourcePath);
+        var linkPath = Path.IsPathFullyQualified(relativePath)
+            ? new Uri(absoluteSourcePath).AbsoluteUri
+            : string.Join('/', relativePath.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries)
+                .Select(Uri.EscapeDataString));
+        return linkPath + "#L" + line.ToString(CultureInfo.InvariantCulture);
+    }
 
     private static string FormatMetrics(FindingDraft finding) => string.Join(
         ", ", finding.Metrics.OrderBy(static pair => pair.Key, StringComparer.Ordinal)
@@ -279,8 +288,6 @@ public sealed class MarkdownReportWriter
     }
 
     private static string EscapeLinkText(string value) => EscapeInline(value);
-
-    private static string EncodeRelativePath(string path) => string.Join('/', path.Split('/').Select(EncodePathSegment));
 
     private static string EncodePathSegment(string segment) => Uri.EscapeDataString(segment);
 

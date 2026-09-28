@@ -45,6 +45,61 @@ public sealed class ReviewConfigValidatorTests
     }
 
     [Fact]
+    public void ValidateForAudit_RequiresAbsoluteOutputDirectory()
+    {
+        using var temp = TestTempDirectory.Create();
+        temp.CreateFile("Project.slnx", "<Solution />");
+        var outputDirectory = temp.GetPath("central/reports");
+        var relativeOutputDirectory = Path.GetRelativePath(Environment.CurrentDirectory, outputDirectory);
+
+        Assert.Throws<InvalidReviewInputException>(() => new ReviewConfigValidator(Registry()).ValidateForAudit(
+            temp.DirectoryPath,
+            ValidJson(),
+            relativeOutputDirectory));
+        Assert.False(Directory.Exists(Path.GetDirectoryName(outputDirectory)));
+    }
+
+    [Theory]
+    [InlineData("missing.slnx", "method-control-flow-outliers")]
+    [InlineData("Project.slnx", "unknown-rule")]
+    public void ValidateForAudit_RejectsInvalidSolutionOrRuleWithoutCreatingCentralOutput(string solution, string ruleId)
+    {
+        using var temp = TestTempDirectory.Create();
+        temp.CreateFile("Project.slnx", "<Solution />");
+        var outputDirectory = temp.GetPath("central/audit-target");
+        var json = JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            solution,
+            outputDirectory = "reports",
+            rules = new Dictionary<string, object> { [ruleId] = new { } },
+        });
+
+        Assert.Throws<InvalidReviewInputException>(() => new ReviewConfigValidator(Registry())
+            .ValidateForAudit(temp.DirectoryPath, json, outputDirectory));
+
+        Assert.False(Directory.Exists(outputDirectory));
+        Assert.False(Directory.Exists(Path.Combine(temp.DirectoryPath, "reports")));
+    }
+
+    [Fact]
+    public void ValidateForAudit_UsesCentralOutputWithoutCreatingReportsInTargetRepository()
+    {
+        using var temp = TestTempDirectory.Create();
+        temp.CreateFile("Project.slnx", "<Solution />");
+        var outputDirectory = temp.GetPath("central/audit-target");
+
+        var config = new ReviewConfigValidator(Registry()).ValidateForAudit(
+            temp.DirectoryPath,
+            ValidJson(),
+            outputDirectory);
+
+        Assert.Equal(Path.GetFullPath(outputDirectory), config.ResolvedOutputDirectory);
+        Assert.True(Directory.Exists(outputDirectory));
+        Assert.False(Directory.Exists(Path.Combine(temp.DirectoryPath, "reports")));
+    }
+
+    [Fact]
     public void Validate_ResolvesDeadCodeOptionsAndRejectsMalformedValues()
     {
         using var temp = TestTempDirectory.Create();

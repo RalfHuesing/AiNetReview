@@ -74,7 +74,7 @@ public sealed class ReviewConfigValidator
         {
             using var document = JsonDocument.Parse(json, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Disallow });
             RejectDuplicateKeys(document.RootElement);
-            return ValidateDocument(canonicalRoot, document.RootElement);
+            return ValidateDocument(canonicalRoot, document.RootElement, null);
         }
         catch (JsonException ex)
         {
@@ -82,7 +82,59 @@ public sealed class ReviewConfigValidator
         }
     }
 
-    private ReviewConfig ValidateDocument(string root, JsonElement document)
+    /// <summary>Validates a review configuration for an explicitly started audit whose reports are stored separately.</summary>
+    public ReviewConfig ValidateForAudit(string projectRoot, string standardConfigJson, string absoluteOutputDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
+        ArgumentNullException.ThrowIfNull(standardConfigJson);
+        ArgumentException.ThrowIfNullOrWhiteSpace(absoluteOutputDirectory);
+        if (!Path.IsPathFullyQualified(absoluteOutputDirectory))
+        {
+            throw new InvalidReviewInputException("Audit output directory must be an absolute path.");
+        }
+        if (File.Exists(absoluteOutputDirectory))
+        {
+            throw new InvalidReviewInputException("Audit output path must be a directory.");
+        }
+
+        string canonicalRoot;
+        string canonicalOutput;
+        try
+        {
+            canonicalRoot = ProjectPathResolver.Canonicalize(projectRoot);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            throw new InvalidReviewInputException("Audit root or output directory could not be resolved.", ex);
+        }
+
+        if (!Directory.Exists(canonicalRoot))
+        {
+            throw new InvalidReviewInputException("Project root does not exist.");
+        }
+
+        try
+        {
+            canonicalOutput = ProjectPathResolver.Canonicalize(absoluteOutputDirectory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            throw new InvalidReviewInputException("Audit output directory could not be resolved.", ex);
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(standardConfigJson, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Disallow });
+            RejectDuplicateKeys(document.RootElement);
+            return ValidateDocument(canonicalRoot, document.RootElement, canonicalOutput);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidReviewInputException("Configuration is not valid JSON.", ex);
+        }
+    }
+
+    private ReviewConfig ValidateDocument(string root, JsonElement document, string? auditOutputDirectory)
     {
         RequireKind(document, JsonValueKind.Object, "Configuration must be a JSON object.");
         foreach (var property in document.EnumerateObject())
@@ -124,7 +176,7 @@ public sealed class ReviewConfigValidator
             throw new InvalidReviewInputException("Configured solution file does not exist.");
         }
 
-        var output = ProjectPathResolver.ResolveRelative(root, outputValue, "outputDirectory");
+        var output = auditOutputDirectory ?? ProjectPathResolver.ResolveRelative(root, outputValue, "outputDirectory");
         if (File.Exists(output))
         {
             throw new InvalidReviewInputException("Output path must be a directory.");
@@ -173,7 +225,7 @@ public sealed class ReviewConfigValidator
         {
             Directory.CreateDirectory(output);
             output = ProjectPathResolver.Canonicalize(output);
-            if (!ProjectPathResolver.IsWithin(root, output))
+            if (auditOutputDirectory is null && !ProjectPathResolver.IsWithin(root, output))
             {
                 throw new InvalidReviewInputException("Output directory resolves outside the project root.");
             }
