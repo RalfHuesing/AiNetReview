@@ -33,6 +33,11 @@ public sealed partial class AuditRepositoryIntegrationTests
         using var profileDocument = JsonDocument.Parse(await File.ReadAllTextAsync(profilePath));
         var profile = profileDocument.RootElement;
         Assert.Equal(JsonValueKind.Object, profile.ValueKind);
+        if (!IsProfileEnabled(profile))
+        {
+            return;
+        }
+
         AssertProfileProperties(profile);
 
         var repositoryPathValue = ReadNonemptyString(profile, "repositoryPath");
@@ -139,6 +144,20 @@ public sealed partial class AuditRepositoryIntegrationTests
         Assert.True(findingsRoot.GetProperty("git").TryGetProperty("workingTreeDirty", out _));
     }
 
+    [Fact]
+    public void AuditProfileEnabled_DefaultsToTrue_AndCanDisableTheWholeTarget()
+    {
+        using var defaultProfile = JsonDocument.Parse("{}");
+        using var enabledProfile = JsonDocument.Parse("{\"enabled\":true}");
+        using var disabledProfile = JsonDocument.Parse("{\"enabled\":false}");
+        using var invalidProfile = JsonDocument.Parse("{\"enabled\":\"false\"}");
+
+        Assert.True(IsProfileEnabled(defaultProfile.RootElement));
+        Assert.True(IsProfileEnabled(enabledProfile.RootElement));
+        Assert.False(IsProfileEnabled(disabledProfile.RootElement));
+        Assert.Throws<InvalidOperationException>(() => IsProfileEnabled(invalidProfile.RootElement));
+    }
+
     private static ServiceProvider BuildProductionServices()
     {
         var services = new ServiceCollection();
@@ -150,13 +169,39 @@ public sealed partial class AuditRepositoryIntegrationTests
 
     private static void AssertProfileProperties(JsonElement profile)
     {
-        var expected = new HashSet<string>(["repositoryPath", "solution", "rules"], StringComparer.Ordinal);
+        var expected = new HashSet<string>(["enabled", "repositoryPath", "solution", "rules"], StringComparer.Ordinal);
+        var enabledIsOptional = true;
         foreach (var property in profile.EnumerateObject())
         {
-            Assert.True(expected.Remove(property.Name), $"Unexpected or duplicate profile property '{property.Name}'.");
+            var wasExpected = expected.Remove(property.Name);
+            Assert.True(wasExpected, $"Unexpected or duplicate profile property '{property.Name}'.");
+            if (property.Name == "enabled")
+            {
+                enabledIsOptional = false;
+            }
+        }
+
+        if (enabledIsOptional)
+        {
+            expected.Remove("enabled");
         }
 
         Assert.Empty(expected);
+    }
+
+    private static bool IsProfileEnabled(JsonElement profile)
+    {
+        if (!profile.TryGetProperty("enabled", out var enabled))
+        {
+            return true;
+        }
+
+        if (enabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            throw new InvalidOperationException("Audit profile field 'enabled' must be a boolean.");
+        }
+
+        return enabled.GetBoolean();
     }
 
     private static string ReadNonemptyString(JsonElement element, string propertyName)

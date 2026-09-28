@@ -15,6 +15,20 @@ if (-not (Test-Path -LiteralPath $profilePath -PathType Leaf)) {
     throw "Audit profile '$profilePath' does not exist. Add audit-targets/<name>.json first."
 }
 
+$profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json -AsHashtable
+if ($profile -isnot [System.Collections.IDictionary]) {
+    throw "Audit profile '$profilePath' must contain a JSON object."
+}
+if ($profile.Contains('enabled')) {
+    if ($profile['enabled'] -isnot [bool]) {
+        throw "Audit profile field 'enabled' must be a boolean."
+    }
+    if (-not $profile['enabled']) {
+        Write-Host "[INFO] Audit für '$Target' ist im Profil deaktiviert."
+        exit 0
+    }
+}
+
 $tempDir = Join-Path $repoRoot 'temp'
 $resultsDir = Join-Path $repoRoot 'TestResults'
 New-Item -ItemType Directory -Path $tempDir -Force | Out-Null

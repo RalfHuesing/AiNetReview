@@ -19,8 +19,10 @@ internal static class MarkupSnapshotLoader
         ".codex",
         ".git",
         "bin",
+        "generated",
         "node_modules",
         "obj",
+        "temp",
     };
 
     internal static async Task<IReadOnlyList<MarkupDocumentSnapshot>> CaptureAsync(

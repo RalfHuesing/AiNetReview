@@ -46,6 +46,8 @@ public sealed class SolutionLoader
                 throw new AnalysisFailedException("Solution could not be loaded completely.");
             }
 
+            solution = await ExcludeExternalGeneratedTestDocumentsAsync(solution, config.ProjectRoot, cancellationToken)
+                .ConfigureAwait(false);
             ValidateSourceBoundaries(solution, config);
             var csharpProjects = solution.Projects
                 .Where(static project => project.Language == LanguageNames.CSharp)
@@ -70,11 +72,12 @@ public sealed class SolutionLoader
                 var compilation = await loadedProject.GetCompilationAsync(cancellationToken).ConfigureAwait(false)
                     ?? throw new AnalysisFailedException($"Compilation could not be created for project '{project.Name}'.");
                 var errors = compilation.GetDiagnostics(cancellationToken)
-                    .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+                    .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error && !diagnostic.IsWarningAsError)
                     .ToArray();
                 if (errors.Length > 0)
                 {
-                    throw new AnalysisFailedException($"Project '{project.Name}' has {errors.Length} compilation error(s).");
+                    var examples = string.Join(" | ", errors.Take(3).Select(static diagnostic => diagnostic.ToString()));
+                    throw new AnalysisFailedException($"Project '{project.Name}' has {errors.Length} compilation error(s): {examples}");
                 }
 
                 if (!workspaceFailures.IsEmpty)
@@ -185,5 +188,46 @@ public sealed class SolutionLoader
                 throw new InvalidReviewInputException("Output directory must not contain C# source files from the solution.");
             }
         }
+    }
+
+    private static async Task<Solution> ExcludeExternalGeneratedTestDocumentsAsync(
+        Solution solution,
+        string projectRoot,
+        CancellationToken cancellationToken)
+    {
+        foreach (var project in solution.Projects.Where(static project => project.Language == LanguageNames.CSharp))
+        {
+            if (!ReviewSourceClassifier.IsTestProject(project))
+            {
+                continue;
+            }
+
+            foreach (var document in project.Documents)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (string.IsNullOrWhiteSpace(document.FilePath))
+                {
+                    continue;
+                }
+
+                string sourcePath;
+                try
+                {
+                    sourcePath = ProjectPathResolver.Canonicalize(document.FilePath);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+                {
+                    continue;
+                }
+
+                if (!ProjectPathResolver.IsWithin(projectRoot, sourcePath)
+                    && await ReviewSourceClassifier.IsGeneratedDocumentAsync(document, cancellationToken).ConfigureAwait(false))
+                {
+                    solution = solution.RemoveDocument(document.Id);
+                }
+            }
+        }
+
+        return solution;
     }
 }
