@@ -3,6 +3,7 @@ namespace AiNetReview.Bootstrap;
 using AiNetReview.Core.Rules;
 using AiNetReview.Core.Rules.MethodControlFlowOutliers;
 using AiNetReview.Core.Rules.DeadCodeCandidates;
+using AiNetReview.Core.Rules.DuplicateCodeCandidates;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Reporting;
@@ -26,6 +27,7 @@ public static class ServiceRegistration
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<IReviewRule, MethodControlFlowOutliersRule>();
         services.AddSingleton<IReviewRule, DeadCodeCandidatesRule>();
+        services.AddSingleton<IReviewRule, DuplicateCodeCandidatesRule>();
         return services;
     }
 }

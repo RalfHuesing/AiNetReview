@@ -8,10 +8,29 @@ using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Rules;
 using AiNetReview.Core.Rules.MethodControlFlowOutliers;
 using AiNetReview.Core.Rules.DeadCodeCandidates;
+using AiNetReview.Core.Rules.DuplicateCodeCandidates;
 
 public sealed class ReviewConfigValidatorTests
 {
-    private static RuleRegistry Registry() => new([new MethodControlFlowOutliersRule(), new DeadCodeCandidatesRule()]);
+    private static RuleRegistry Registry() => new([new MethodControlFlowOutliersRule(), new DeadCodeCandidatesRule(), new DuplicateCodeCandidatesRule()]);
+
+    [Fact]
+    public void Validate_AppliesAndValidatesDuplicateCodeOptions()
+    {
+        using var temp = TestTempDirectory.Create();
+        temp.CreateFile("Project.slnx", "<Solution />");
+        var validator = new ReviewConfigValidator(Registry());
+
+        var config = validator.Validate(temp.DirectoryPath,
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"duplicate-code-candidates\":{}}}");
+
+        var rule = Assert.Single(config.Rules);
+        Assert.Equal("duplicate-code-candidates", rule.RuleId);
+        Assert.Equal(30, rule.EffectiveOptions["minTokens"].GetInt32());
+        Assert.Equal("exact", rule.EffectiveOptions["minimumSimilarity"].GetString());
+        Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"duplicate-code-candidates\":{\"minimumSimilarity\":\"loose\"}}}"));
+    }
 
     [Fact]
     public void Load_RequiresAbsoluteAinetreviewFileAtProjectRoot()

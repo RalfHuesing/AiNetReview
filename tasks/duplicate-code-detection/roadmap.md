@@ -17,7 +17,7 @@ Source of truth: [Konzept.md](Konzept.md). AiNetLinter's token detection impleme
   - Not in scope: Analyzer diagnostics, automatic extraction, a defect claim, or a rule-specific report format.
   - Acceptance: Rule tests verify option defaults and invalid values, all three similarity selections, stable finding identity and order, complete cross-project evidence and metrics, the review wording, and an empty result. Findings pass `CurrentFindingValidator` against the loaded solution.
 
-- [ ] **4 — Register and publish the production rule**
+- [x] **4 — Register and publish the production rule**
   - Intention and scope: Register the rule explicitly in `ServiceRegistration.AddAiNetReviewRules`, list it in repository `ainetreview.json`, and update affected `docs/` pages and indexes to describe only verified behavior. Use the existing runner and Markdown writer contracts so each completed audit publishes all current clusters or an empty rule report.
   - Not in scope: Changes to the CLI command shape, report publication model, MCP tools, or AiNetLinter files.
   - Acceptance: Host integration tests check default and configured similarity, linked evidence for every member including cross-project members, complete and empty reports, changed source snapshots on later runs, and no new published run after analysis failure or cancellation. Production registry and repository configuration tests pass. Run affected suites and required project gates, then review the documentation diff.

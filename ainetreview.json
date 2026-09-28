@@ -9,6 +9,11 @@
     },
     "dead-code-candidates": {
       "enabled": true
+    },
+    "duplicate-code-candidates": {
+      "enabled": true,
+      "minTokens": 30,
+      "minimumSimilarity": "exact"
     }
   }
 }

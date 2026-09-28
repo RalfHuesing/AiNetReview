@@ -9,6 +9,7 @@ using AiNetReview.Bootstrap;
 using AiNetReview.Core.Rules;
 using AiNetReview.Core.Rules.MethodControlFlowOutliers;
 using AiNetReview.Core.Rules.DeadCodeCandidates;
+using AiNetReview.Core.Rules.DuplicateCodeCandidates;
 using AiNetReview.IntegrationTests.FixtureRules;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -25,12 +26,14 @@ public sealed class RuleServiceRegistrationTests
         var rules = provider.GetServices<IReviewRule>().ToArray();
         var registry = provider.GetRequiredService<RuleRegistry>();
 
-        Assert.Equal(2, rules.Length);
+        Assert.Equal(3, rules.Length);
         Assert.Contains(rules, static rule => rule is MethodControlFlowOutliersRule);
         Assert.Contains(rules, static rule => rule is DeadCodeCandidatesRule);
-        Assert.Equal(new[] { "dead-code-candidates", "method-control-flow-outliers" }, registry.Rules.Select(static rule => rule.Descriptor.RuleId));
+        Assert.Contains(rules, static rule => rule is DuplicateCodeCandidatesRule);
+        Assert.Equal(new[] { "dead-code-candidates", "duplicate-code-candidates", "method-control-flow-outliers" }, registry.Rules.Select(static rule => rule.Descriptor.RuleId));
         Assert.Same(rules.Single(static rule => rule is MethodControlFlowOutliersRule), registry.GetRequired("method-control-flow-outliers"));
         Assert.Same(rules.Single(static rule => rule is DeadCodeCandidatesRule), registry.GetRequired("dead-code-candidates"));
+        Assert.Same(rules.Single(static rule => rule is DuplicateCodeCandidatesRule), registry.GetRequired("duplicate-code-candidates"));
         Assert.False(registry.TryGet("fixture-finding", out _));
     }
 
@@ -66,7 +69,7 @@ public sealed class RuleServiceRegistrationTests
 
         var registry = provider.GetRequiredService<RuleRegistry>();
 
-        Assert.Equal(new[] { "dead-code-candidates", "fixture-finding", "method-control-flow-outliers" }, registry.Rules.Select(static rule => rule.Descriptor.RuleId));
+        Assert.Equal(new[] { "dead-code-candidates", "duplicate-code-candidates", "fixture-finding", "method-control-flow-outliers" }, registry.Rules.Select(static rule => rule.Descriptor.RuleId));
         Assert.IsType<FixtureFindingRule>(registry.GetRequired("fixture-finding"));
     }
 

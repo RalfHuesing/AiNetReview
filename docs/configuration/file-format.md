@@ -18,6 +18,11 @@ Schema version 1 currently accepts these fields:
       "enabled": true,
       "apiSurface": "external_library",
       "entryPointAttributes": []
+    },
+    "duplicate-code-candidates": {
+      "enabled": true,
+      "minTokens": 30,
+      "minimumSimilarity": "exact"
     }
   }
 }
@@ -25,11 +30,11 @@ Schema version 1 currently accepts these fields:
 
 The root object must contain exactly `schemaVersion`, `solution`, `outputDirectory`, and `rules`. `schemaVersion` must be the integer `1`. The solution and output paths are nonempty project-relative paths using `/` separators; backslashes are rejected. The solution must resolve to an existing `.sln` or `.slnx` file, and the output directory must stay inside the project root. The validator creates the output directory when needed.
 
-The repository root contains an `ainetreview.json` that selects `AiNetReview.slnx`, writes reports to `audit-reporting/`, and lists every production rule. It explicitly enables both rules and sets the `method-control-flow-outliers` percentile to its default of 90. The normal IntegrationTests suite invokes the Debug executable with this absolute configuration path and verifies the generated run in the repository output directory.
+The repository root contains an `ainetreview.json` that selects `AiNetReview.slnx`, writes reports to `audit-reporting/`, and lists every production rule. It explicitly enables all three rules, sets the `method-control-flow-outliers` percentile to its default of 90, and selects the low-noise `exact` duplicate similarity with its default 30-token minimum. The normal IntegrationTests suite invokes the Debug executable with this absolute configuration path and verifies the generated run in the repository output directory.
 
 Separately started repository audits use profiles under `audit-targets/`, described in [Build and Tests](../development/build-and-tests.md). These profiles select a repository, solution, and rules while keeping generated reports under the AiNetReview repository's `audit-reporting/<target>/` directory. They are consumed by the opt-in integration test and do not change the normal `ainetreview.json` CLI contract.
 
-`rules` must be a nonempty object. Each key must name a registered rule, and its value must be an object containing the optional boolean `enabled` field and only options declared by that rule. `enabled` defaults to `true`; `false` excludes the rule from analysis and report publication. All configured rules may be disabled. Options are validated even when a rule is disabled. The registry descriptor applies defaults to omitted rule-specific options and validates supplied value types. The production registry contains `method-control-flow-outliers` and `dead-code-candidates`. The former's optional `percentile` integer accepts values from 50 through 99 and defaults to 90. For `dead-code-candidates`, `apiSurface` accepts `external_library` (default) or `closed_solution`; `entryPointAttributes` is an array of additional fully qualified attribute type names and defaults to an empty array. Its fixed module initializer and JS interop attributes remain active. This rule is a repeatable audit: every complete enabled run reports its current candidates and has no source-comment suppression option.
+`rules` must be a nonempty object. Each key must name a registered rule, and its value must be an object containing the optional boolean `enabled` field and only options declared by that rule. `enabled` defaults to `true`; `false` excludes the rule from analysis and report publication. All configured rules may be disabled. Options are validated even when a rule is disabled. The registry descriptor applies defaults to omitted rule-specific options and validates supplied value types. The production registry contains `method-control-flow-outliers`, `dead-code-candidates`, and `duplicate-code-candidates`. The first rule's optional `percentile` integer accepts values from 50 through 99 and defaults to 90. For `dead-code-candidates`, `apiSurface` accepts `external_library` (default) or `closed_solution`; `entryPointAttributes` is an array of additional fully qualified attribute type names and defaults to an empty array. Its fixed module initializer and JS interop attributes remain active. `duplicate-code-candidates` accepts a positive integer `minTokens` (default 30) and `minimumSimilarity` of `exact` (default, 0.95), `near` (0.80), or `fuzzy` (0.65). Every complete enabled run reports its current candidate clusters; no match produces an empty rule report.
 
 Unknown or duplicate JSON keys, unknown rule IDs, invalid option values, wrong field types, unsupported schema versions, paths escaping through `..`, symlinks, or junctions, and missing solution files raise `InvalidReviewInputException`. A loaded solution that includes C# source outside the project root or inside the output directory is rejected. Each C# project must produce a Roslyn compilation without error diagnostics; solution load, restore, missing reference, or compilation failures raise `AnalysisFailedException`.
 

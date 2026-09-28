@@ -70,7 +70,7 @@ public sealed class MethodControlFlowOutliersIntegrationTests
         var runId = response.RootElement.GetProperty("runId").GetString();
         Assert.False(string.IsNullOrWhiteSpace(runId));
         Assert.Equal(
-            new[] { "dead-code-candidates", "method-control-flow-outliers" },
+            new[] { "dead-code-candidates", "duplicate-code-candidates", "method-control-flow-outliers" },
             provider.GetRequiredService<RuleRegistry>().Rules.Select(static rule => rule.Descriptor.RuleId));
 
         var rulesDirectory = Path.Combine(projectRoot, "reports", runId!, "rules");

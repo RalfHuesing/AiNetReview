@@ -3,6 +3,7 @@ namespace AiNetReview.IntegrationTests;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using AiNetReview.Core.Analysis;
@@ -14,6 +15,91 @@ using Microsoft.Extensions.DependencyInjection;
 
 public sealed class HostAdapterIntegrationTests
 {
+    [Fact]
+    public async Task ReviewCommand_ProductionDuplicateCodeRulePublishesCurrentCrossProjectClusters()
+    {
+        using var tempDirectory = TestTempDirectory.Create("ainet-host-duplicate-code-");
+        var projectRoot = tempDirectory.GetPath("adapter-project");
+        var firstProject = Path.Combine(projectRoot, "ProductA");
+        var secondProject = Path.Combine(projectRoot, "ProductB");
+        Directory.CreateDirectory(firstProject);
+        Directory.CreateDirectory(secondProject);
+        var firstProjectFile = Path.Combine(firstProject, "ProductA.csproj");
+        var secondProjectFile = Path.Combine(secondProject, "ProductB.csproj");
+        var firstSource = Path.Combine(firstProject, "First.cs");
+        var secondSource = Path.Combine(secondProject, "Second.cs");
+        const string projectContent = "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>";
+        await File.WriteAllTextAsync(firstProjectFile, projectContent);
+        await File.WriteAllTextAsync(secondProjectFile, projectContent);
+        var exactBody = BuildDuplicateBody();
+        var nearBody = exactBody.Replace("var v8 = v7 + 8;", "var v8 = v7 * 8;", StringComparison.Ordinal);
+        await File.WriteAllTextAsync(firstSource, WrapDuplicateMethod("FirstContainer", "RunFirst", exactBody));
+        await File.WriteAllTextAsync(secondSource,
+            WrapDuplicateMethod("SecondContainer", "RunSecond", exactBody)
+            + WrapDuplicateMethod("NearContainer", "RunNear", nearBody));
+        await RestoreProjectAsync(firstProjectFile, firstProject);
+        await RestoreProjectAsync(secondProjectFile, secondProject);
+        await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
+            "<Solution><Project Path=\"ProductA/ProductA.csproj\" /><Project Path=\"ProductB/ProductB.csproj\" /></Solution>");
+        var configPath = Path.Combine(projectRoot, "ainetreview.json");
+
+        await WriteDuplicateConfigAsync(configPath, "exact");
+        var exact = await RunProductionDuplicateCodeAsync(configPath);
+        var exactReport = await ReadDuplicateCodeReportAsync(projectRoot, exact.RunId);
+        Assert.Equal(1, exact.Detected);
+        Assert.Contains("minimumSimilarity\": \"exact", exactReport, StringComparison.Ordinal);
+        Assert.Contains("memberCount=2", exactReport, StringComparison.Ordinal);
+        Assert.Contains("RunFirst", exactReport, StringComparison.Ordinal);
+        Assert.Contains("RunSecond", exactReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("RunNear", exactReport, StringComparison.Ordinal);
+        Assert.Contains("ProductA/First.cs:", exactReport, StringComparison.Ordinal);
+        Assert.Contains("ProductB/Second.cs:", exactReport, StringComparison.Ordinal);
+        AssertMarkdownLinksResolve(Path.Combine(projectRoot, "reports", exact.RunId));
+
+        await WriteDuplicateConfigAsync(configPath, "fuzzy");
+        var fuzzy = await RunProductionDuplicateCodeAsync(configPath);
+        var fuzzyReport = await ReadDuplicateCodeReportAsync(projectRoot, fuzzy.RunId);
+        Assert.Equal(1, fuzzy.Detected);
+        Assert.Contains("minimumSimilarity\": \"fuzzy", fuzzyReport, StringComparison.Ordinal);
+        Assert.Contains("minimumSimilarityThreshold=0.65", fuzzyReport, StringComparison.Ordinal);
+        Assert.Contains("memberCount=3", fuzzyReport, StringComparison.Ordinal);
+        Assert.Contains("RunNear", fuzzyReport, StringComparison.Ordinal);
+        AssertMarkdownLinksResolve(Path.Combine(projectRoot, "reports", fuzzy.RunId));
+
+        await File.WriteAllTextAsync(secondSource,
+            WrapDuplicateMethod("SecondContainer", "RunChanged", BuildAlternateDuplicateBody()));
+        await WriteDuplicateConfigAsync(configPath, "exact");
+        var empty = await RunProductionDuplicateCodeAsync(configPath);
+        var emptyReport = await ReadDuplicateCodeReportAsync(projectRoot, empty.RunId);
+        Assert.Equal(0, empty.Detected);
+        Assert.Contains("| Detected | 0 |", emptyReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("RunFirst", emptyReport, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(projectRoot, "reports", exact.RunId, "index.md")));
+        Assert.True(File.Exists(Path.Combine(projectRoot, "reports", fuzzy.RunId, "index.md")));
+
+        var publishedRuns = Directory.GetDirectories(Path.Combine(projectRoot, "reports")).Length;
+        await File.WriteAllTextAsync(secondSource, "public static class Broken { public static int Run( { }");
+        var (failureExitCode, failureError) = await InvokeProductionDuplicateCodeAsync(configPath);
+        Assert.Equal(3, failureExitCode);
+        using (var failureResponse = JsonDocument.Parse(failureError))
+        {
+            Assert.Equal("ANALYSIS_FAILED", failureResponse.RootElement.GetProperty("code").GetString());
+        }
+        Assert.Equal(publishedRuns, Directory.GetDirectories(Path.Combine(projectRoot, "reports")).Length);
+
+        await File.WriteAllTextAsync(secondSource,
+            WrapDuplicateMethod("SecondContainer", "RunChanged", BuildAlternateDuplicateBody()));
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var (cancelledExitCode, cancelledError) = await InvokeProductionDuplicateCodeAsync(configPath, cancellation.Token);
+        Assert.Equal(130, cancelledExitCode);
+        using (var cancelledResponse = JsonDocument.Parse(cancelledError))
+        {
+            Assert.Equal("CANCELLED", cancelledResponse.RootElement.GetProperty("code").GetString());
+        }
+        Assert.Equal(publishedRuns, Directory.GetDirectories(Path.Combine(projectRoot, "reports")).Length);
+    }
+
     [Fact]
     public async Task ReviewCommand_ProductionDeadCodeRulePublishesRepeatedAndEmptyAudits()
     {
@@ -204,7 +290,7 @@ public sealed class HostAdapterIntegrationTests
         var report = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "rules", "fixture-finding.md"));
         Assert.Contains("fixturecasea", report, StringComparison.Ordinal);
         Assert.Equal(
-            new[] { "dead-code-candidates", "fixture-finding", "method-control-flow-outliers" },
+            new[] { "dead-code-candidates", "duplicate-code-candidates", "fixture-finding", "method-control-flow-outliers" },
             provider.GetRequiredService<RuleRegistry>().Rules.Select(static rule => rule.Descriptor.RuleId));
     }
 
@@ -318,6 +404,91 @@ public sealed class HostAdapterIntegrationTests
             response.RootElement.GetProperty("runId").GetString()!,
             response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
     }
+
+    private static async Task WriteDuplicateConfigAsync(string configPath, string minimumSimilarity)
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            solution = "Sample.slnx",
+            outputDirectory = "reports",
+            rules = new Dictionary<string, object>
+            {
+                ["duplicate-code-candidates"] = new { minTokens = 30, minimumSimilarity },
+            },
+        });
+        await File.WriteAllTextAsync(configPath, json);
+    }
+
+    private static async Task<(string RunId, int Detected)> RunProductionDuplicateCodeAsync(string configPath)
+    {
+        var (exitCode, output, error) = await InvokeProductionDuplicateCodeCoreAsync(configPath, CancellationToken.None);
+        Assert.True(exitCode == 0, $"Production duplicate-code audit failed: {error}");
+        Assert.Empty(error);
+        using var response = JsonDocument.Parse(output);
+        return (
+            response.RootElement.GetProperty("runId").GetString()!,
+            response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
+    }
+
+    private static async Task<(int ExitCode, string Error)> InvokeProductionDuplicateCodeAsync(
+        string configPath,
+        CancellationToken cancellationToken = default)
+    {
+        var (exitCode, _, error) = await InvokeProductionDuplicateCodeCoreAsync(configPath, cancellationToken);
+        return (exitCode, error);
+    }
+
+    private static async Task<(int ExitCode, string Output, string Error)> InvokeProductionDuplicateCodeCoreAsync(
+        string configPath,
+        CancellationToken cancellationToken)
+    {
+        await using var provider = BuildProductionServices();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var exitCode = await new ReviewCommand().InvokeAsync(
+            ["review", "--config", configPath], provider, output, error, cancellationToken);
+        return (exitCode, output.ToString(), error.ToString());
+    }
+
+    private static Task<string> ReadDuplicateCodeReportAsync(string projectRoot, string runId) =>
+        File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId, "rules", "duplicate-code-candidates.md"));
+
+    private static void AssertMarkdownLinksResolve(string runDirectory)
+    {
+        foreach (var reportPath in Directory.GetFiles(runDirectory, "*.md", SearchOption.AllDirectories))
+        {
+            var content = File.ReadAllText(reportPath);
+            var linkStart = 0;
+            while ((linkStart = content.IndexOf("](", linkStart, StringComparison.Ordinal)) >= 0)
+            {
+                var targetStart = linkStart + 2;
+                var targetEnd = content.IndexOf(')', targetStart);
+                if (targetEnd < 0)
+                {
+                    break;
+                }
+
+                var target = Uri.UnescapeDataString(content[targetStart..targetEnd]);
+                linkStart = targetEnd + 1;
+                var fragmentIndex = target.IndexOf('#');
+                var relativePath = fragmentIndex < 0 ? target : target[..fragmentIndex];
+                var resolved = Path.GetFullPath(Path.Combine(
+                    Path.GetDirectoryName(reportPath)!,
+                    relativePath.Replace('/', Path.DirectorySeparatorChar)));
+                Assert.True(File.Exists(resolved), $"Markdown link does not resolve: '{target}' from '{reportPath}'.");
+            }
+        }
+    }
+
+    private static string BuildDuplicateBody() => string.Join(" ", Enumerable.Range(1, 20).Select(index =>
+        $"var v{index} = {(index == 1 ? "value" : $"v{index - 1}")} + {index};")) + " return v20;";
+
+    private static string BuildAlternateDuplicateBody() => string.Join(" ", Enumerable.Range(1, 20).Select(index =>
+        $"var w{index} = {(index == 1 ? "value" : $"w{index - 1}")} * {index};")) + " return w20;";
+
+    private static string WrapDuplicateMethod(string className, string methodName, string body) =>
+        $"namespace {className} {{ public static class {className} {{ public static int {methodName}(int value) {{ {body} }} }} }}\n";
 
     private static ServiceProvider BuildProductionServices()
     {
