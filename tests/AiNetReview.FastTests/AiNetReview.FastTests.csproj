@@ -1,5 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <XunitRegisterBuiltInRunnerReporters>false</XunitRegisterBuiltInRunnerReporters>
+  </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector">

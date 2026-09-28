@@ -57,9 +57,8 @@ $testArgs = @(
     '--logger', "trx;LogFileName=$trxFile",
     '--results-directory', $resultsDir
 )
-if ($Filter) {
-    $testArgs += @('--filter', $Filter)
-}
+$effectiveFilter = if ($Filter) { $Filter } else { 'Category!=Performance' }
+$testArgs += @('--filter', $effectiveFilter)
 if ($AdditionalArgs) {
     $testArgs += $AdditionalArgs
 }

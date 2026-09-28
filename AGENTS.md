@@ -1,6 +1,6 @@
 # AiNetReview agent map
 
-This repository contains product specifications, a solution skeleton, and test infrastructure. Most application classes are still placeholders. Do not describe planned behavior as implemented behavior.
+This repository contains product specifications, an implemented command-line host and analysis/reporting core, and automated test infrastructure. Treat `docs/` as the current-state reference and verify implementation claims against code and tests; specifications under `tasks/` also describe work that may still be planned.
 
 ## Where to look
 

@@ -67,7 +67,7 @@ public sealed class FixtureFindingRule : IReviewRule
                 ?? throw new InvalidOperationException($"Fixture project '{document.Project.Name}' has no compilation.");
             var semanticModel = compilation.GetSemanticModel(root.SyntaxTree);
             foreach (var method in root.DescendantNodes().OfType<MethodDeclarationSyntax>()
-                         .Where(static method => method.Identifier.ValueText is "FixtureCaseA" or "FixtureCaseB")
+                         .Where(static method => method.Identifier.ValueText.StartsWith("FixtureCase", StringComparison.Ordinal))
                          .OrderBy(static method => method.Identifier.ValueText, StringComparer.Ordinal))
             {
                 cancellationToken.ThrowIfCancellationRequested();

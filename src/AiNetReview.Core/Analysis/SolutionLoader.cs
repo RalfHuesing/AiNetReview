@@ -172,7 +172,7 @@ public sealed class SolutionLoader
 
             if (!ProjectPathResolver.IsWithin(config.ProjectRoot, sourcePath))
             {
-                throw new AnalysisFailedException("A C# source document is outside the project root.");
+                throw new AnalysisFailedException($"A C# source document is outside the project root: '{sourcePath}'.");
             }
 
             if (ProjectPathResolver.IsWithin(config.ResolvedOutputDirectory, sourcePath))

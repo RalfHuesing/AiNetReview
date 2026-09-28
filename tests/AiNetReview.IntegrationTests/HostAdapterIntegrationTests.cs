@@ -1,5 +1,6 @@
 namespace AiNetReview.IntegrationTests;
 
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
@@ -12,6 +13,52 @@ using Microsoft.Extensions.DependencyInjection;
 
 public sealed class HostAdapterIntegrationTests
 {
+    [Fact]
+    public async Task ReviewCommand_RepeatedFixtureScansUseCurrentSourcesAndOptions()
+    {
+        using var tempDirectory = TestTempDirectory.Create("ainet-host-adapter-repeated-");
+        var projectRoot = tempDirectory.GetPath("adapter-project");
+        var projectDirectory = Path.Combine(projectRoot, "Sample");
+        Directory.CreateDirectory(projectDirectory);
+        var projectFile = Path.Combine(projectDirectory, "Sample.csproj");
+        var sourcePath = Path.Combine(projectDirectory, "Class1.cs");
+        await File.WriteAllTextAsync(projectFile,
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
+        await File.WriteAllTextAsync(sourcePath,
+            "namespace Sample; public sealed class Sample { public void FixtureCaseA() { } public void FixtureCaseB() { } }");
+        await RestoreProjectAsync(projectFile, projectDirectory);
+        await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
+        var configPath = Path.Combine(projectRoot, "ainetreview.json");
+
+        var first = await RunFixtureAsync(projectRoot, configPath, "base");
+        Assert.Equal(2, first.Detected);
+        var firstReport = await ReadRuleReportAsync(projectRoot, first.RunId);
+        Assert.Contains("FixtureCaseA", firstReport, StringComparison.Ordinal);
+        Assert.Contains("FixtureCaseB", firstReport, StringComparison.Ordinal);
+        Assert.Contains("scenario 'base'", firstReport, StringComparison.Ordinal);
+
+        await File.WriteAllTextAsync(sourcePath,
+            "namespace Sample; public sealed class Sample { public void FixtureCaseC() { } }");
+        var second = await RunFixtureAsync(projectRoot, configPath, "alternate");
+        Assert.Equal(1, second.Detected);
+        var secondReport = await ReadRuleReportAsync(projectRoot, second.RunId);
+        Assert.Contains("FixtureCaseC", secondReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("FixtureCaseA", secondReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("FixtureCaseB", secondReport, StringComparison.Ordinal);
+        Assert.Contains("scenario 'alternate'", secondReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("scenario 'base'", secondReport, StringComparison.Ordinal);
+
+        var third = await RunFixtureAsync(projectRoot, configPath, "none");
+        Assert.Equal(0, third.Detected);
+        var thirdReport = await ReadRuleReportAsync(projectRoot, third.RunId);
+        Assert.Contains("| Detected | 0 |", thirdReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("FixtureCaseA", thirdReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("FixtureCaseC", thirdReport, StringComparison.Ordinal);
+
+        Assert.True(File.Exists(Path.Combine(projectRoot, "reports", first.RunId, "index.md")));
+        Assert.True(File.Exists(Path.Combine(projectRoot, "reports", second.RunId, "index.md")));
+    }
+
     [Fact]
     public async Task ReviewCommand_RejectsAdditionalOptionsWithMachineReadableInputError()
     {
@@ -120,4 +167,36 @@ public sealed class HostAdapterIntegrationTests
         await process.WaitForExitAsync();
         Assert.True(process.ExitCode == 0, $"dotnet restore failed: {await stdout}{await stderr}");
     }
+
+    private static async Task<(string RunId, int Detected)> RunFixtureAsync(string projectRoot, string configPath, string scenario)
+    {
+        var config = JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            solution = "Sample.slnx",
+            outputDirectory = "reports",
+            rules = new Dictionary<string, object> { ["fixture-finding"] = new { scenario } },
+        });
+        await File.WriteAllTextAsync(configPath, config);
+        var services = new ServiceCollection();
+        services.AddAiNetReviewServices();
+        services.AddAiNetReviewRules();
+        services.AddSingleton<IReviewRule, FixtureFindingRule>();
+        services.AddLogging();
+        await using var provider = services.BuildServiceProvider();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = await new ReviewCommand().InvokeAsync(
+            ["review", "--config", configPath], provider, output, error);
+        Assert.True(exitCode == 0, $"Fixture scan '{scenario}' failed: {error}");
+        Assert.Empty(error.ToString());
+        using var response = JsonDocument.Parse(output.ToString());
+        return (
+            response.RootElement.GetProperty("runId").GetString()!,
+            response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
+    }
+
+    private static Task<string> ReadRuleReportAsync(string projectRoot, string runId) =>
+        File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId, "rules", "fixture-finding.md"));
 }
