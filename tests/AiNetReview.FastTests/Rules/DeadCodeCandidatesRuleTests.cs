@@ -15,6 +15,36 @@ using Microsoft.CodeAnalysis.Text;
 public sealed class DeadCodeCandidatesRuleTests
 {
     [Fact]
+    public void deadcode_test_ReferencesAuditFixtureDeclarations()
+    {
+        deadcode_test_MethodHost.Touch();
+        deadcode_test_UsedOnlyByUnitTest.deadcode_test_ReferencedByTest();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_SelfRecursiveOrdinaryMethodWithoutExternalUseIsCandidate()
+    {
+        using var fixture = CreateFixture(
+            ("Product", "Product", """
+            namespace Product;
+            public sealed class Recursive
+            {
+                private void deadcode_test_SelfRecursive() { deadcode_test_SelfRecursive(); }
+            }
+            """, null),
+            ("Product.Tests", "Product.Tests", """
+            using Product;
+            public sealed class UsesType { private Recursive value = new(); }
+            """, null));
+        var rule = new DeadCodeCandidatesRule();
+        var options = rule.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
+
+        var result = await rule.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("deadcode_test_SelfRecursive", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task ExecuteAsync_GroupsUnreferencedTypeAndSelectsOnlyUnreferencedOrdinaryMethods()
     {
         using var fixture = CreateFixture(

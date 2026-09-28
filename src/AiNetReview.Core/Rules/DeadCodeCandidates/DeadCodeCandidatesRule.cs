@@ -121,7 +121,7 @@ public sealed class DeadCodeCandidatesRule : IReviewRule
 
                     var coverage = referenceIndex.GetCoverage(method.Symbol);
                     if (!coverage.HasUnresolvedBindings && !indirectUsage.HasUncertainty(method.Symbol)
-                        && coverage.References.Count == 0 && !indirectUsage.IsProtected(method.Symbol))
+                        && HasNoExternalUsage(coverage) && !indirectUsage.IsProtected(method.Symbol))
                     {
                         findings.Add(CreateFinding(method, "method-candidate"));
                     }
@@ -139,7 +139,7 @@ public sealed class DeadCodeCandidatesRule : IReviewRule
 
                 var coverage = referenceIndex.GetCoverage(method.Symbol);
                 if (!coverage.HasUnresolvedBindings && !indirectUsage.HasUncertainty(method.Symbol)
-                    && coverage.References.Count == 0)
+                    && HasNoExternalUsage(coverage))
                 {
                     findings.Add(CreateFinding(method, "method-candidate"));
                 }
@@ -269,6 +269,9 @@ public sealed class DeadCodeCandidatesRule : IReviewRule
 
     private static bool IsApiProtected(ISymbol symbol, string apiSurface) =>
         apiSurface == ExternalLibrary && IsExternallyVisible(symbol);
+
+    private static bool HasNoExternalUsage(SolutionSymbolReferenceCoverage coverage) =>
+        coverage.References.All(static reference => reference.IsSelfReference);
 
     private static bool IsExternallyVisible(ISymbol symbol)
     {
