@@ -3,6 +3,8 @@
   "solution": "AiNetReview.slnx",
   "outputDirectory": "audit-reporting",
   "rules": {
-    "method-control-flow-outliers": {}
+    "method-control-flow-outliers": {
+      "percentile": 90
+    }
   }
 }
