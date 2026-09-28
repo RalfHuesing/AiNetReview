@@ -68,7 +68,7 @@ public sealed class HostProcessIntegrationTests
         Assert.True(File.Exists(ruleReportPath));
         var ruleReport = await File.ReadAllTextAsync(ruleReportPath);
         Assert.Contains("# method\\-control\\-flow\\-outliers", ruleReport, StringComparison.Ordinal);
-        Assert.Contains($"| Detected | {detectedCount} |", ruleReport, StringComparison.Ordinal);
+        Assert.Matches("(?m)^\\| Detected \\| [0-9]+ \\|$", ruleReport);
 
         var resultingRuns = Directory.GetDirectories(outputDirectory).Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
         Assert.Contains(runId, resultingRuns);

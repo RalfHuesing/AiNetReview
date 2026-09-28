@@ -1,0 +1,10 @@
+---
+description: Keep the root audit configuration aligned with implemented production rules.
+globs: '*'
+alwaysApply: true
+---
+
+# Production rule configuration
+
+- List every implemented production rule in the repository-root `ainetreview.json`, even when a project may choose to disable it. Keep this list synchronized when registering or removing production rules.
+- Rule entries support `enabled` as a boolean and default to `true`; do not add rules that suppress or hide findings from later audits.

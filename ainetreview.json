@@ -4,7 +4,11 @@
   "outputDirectory": "audit-reporting",
   "rules": {
     "method-control-flow-outliers": {
+      "enabled": true,
       "percentile": 90
+    },
+    "dead-code-candidates": {
+      "enabled": true
     }
   }
 }

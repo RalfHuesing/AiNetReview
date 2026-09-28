@@ -68,6 +68,47 @@ public sealed class ReviewConfigValidatorTests
             "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{\"entryPointAttributes\":[\"Unqualified\"]}}}"));
     }
 
+    [Fact]
+    public void Validate_DisabledRuleIsValidatedButExcludedFromExecution()
+    {
+        using var temp = TestTempDirectory.Create();
+        temp.CreateFile("Project.slnx", "<Solution />");
+        var validator = new ReviewConfigValidator(Registry());
+
+        var config = validator.Validate(temp.DirectoryPath,
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{\"enabled\":false,\"apiSurface\":\"closed_solution\"},\"method-control-flow-outliers\":{}}}");
+
+        var activeRule = Assert.Single(config.Rules);
+        Assert.Equal("method-control-flow-outliers", activeRule.RuleId);
+
+        Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{\"enabled\":false,\"unknown\":true},\"method-control-flow-outliers\":{}}}"));
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("0")]
+    [InlineData("\"false\"")]
+    public void Validate_RejectsNonBooleanEnabled(string enabled)
+    {
+        using var temp = TestTempDirectory.Create();
+        temp.CreateFile("Project.slnx", "<Solution />");
+
+        Assert.Throws<InvalidReviewInputException>(() => new ReviewConfigValidator(Registry()).Validate(temp.DirectoryPath,
+            $"{{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{{\"method-control-flow-outliers\":{{\"enabled\":{enabled}}}}}}}"));
+    }
+
+    [Fact]
+    public void Validate_AllowsEveryConfiguredRuleToBeDisabled()
+    {
+        using var temp = TestTempDirectory.Create();
+        temp.CreateFile("Project.slnx", "<Solution />");
+
+        var config = new ReviewConfigValidator(Registry()).Validate(temp.DirectoryPath,
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"method-control-flow-outliers\":{\"enabled\":false},\"dead-code-candidates\":{\"enabled\":false}}}");
+        Assert.Empty(config.Rules);
+    }
+
     [Theory]
     [InlineData("{\"schemaVersion\":1,\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"method-control-flow-outliers\":{}}}")]
     [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"method-control-flow-outliers\":{\"option\":1,\"option\":2}}}")]

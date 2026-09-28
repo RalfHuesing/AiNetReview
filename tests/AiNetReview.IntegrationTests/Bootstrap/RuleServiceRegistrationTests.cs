@@ -2,6 +2,7 @@ namespace AiNetReview.IntegrationTests.Bootstrap;
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 using AiNetReview.Bootstrap;
@@ -31,6 +32,27 @@ public sealed class RuleServiceRegistrationTests
         Assert.Same(rules.Single(static rule => rule is MethodControlFlowOutliersRule), registry.GetRequired("method-control-flow-outliers"));
         Assert.Same(rules.Single(static rule => rule is DeadCodeCandidatesRule), registry.GetRequired("dead-code-candidates"));
         Assert.False(registry.TryGet("fixture-finding", out _));
+    }
+
+    [Fact]
+    public void RepositoryConfiguration_ListsEveryProductionRule()
+    {
+        var repositoryRoot = SolutionRootLocator.Find();
+        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(repositoryRoot, "ainetreview.json")));
+        var configuredRules = document.RootElement.GetProperty("rules");
+        var services = new ServiceCollection();
+        services.AddAiNetReviewServices();
+        services.AddAiNetReviewRules();
+        using var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<RuleRegistry>();
+
+        foreach (var rule in registry.Rules)
+        {
+            Assert.True(configuredRules.TryGetProperty(rule.Descriptor.RuleId, out var options),
+                $"Production rule '{rule.Descriptor.RuleId}' is missing from the repository ainetreview.json.");
+            Assert.True(options.TryGetProperty("enabled", out var enabled));
+            Assert.Equal(JsonValueKind.True, enabled.ValueKind);
+        }
     }
 
     [Fact]

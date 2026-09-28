@@ -139,7 +139,19 @@ public sealed class ReviewConfigValidator
             }
 
             RequireKind(configuredRule.Value, JsonValueKind.Object, $"Configuration for rule '{configuredRule.Name}' must be an object.");
+            var enabled = true;
+            if (configuredRule.Value.TryGetProperty("enabled", out var enabledValue))
+            {
+                if (enabledValue.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                {
+                    throw new InvalidReviewInputException($"Configuration field 'enabled' for rule '{configuredRule.Name}' must be a boolean.");
+                }
+
+                enabled = enabledValue.GetBoolean();
+            }
+
             var optionValues = configuredRule.Value.EnumerateObject()
+                .Where(static option => !string.Equals(option.Name, "enabled", StringComparison.Ordinal))
                 .Select(static option => new KeyValuePair<string, JsonElement>(option.Name, option.Value));
             RuleOptions options;
             try
@@ -151,7 +163,10 @@ public sealed class ReviewConfigValidator
                 throw new InvalidReviewInputException(ex.Message, ex);
             }
 
-            activeRules.Add(new ConfiguredRule(configuredRule.Name, rule, options));
+            if (enabled)
+            {
+                activeRules.Add(new ConfiguredRule(configuredRule.Name, rule, options));
+            }
         }
 
         try

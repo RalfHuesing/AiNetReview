@@ -205,6 +205,24 @@ public sealed class SolutionLoaderTests
     }
 
     [Fact]
+    public async Task LoadAsync_DoesNotCaptureMarkupForDisabledDeadCodeRule()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
+        var markupPath = Path.Combine(root, "Sample", "View.js");
+        await File.WriteAllTextAsync(markupPath, new string('x', 1024 * 1024 + 1));
+        var config = new ReviewConfigValidator(Registry(includeMarkupRule: true)).Validate(
+            root,
+            ConfigurationJson(
+                "Sample.slnx",
+                rules: "\"dead-code-candidates\": {\"enabled\": false}, \"method-control-flow-outliers\": {}"));
+
+        using var loaded = await new SolutionLoader().LoadAsync(config);
+
+        Assert.Empty(loaded.MarkupDocuments);
+    }
+
+    [Fact]
     public async Task LoadAsync_SkipsBuildDependencyAndNestedProjectDirectories()
     {
         using var temp = TestTempDirectory.Create();
