@@ -12,7 +12,7 @@ Die Arbeitsthese bleibt: Code ist für Agenten besonders schwer zu beurteilen, w
 
 ## Zielbild
 
-Ein Aufruf der `.exe` lädt die angegebene `.sln` oder `.slnx` und die Regelkonfiguration, führt eine vollständige Analyse aus und erzeugt Markdown-Dateien im Ausgabeordner. Ein fehlgeschlagener oder unvollständiger Lauf darf nicht als „keine Findings“ erscheinen. Jeder Lauf betrachtet allein den aktuellen Code und die aktuelle Konfiguration.
+Ein Aufruf der `.exe` lädt die angegebene `.sln` oder `.slnx` und die Regelkonfiguration, lädt vor dem Regellauf alle analysierten C#-Quelldokumente in einen unveränderlichen Roslyn-Stand, führt darauf eine vollständige Analyse aus und erzeugt Markdown-Dateien im Ausgabeordner. Ein fehlgeschlagener oder unvollständiger Lauf darf nicht als „keine Findings“ erscheinen. Regeln arbeiten nur mit diesem geladenen Stand; parallele spätere Dateiveränderungen sind für den laufenden Scan unerheblich.
 
 Jeder vollständige Lauf erhält ein eigenes Zeitstempel-Verzeichnis mit Markdown-Berichten. Alte Berichte bleiben erhalten, bis der Nutzer sie löscht. Die Anwendung liest sie bei späteren Läufen nicht als Zustand. Interne Logdateien bleiben unter `logs/` relativ zum Verzeichnis der EXE.
 
@@ -22,11 +22,18 @@ Die einzige produktive Startregel bleibt `template-noop`; sie liefert absichtlic
 
 AiNetLinter bleibt ein getrenntes, nur lesend verwendetes Referenzprojekt für passende Infrastrukturmechanismen. Seine fachlichen Regeln und Build-Gates werden nicht übernommen; seine spätere Ablösung ist kein Bestandteil dieses Vorhabens. Das [ursprüngliche Relaunch-Konzept](Relaunch-Konzept.md) dokumentiert die Motivation, ist aber für Storage, MCP und Verlaufsverhalten überholt.
 
+## Verträge
+
+- [Epic 1 – Eingaben und Host](epics/01-Eingaben-und-Host.md): Konfiguration, einmaliger Roslyn-Stand, CLI und EXE-relative Logs.
+- [Epic 2 – Regeln und Findings](epics/02-Regel-und-Findings.md): Regeln und aktuelle Ergebnisse ohne Verlauf.
+- [Epic 3 – Berichte](epics/03-Berichte.md): Markdown-Dateien in eigenen Zeitstempel-Verzeichnissen.
+- [Epic 4 – Aufbau und Abnahme](epics/04-Umsetzung-und-Abnahme.md): vollständige Bereinigung des begonnenen Codes als erster Umsetzungsschritt, Testebenen und Definition of Done.
+
 ## Scope
 
 ### Muss
 
-- Die Spezifikation in diesem Task-Verzeichnis wird auf einen zustandslosen EXE-zu-Markdown-Ablauf umgeschrieben. Alle verbindlichen Verträge, Beispiele, Abnahmekriterien und Querverweise werden auf Widersprüche zu diesem Zielbild geprüft und bereinigt.
+- Eingabe, Analyse, Fehler, Markdown-Ausgabe und Abnahme folgen ausschließlich den vier verlinkten Epics. Die überholte Roadmap und der überholte Umsetzungstask sind entfernt; eine neue Roadmap entsteht erst nach gesondertem Nutzeraufruf.
 - Die spätere Umsetzung enthält nur die für Konfiguration, Solution-Laden, Regelprüfung, CLI und Markdown-Ausgabe benötigten Produktkomponenten. Bereits begonnene Storage-, MCP-, Fingerprint-, Snapshot-, Verdict- und Zustandsautomaten-Arbeit wird auf tatsächlich noch benötigte Teile geprüft; obsolete Teile werden aus Produktcode, Tests, Abhängigkeiten und Ist-Dokumentation entfernt.
 - Findings sind Hinweise zum aktuellen Quellstand mit Quellort, Begründung und aktueller Evidenz. Regeln liefern ihre fachliche Aussage, der generische Runner prüft die Vollständigkeit, und der Berichtsgenerator schreibt die Ergebnisse nachvollziehbar und deterministisch.
 - Fehlerfälle, leere vollständige Läufe und die Trennung zwischen produktiver `template-noop`-Regel und Test-Fixture werden automatisiert nachgewiesen.
@@ -42,12 +49,3 @@ AiNetLinter bleibt ein getrenntes, nur lesend verwendetes Referenzprojekt für p
 ## Verifikation
 
 Eine produktive EXE erzeugt mit `template-noop` nach vollständiger Analyse gültige Markdown-Ausgabe ohne Findings. Die Fixture-Regel erzeugt überprüfbare, nach Regel und Quellort geordnete Hinweise mit aktueller Evidenz. Wiederholte Läufe benötigen keinen gespeicherten Vorzustand; bei identischer Eingabe bleiben Findings und Reihenfolge gleich, während Run-ID und Laufzeiten neu sind. Ungültige Konfiguration, Lade- oder Analysefehler sowie Fehler beim Schreiben führen zu einem klaren Fehlschlag. Tests und Repository-Inspektion belegen, dass kein MCP-Zugang und kein persistierter Review-Zustand im Produkt verbleiben.
-
-## Arbeitsgedächtnis (nur Draft)
-
-- [Epic 1](epics/01-Eingaben-und-Host.md), [Epic 2](epics/02-Regel-und-Findings.md), [Epic 3](epics/03-Storage-und-Berichte.md) und [Epic 4](epics/04-Umsetzung-und-Abnahme.md) sind auf den zustandslosen Ablauf umgeschrieben. Sie sind Teil dieses Entwurfs. Die [alte Roadmap](roadmap.md) bildet noch den früheren Storage-/MCP-Stand ab und wird erst im gesondert aufzurufenden Roadmap-Schritt ersetzt.
-- Die Repository-Regeln zu MCP und Storage sowie die Ist-Dokumentation müssen nach der Konzeptfreigabe gegen den tatsächlich geänderten Produktstand bereinigt werden. Während dieses Planungsschritts bleiben Produktcode und Ist-Dokumentation unverändert.
-- Der Nutzer löscht und erstellt `tasks/initial-infrastructure-umsetzen/` später selbst neu. Dieses Verzeichnis wird hier nicht geändert.
-- Zur Freigabe zu bestätigen: Der bisherige `catalog`-Befehl und seine generierte Beispiel-JSON entfallen. Zweck, Messung und Review-Fragen einer Regel stehen im jeweiligen Markdown-Regelbericht.
-- Zur Freigabe zu bestätigen: Ohne Vergleichs-Checksummen prüft der Entwurf parallele Quelländerungen während eines laufenden Scans nicht nachträglich; der Bericht beschreibt den von Roslyn geladenen Stand. Ein rein laufzeitinterner Konsistenzcheck wäre ohne persistenten Store möglich, braucht aber eine ausdrückliche Entscheidung über seinen Umfang.
-- Der Entwurf wartet auf ausdrückliche Freigabe für `status: ready`; bis dahin beginnt keine weitere Umsetzung.

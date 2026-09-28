@@ -1,6 +1,6 @@
 # Epic 3 – Markdown-Berichte
 
-Dieses Epic definiert die **einzigen Review-Ergebnisdateien**. Eingaben und CLI-Antworten stehen in [Epic 1](01-Eingaben-und-Host.md), aktuelle Findings in [Epic 2](02-Regel-und-Findings.md). Der frühere Dateiname dieses Epics bleibt vorerst für bestehende Querverweise erhalten; ein Storage-Vertrag existiert nicht mehr. Interne EXE-relative Logdateien nach Epic 1 sind Betriebsdiagnostik und werden für Analysen nie eingelesen.
+Dieses Epic definiert die **einzigen Review-Ergebnisdateien**. Eingaben und CLI-Antworten stehen in [Epic 1](01-Eingaben-und-Host.md), aktuelle Findings in [Epic 2](02-Regel-und-Findings.md). Interne EXE-relative Logdateien nach Epic 1 sind Betriebsdiagnostik und werden für Analysen nie eingelesen.
 
 ## Verzeichnis und Run-ID
 
