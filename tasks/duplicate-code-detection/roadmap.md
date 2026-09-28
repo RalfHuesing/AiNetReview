@@ -2,7 +2,7 @@
 
 Source of truth: [Konzept.md](Konzept.md). AiNetLinter's token detection implementation and tests are read-only behavioral references; AiNetReview's current contracts take precedence. Complete the points in order. Each implementation point includes focused automated tests, affected current-state documentation when behavior changes, the affected tests and required project gates, verified checkbox closure, and an atomic commit under the repository rules. This roadmap step does not implement the feature.
 
-- [ ] **1 — Validate solution-wide source evidence**
+- [x] **1 — Validate solution-wide source evidence**
   - Intention and scope: Extend `CurrentFindingValidator` so a finding remains anchored in a C# document owned by its representative project, while each evidence item may reference any C# document in the loaded solution. Preserve canonical project-root-relative paths, loaded-snapshot line and snippet checks, finite metrics, unique identities, deterministic ordering, and failure and cancellation behavior.
   - Not in scope: New finding fields, evidence from outside the loaded C# solution, or relaxed representative ownership.
   - Acceptance: Focused validator and runner tests accept cross-project evidence and reject unknown or noncanonical paths, invalid lines or snippets, and evidence that exists only in a changed disk file rather than the loaded snapshot. Invalid findings fail the analysis without a partial result; cancellation still propagates.

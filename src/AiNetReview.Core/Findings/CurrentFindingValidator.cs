@@ -73,7 +73,7 @@ public sealed class CurrentFindingValidator
                 throw Invalid("Finding startLine must be a positive, one-based line number.");
             }
 
-            if (!TryGetOwnedSource(finding.ProjectPath, finding.SourcePath, sourceDocuments, projectPaths, out var source))
+            if (!TryGetProjectOwnedSource(finding.ProjectPath, finding.SourcePath, sourceDocuments, projectPaths, out var source))
             {
                 throw Invalid($"Finding source '{finding.SourcePath}' is not a C# document owned by '{finding.ProjectPath}' in the loaded solution.");
             }
@@ -101,16 +101,14 @@ public sealed class CurrentFindingValidator
                 RequireText(evidence.Label, "evidence.label");
                 RequireText(evidence.Detail, "evidence.detail");
                 RequireText(evidence.Snippet, "evidence.snippet");
-                if (!TryGetOwnedSource(finding.ProjectPath, evidence.SourcePath, sourceDocuments, projectPaths, out var evidenceSource))
+                if (!TryGetSolutionSources(evidence.SourcePath, sourceDocuments, out var evidenceSources))
                 {
-                    throw Invalid($"Evidence source '{evidence.SourcePath}' is not a C# document owned by '{finding.ProjectPath}' in the loaded solution.");
+                    throw Invalid($"Evidence source '{evidence.SourcePath}' is not a C# document in the loaded solution.");
                 }
 
-                ValidateLine(evidence.Line, evidenceSource.Text.Lines.Count, "Evidence line");
-                var lineText = evidenceSource.Text.Lines[evidence.Line - 1].ToString();
-                if (!lineText.Contains(evidence.Snippet, StringComparison.Ordinal))
+                if (!evidenceSources.Any(candidate => MatchesEvidence(candidate.Text, evidence)))
                 {
-                    throw Invalid("Evidence snippet does not match the loaded source line.");
+                    throw Invalid("Evidence line or snippet does not match the loaded source snapshot.");
                 }
             }
 
@@ -132,7 +130,7 @@ public sealed class CurrentFindingValidator
             .ToArray());
     }
 
-    private static bool TryGetOwnedSource(
+    private static bool TryGetProjectOwnedSource(
         string projectPath,
         string sourcePath,
         IReadOnlyDictionary<string, List<SourceDocument>> sourceDocuments,
@@ -157,6 +155,33 @@ public sealed class CurrentFindingValidator
         }
 
         return false;
+    }
+
+    private static bool TryGetSolutionSources(
+        string sourcePath,
+        IReadOnlyDictionary<string, List<SourceDocument>> sourceDocuments,
+        out IReadOnlyList<SourceDocument> sources)
+    {
+        if (IsCanonicalRelativePath(sourcePath)
+            && sourcePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
+            && sourceDocuments.TryGetValue(sourcePath, out var documents))
+        {
+            sources = documents;
+            return true;
+        }
+
+        sources = Array.Empty<SourceDocument>();
+        return false;
+    }
+
+    private static bool MatchesEvidence(Microsoft.CodeAnalysis.Text.SourceText text, FindingEvidence evidence)
+    {
+        if (evidence.Line < 1 || evidence.Line > text.Lines.Count)
+        {
+            return false;
+        }
+
+        return text.Lines[evidence.Line - 1].ToString().Contains(evidence.Snippet, StringComparison.Ordinal);
     }
 
     private static bool IsCanonicalRelativePath(string path) =>

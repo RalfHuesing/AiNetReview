@@ -104,6 +104,91 @@ public sealed class ReviewRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_AcceptsEvidenceFromAnotherLoadedProject()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, includeSecondProject: true);
+        var finding = new FindingDraft(
+            "Sample/Sample.csproj",
+            "Sample/FixtureCases.cs",
+            "cross-project-evidence",
+            "case",
+            4,
+            "Review the related implementation.",
+            new Dictionary<string, double> { ["count"] = 1 },
+            [new FindingEvidence("Other/Other.cs", 1, "Related implementation", "Evidence in another project", "LoadedOtherValue")]);
+        using var loaded = await new SolutionLoader().LoadAsync(CreateConfig(root, [new TestFindingRule("cross-project-rule", [finding])]));
+
+        var result = await new ReviewRunner().RunAsync(
+            CreateConfig(root, [new TestFindingRule("cross-project-rule", [finding])]), loaded);
+
+        Assert.Same(finding, Assert.Single(Assert.Single(result.Rules).Result.Findings));
+    }
+
+    [Theory]
+    [InlineData("Unknown/Unknown.cs", 1, "Missing")]
+    [InlineData("Sample/../Sample/FixtureCases.cs", 4, "FixtureCaseA")]
+    [InlineData("Sample\\FixtureCases.cs", 4, "FixtureCaseA")]
+    [InlineData("Sample/FixtureCases.cs", 0, "FixtureCaseA")]
+    [InlineData("Sample/FixtureCases.cs", 99, "FixtureCaseA")]
+    [InlineData("Sample/FixtureCases.cs", 4, "not present")]
+    public async Task RunAsync_RejectsUnknownNoncanonicalOrInvalidEvidence(string evidencePath, int line, string snippet)
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, includeSecondProject: true);
+        var finding = new FindingDraft(
+            "Sample/Sample.csproj",
+            "Sample/FixtureCases.cs",
+            "invalid-evidence",
+            "case",
+            4,
+            "Invalid evidence fixture.",
+            new Dictionary<string, double> { ["count"] = 1 },
+            [new FindingEvidence(evidencePath, line, "Fixture", "Invalid evidence", snippet)]);
+        var config = CreateConfig(root, [new TestFindingRule("invalid-evidence-rule", [finding])]);
+        using var loaded = await new SolutionLoader().LoadAsync(config);
+
+        await Assert.ThrowsAsync<AnalysisFailedException>(() => new ReviewRunner().RunAsync(config, loaded));
+    }
+
+    [Fact]
+    public async Task RunAsync_ValidatesEvidenceAgainstLoadedSnapshotInsteadOfChangedDiskFile()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, includeSecondProject: true);
+        var config = CreateConfig(root, [new TestRule("snapshot-rule", [])]);
+        using var loaded = await new SolutionLoader().LoadAsync(config);
+        await File.WriteAllTextAsync(Path.Combine(root, "Other", "Other.cs"),
+            """namespace Other; public sealed class Other { public int Value => "ChangedDiskOnly".Length; }""");
+
+        var changedDiskEvidence = new FindingDraft(
+            "Sample/Sample.csproj",
+            "Sample/FixtureCases.cs",
+            "changed-disk-evidence",
+            "case",
+            4,
+            "This text exists only after loading.",
+            new Dictionary<string, double> { ["count"] = 1 },
+            [new FindingEvidence("Other/Other.cs", 1, "Changed file", "Not in snapshot", "ChangedDiskOnly")]);
+        var invalidConfig = CreateConfig(root, [new TestFindingRule("snapshot-rule", [changedDiskEvidence])]);
+
+        await Assert.ThrowsAsync<AnalysisFailedException>(() => new ReviewRunner().RunAsync(invalidConfig, loaded));
+
+        var loadedSnapshotEvidence = new FindingDraft(
+            "Sample/Sample.csproj",
+            "Sample/FixtureCases.cs",
+            "loaded-snapshot-evidence",
+            "case",
+            4,
+            "This text remains in the loaded snapshot.",
+            new Dictionary<string, double> { ["count"] = 1 },
+            [new FindingEvidence("Other/Other.cs", 1, "Loaded file", "Snapshot evidence", "LoadedOtherValue")]);
+        var validConfig = CreateConfig(root, [new TestFindingRule("snapshot-rule", [loadedSnapshotEvidence])]);
+        var result = await new ReviewRunner().RunAsync(validConfig, loaded);
+        Assert.Same(loadedSnapshotEvidence, Assert.Single(Assert.Single(result.Rules).Result.Findings));
+    }
+
+    [Fact]
     public async Task RunAsync_OrdersRulesAndPropagatesIncompleteRuns()
     {
         using var temp = TestTempDirectory.Create();
@@ -145,7 +230,7 @@ public sealed class ReviewRunnerTests
         return new ReviewConfigValidator(registry).Validate(root, json);
     }
 
-    private static async Task<string> CreateProjectAsync(TestTempDirectory temp)
+    private static async Task<string> CreateProjectAsync(TestTempDirectory temp, bool includeSecondProject = false)
     {
         var root = temp.GetPath("runner-project");
         var projectDirectory = Path.Combine(root, "Sample");
@@ -162,7 +247,21 @@ public sealed class ReviewRunnerTests
             }
             """);
         await RestoreAsync(projectFile, projectDirectory);
-        await File.WriteAllTextAsync(Path.Combine(root, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
+        var solutionProjects = "<Project Path=\"Sample/Sample.csproj\" />";
+        if (includeSecondProject)
+        {
+            var otherDirectory = Path.Combine(root, "Other");
+            Directory.CreateDirectory(otherDirectory);
+            var otherProject = Path.Combine(otherDirectory, "Other.csproj");
+            await File.WriteAllTextAsync(otherProject,
+                "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
+            await File.WriteAllTextAsync(Path.Combine(otherDirectory, "Other.cs"),
+                """namespace Other; public sealed class Other { public int Value => "LoadedOtherValue".Length; }""");
+            await RestoreAsync(otherProject, otherDirectory);
+            solutionProjects += "<Project Path=\"Other/Other.csproj\" />";
+        }
+
+        await File.WriteAllTextAsync(Path.Combine(root, "Sample.slnx"), $"<Solution>{solutionProjects}</Solution>");
         return root;
     }
 
