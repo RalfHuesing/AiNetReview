@@ -12,6 +12,10 @@ Schema version 1 currently accepts these fields:
   "rules": {
     "method-control-flow-outliers": {
       "percentile": 90
+    },
+    "dead-code-candidates": {
+      "apiSurface": "external_library",
+      "entryPointAttributes": []
     }
   }
 }
@@ -21,7 +25,7 @@ The root object must contain exactly `schemaVersion`, `solution`, `outputDirecto
 
 The repository root contains an `ainetreview.json` that selects `AiNetReview.slnx`, writes reports to `audit-reporting/`, and explicitly sets the `method-control-flow-outliers` percentile to its default of 90. The normal IntegrationTests suite invokes the Debug executable with this absolute configuration path and verifies the generated run in the repository output directory.
 
-`rules` must be a nonempty object. Each key must name a registered rule, and its value must be an object containing only options declared by that rule. The registry descriptor applies defaults to omitted options and validates supplied value types. The production registry contains `method-control-flow-outliers`; its optional `percentile` integer accepts values from 50 through 99 and defaults to 90.
+`rules` must be a nonempty object. Each key must name a registered rule, and its value must be an object containing only options declared by that rule. The registry descriptor applies defaults to omitted options and validates supplied value types. The production registry contains `method-control-flow-outliers` and `dead-code-candidates`. The former's optional `percentile` integer accepts values from 50 through 99 and defaults to 90. For `dead-code-candidates`, `apiSurface` accepts `external_library` (default) or `closed_solution`; `entryPointAttributes` is an array of additional fully qualified attribute type names and defaults to an empty array. Its fixed module initializer and JS interop attributes remain active. This rule is a repeatable audit: every complete run reports its current candidates and has no source-comment suppression option.
 
 Unknown or duplicate JSON keys, unknown rule IDs, invalid option values, wrong field types, unsupported schema versions, paths escaping through `..`, symlinks, or junctions, and missing solution files raise `InvalidReviewInputException`. A loaded solution that includes C# source outside the project root or inside the output directory is rejected. Each C# project must produce a Roslyn compilation without error diagnostics; solution load, restore, missing reference, or compilation failures raise `AnalysisFailedException`.
 

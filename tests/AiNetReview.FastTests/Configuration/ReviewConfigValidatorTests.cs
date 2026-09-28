@@ -7,10 +7,11 @@ using System.Text.Json;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Rules;
 using AiNetReview.Core.Rules.MethodControlFlowOutliers;
+using AiNetReview.Core.Rules.DeadCodeCandidates;
 
 public sealed class ReviewConfigValidatorTests
 {
-    private static RuleRegistry Registry() => new([new MethodControlFlowOutliersRule()]);
+    private static RuleRegistry Registry() => new([new MethodControlFlowOutliersRule(), new DeadCodeCandidatesRule()]);
 
     [Fact]
     public void Load_RequiresAbsoluteAinetreviewFileAtProjectRoot()
@@ -41,6 +42,30 @@ public sealed class ReviewConfigValidatorTests
         Assert.Single(config.Rules);
         Assert.Equal("method-control-flow-outliers", config.Rules[0].RuleId);
         Assert.Equal(90, config.Rules[0].EffectiveOptions["percentile"].GetInt32());
+    }
+
+    [Fact]
+    public void Validate_ResolvesDeadCodeOptionsAndRejectsMalformedValues()
+    {
+        using var temp = TestTempDirectory.Create();
+        temp.CreateFile("Project.slnx", "<Solution />");
+        var validator = new ReviewConfigValidator(Registry());
+        var defaultConfig = validator.Validate(temp.DirectoryPath,
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{}}}");
+        var defaults = defaultConfig.Rules.Single().EffectiveOptions;
+
+        Assert.Equal("external_library", defaults["apiSurface"].GetString());
+        Assert.Empty(defaults["entryPointAttributes"].EnumerateArray());
+
+        var configured = validator.Validate(temp.DirectoryPath,
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{\"apiSurface\":\"closed_solution\",\"entryPointAttributes\":[\"Example.EntryPointAttribute\"]}}}");
+        Assert.Equal("closed_solution", configured.Rules.Single().EffectiveOptions["apiSurface"].GetString());
+        Assert.Equal("Example.EntryPointAttribute", configured.Rules.Single().EffectiveOptions["entryPointAttributes"].EnumerateArray().Single().GetString());
+
+        Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{\"apiSurface\":\"unknown\"}}}"));
+        Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{\"entryPointAttributes\":[\"Unqualified\"]}}}"));
     }
 
     [Theory]

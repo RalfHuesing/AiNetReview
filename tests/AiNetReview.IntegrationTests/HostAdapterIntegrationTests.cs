@@ -15,6 +15,64 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed class HostAdapterIntegrationTests
 {
     [Fact]
+    public async Task ReviewCommand_ProductionDeadCodeRulePublishesRepeatedAndEmptyAudits()
+    {
+        using var tempDirectory = TestTempDirectory.Create("ainet-host-dead-code-");
+        var projectRoot = tempDirectory.GetPath("adapter-project");
+        var projectDirectory = Path.Combine(projectRoot, "Sample");
+        Directory.CreateDirectory(projectDirectory);
+        var projectFile = Path.Combine(projectDirectory, "Sample.csproj");
+        var sourcePath = Path.Combine(projectDirectory, "Class1.cs");
+        await File.WriteAllTextAsync(projectFile,
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
+        await File.WriteAllTextAsync(sourcePath, "namespace Sample; internal sealed class UnusedType { public void HiddenMethod() { } } public sealed class PublicApi { public void Entry() { } }");
+        await RestoreProjectAsync(projectFile, projectDirectory);
+        await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
+        var configPath = Path.Combine(projectRoot, "ainetreview.json");
+        await File.WriteAllTextAsync(configPath,
+            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{}}}");
+
+        var first = await RunProductionDeadCodeAsync(configPath);
+        var firstReport = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", first.RunId, "rules", "dead-code-candidates.md"));
+        Assert.Equal(1, first.Detected);
+        Assert.Contains("T:Sample.UnusedType", firstReport, StringComparison.Ordinal);
+        Assert.Contains("Type declaration", firstReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("method-candidate", firstReport, StringComparison.Ordinal);
+        Assert.Contains("reflection", firstReport, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("external uses", firstReport, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("external\\_library", firstReport, StringComparison.Ordinal);
+
+        var second = await RunProductionDeadCodeAsync(configPath);
+        var secondReport = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", second.RunId, "rules", "dead-code-candidates.md"));
+        Assert.Equal(1, second.Detected);
+        Assert.NotEqual(first.RunId, second.RunId);
+        Assert.Contains("T:Sample.UnusedType", secondReport, StringComparison.Ordinal);
+
+        await File.WriteAllTextAsync(sourcePath, "namespace Sample; public sealed class PublicApi { public void Entry() { } }");
+        var empty = await RunProductionDeadCodeAsync(configPath);
+        var emptyReport = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", empty.RunId, "rules", "dead-code-candidates.md"));
+        Assert.Equal(0, empty.Detected);
+        Assert.Contains("| Detected | 0 |", emptyReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("UnusedType", emptyReport, StringComparison.Ordinal);
+
+        var publishedRunsBeforeCancellation = Directory.GetDirectories(Path.Combine(projectRoot, "reports")).Length;
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        using var cancelledOutput = new StringWriter();
+        using var cancelledError = new StringWriter();
+        await using var cancelledProvider = BuildProductionServices();
+        var cancelledExitCode = await new ReviewCommand().InvokeAsync(
+            ["review", "--config", configPath],
+            cancelledProvider,
+            cancelledOutput,
+            cancelledError,
+            cancellation.Token);
+        Assert.Equal(130, cancelledExitCode);
+        Assert.Empty(cancelledOutput.ToString());
+        Assert.Equal(publishedRunsBeforeCancellation, Directory.GetDirectories(Path.Combine(projectRoot, "reports")).Length);
+    }
+
+    [Fact]
     public async Task ReviewCommand_RepeatedFixtureScansUseCurrentSourcesAndOptions()
     {
         using var tempDirectory = TestTempDirectory.Create("ainet-host-adapter-repeated-");
@@ -146,7 +204,7 @@ public sealed class HostAdapterIntegrationTests
         var report = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "rules", "fixture-finding.md"));
         Assert.Contains("fixturecasea", report, StringComparison.Ordinal);
         Assert.Equal(
-            new[] { "fixture-finding", "method-control-flow-outliers" },
+            new[] { "dead-code-candidates", "fixture-finding", "method-control-flow-outliers" },
             provider.GetRequiredService<RuleRegistry>().Rules.Select(static rule => rule.Descriptor.RuleId));
     }
 
@@ -172,7 +230,6 @@ public sealed class HostAdapterIntegrationTests
         var services = new ServiceCollection();
         services.AddAiNetReviewServices();
         services.AddAiNetReviewRules();
-        services.AddSingleton<IReviewRule, MarkupFixtureRule>();
         services.AddLogging();
         await using var provider = services.BuildServiceProvider();
         using var output = new StringWriter();
@@ -243,19 +300,31 @@ public sealed class HostAdapterIntegrationTests
     private static Task<string> ReadRuleReportAsync(string projectRoot, string runId) =>
         File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId, "rules", "fixture-finding.md"));
 
-    private sealed class MarkupFixtureRule : IReviewRule
+    private static async Task<(string RunId, int Detected)> RunProductionDeadCodeAsync(string configPath)
     {
-        public RuleDescriptor Descriptor { get; } = new(
-            "dead-code-candidates",
-            "Fixture",
-            1,
-            "Fixture rule for markup snapshot publication coverage.",
-            "Fixture behavior.",
-            ["Is the snapshot available?"]);
+        var services = new ServiceCollection();
+        services.AddAiNetReviewServices();
+        services.AddAiNetReviewRules();
+        services.AddLogging();
+        await using var provider = services.BuildServiceProvider();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
 
-        public Task<RuleResult> ExecuteAsync(
-            ReviewContext context,
-            RuleOptions options,
-            CancellationToken cancellationToken) => Task.FromResult(RuleResult.Empty);
+        var exitCode = await new ReviewCommand().InvokeAsync(["review", "--config", configPath], provider, output, error);
+        Assert.True(exitCode == 0, $"Production dead-code audit failed: {error}");
+        Assert.Empty(error.ToString());
+        using var response = JsonDocument.Parse(output.ToString());
+        return (
+            response.RootElement.GetProperty("runId").GetString()!,
+            response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
+    }
+
+    private static ServiceProvider BuildProductionServices()
+    {
+        var services = new ServiceCollection();
+        services.AddAiNetReviewServices();
+        services.AddAiNetReviewRules();
+        services.AddLogging();
+        return services.BuildServiceProvider();
     }
 }

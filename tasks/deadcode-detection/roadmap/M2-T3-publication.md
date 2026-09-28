@@ -22,13 +22,21 @@ Automatic removal/refactoring, build-breaking diagnostics, MCP endpoints, or cha
 
 ## Acceptance
 
-- [ ] Production registration, option validation/defaults, deterministic Markdown evidence and review questions are covered by focused tests.
-- [ ] End-to-end tests show a representative candidate, a protected declaration, a complete empty report and no report after analysis failure or cancellation.
-- [ ] Affected documentation matches the verified implementation; build and affected test suites pass.
+- [x] Production registration, option validation/defaults, deterministic Markdown evidence and review questions are covered by focused tests.
+- [x] End-to-end tests show a representative candidate, a protected declaration, a complete empty report and no report after analysis failure or cancellation.
+- [x] Affected documentation matches the verified implementation; build and affected test suites pass.
 
 ## Checklist
 
-- [ ] Inspect current configuration, registration, finding validation, report and host tests.
-- [ ] Implement this scope and update affected current-state documentation in the same slice.
-- [ ] Run focused tests and required project gates; review the diff and `git diff --check`.
-- [ ] Close this leaf and its parent roadmap checkbox only after acceptance is verified; commit explicit task paths.
+- [x] Inspect current configuration, registration, finding validation, report and host tests.
+- [x] Implement this scope and update affected current-state documentation in the same slice.
+- [x] Run focused tests and required project gates; review the diff and `git diff --check`.
+- [x] Close this leaf and its roadmap link only after acceptance is verified; commit explicit task paths.
+
+## Completion evidence
+
+- `pwsh -File ./scripts/build.ps1` — passed, 0 warnings and 0 errors.
+- `pwsh -File ./scripts/test-fast.ps1` — passed, 102 tests.
+- `pwsh -File ./scripts/test-integration.ps1` — passed, 49 tests.
+- `ReviewCommand_ProductionDeadCodeRulePublishesRepeatedAndEmptyAudits` verifies grouped Markdown findings, protected public API, repeated findings, a complete empty report and no publication after cancellation. The markup snapshot failure integration test verifies no report after incomplete analysis.
+- The parent Milestone 2 audit remains open for the orchestrator.
