@@ -78,7 +78,7 @@ public sealed class HostProcessIntegrationTests
         }
         else
         {
-            Assert.Contains("Keine Befunde gefunden.", indexReport, StringComparison.Ordinal);
+            Assert.Contains("No findings were found.", indexReport, StringComparison.Ordinal);
             Assert.False(File.Exists(ruleReportPath));
         }
 
@@ -163,7 +163,7 @@ public sealed class HostProcessIntegrationTests
         Assert.StartsWith("reports/", indexPath, StringComparison.Ordinal);
         Assert.True(File.Exists(Path.Combine(projectRoot, indexPath!.Replace('/', Path.DirectorySeparatorChar))));
         Assert.Equal(0, response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
-        Assert.Contains("Keine Befunde gefunden.", await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "index.md")), StringComparison.Ordinal);
+        Assert.Contains("No findings were found.", await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "index.md")), StringComparison.Ordinal);
         Assert.False(Directory.Exists(Path.Combine(projectRoot, "reports", runId!, "rules")));
 
         var logPath = Assert.Single(Directory.GetFiles(Path.Combine(host.HostDirectory, "logs"), "ainetreview-*.log"));

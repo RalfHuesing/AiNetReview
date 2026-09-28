@@ -144,8 +144,8 @@ public sealed class MarkdownReportWriter
         if (rulesWithFindings.Length == 0)
         {
             builder.Append(rules.Length == 0
-                ? "Keine Prüfung fand statt, da alle Regeln deaktiviert sind.\n"
-                : "Keine Befunde gefunden.\n");
+                ? "No review was performed because all rules are disabled.\n"
+                : "No findings were found.\n");
             return builder.ToString();
         }
 

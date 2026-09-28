@@ -72,7 +72,7 @@ public sealed class HostAdapterIntegrationTests
         Assert.Equal(0, empty.Detected);
         var emptyRunDirectory = Path.Combine(projectRoot, "reports", empty.RunId);
         var emptyIndex = await File.ReadAllTextAsync(Path.Combine(emptyRunDirectory, "index.md"));
-        Assert.Contains("Keine Befunde gefunden.", emptyIndex, StringComparison.Ordinal);
+        Assert.Contains("No findings were found.", emptyIndex, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(emptyRunDirectory, "rules", "duplicate-code-candidates.md")));
         Assert.True(File.Exists(Path.Combine(projectRoot, "reports", exact.RunId, "index.md")));
         Assert.True(File.Exists(Path.Combine(projectRoot, "reports", fuzzy.RunId, "index.md")));
@@ -137,7 +137,7 @@ public sealed class HostAdapterIntegrationTests
         Assert.Equal(0, empty.Detected);
         var emptyRunDirectory = Path.Combine(projectRoot, "reports", empty.RunId);
         var emptyIndex = await File.ReadAllTextAsync(Path.Combine(emptyRunDirectory, "index.md"));
-        Assert.Contains("Keine Befunde gefunden.", emptyIndex, StringComparison.Ordinal);
+        Assert.Contains("No findings were found.", emptyIndex, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(emptyRunDirectory, "rules", "dead-code-candidates.md")));
 
         var publishedRunsBeforeCancellation = Directory.GetDirectories(Path.Combine(projectRoot, "reports")).Length;
@@ -196,7 +196,7 @@ public sealed class HostAdapterIntegrationTests
         Assert.Equal(0, third.Detected);
         var thirdRunDirectory = Path.Combine(projectRoot, "reports", third.RunId);
         var thirdIndex = await File.ReadAllTextAsync(Path.Combine(thirdRunDirectory, "index.md"));
-        Assert.Contains("Keine Befunde gefunden.", thirdIndex, StringComparison.Ordinal);
+        Assert.Contains("No findings were found.", thirdIndex, StringComparison.Ordinal);
         Assert.False(Directory.Exists(Path.Combine(thirdRunDirectory, "rules")));
 
         Assert.True(File.Exists(Path.Combine(projectRoot, "reports", first.RunId, "index.md")));

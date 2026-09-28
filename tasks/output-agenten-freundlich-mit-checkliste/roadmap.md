@@ -12,7 +12,7 @@
   - Nicht: Keine Änderung am Audit-Profilformat, der CLI-Erfolgsantwort oder den Review-Regeln.
   - Abnahme: Build, FastTests, IntegrationTests und `pwsh -File ./scripts/test-audit.ps1 -Target ainetreview` bestehen. Der neue Lauf enthält nur `index.md` und Regeldateien mit Befunden, keine `findings.json`; Quelllinks führen zum analysierten Repository. `git diff --check` besteht; Änderungen sind als eigener Slice committet.
 
-- [ ] **Abschließendes Audit**
+- [x] **Abschließendes Audit**
   - Intention: Das Ergebnis gegen das freigegebene Konzept und den tatsächlich erzeugten Bericht prüfen.
   - Scope: Änderungen, Tests und aktuelle Dokumentation nur lesend prüfen; einen neuen Bericht auf knappen Regelkontext, bearbeitbare Tabellen, Navigation, Leerfälle und fehlende JSON-Zweitausgabe prüfen. Festgestellte Abweichungen als konkretes Feedback für höchstens einen Korrektur-Slice benennen.
   - Nicht: Keine Produktionscode-Änderung im Audit.

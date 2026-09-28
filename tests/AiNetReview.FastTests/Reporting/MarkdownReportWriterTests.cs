@@ -38,7 +38,7 @@ public sealed class MarkdownReportWriterTests
         var repositoryPath = repositoryLine["- Repository: `".Length..^1].Replace("\\\\", "\\", StringComparison.Ordinal);
         Assert.True(Path.IsPathFullyQualified(repositoryPath));
         Assert.Contains("- Solution: `Sample.slnx`", index, StringComparison.Ordinal);
-        Assert.Contains("Keine Befunde gefunden.", index, StringComparison.Ordinal);
+        Assert.Contains("No findings were found.", index, StringComparison.Ordinal);
         Assert.DoesNotContain("Started", index, StringComparison.Ordinal);
         Assert.DoesNotContain("Detected", index, StringComparison.Ordinal);
         Assert.Empty(Directory.GetDirectories(Path.Combine(config.ResolvedOutputDirectory, report.RunId)));
@@ -56,8 +56,8 @@ public sealed class MarkdownReportWriterTests
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
 
-        Assert.Contains("Keine Prüfung fand statt", index, StringComparison.Ordinal);
-        Assert.DoesNotContain("Keine Befunde gefunden", index, StringComparison.Ordinal);
+        Assert.Contains("No review was performed because all rules are disabled.", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("No findings were found", index, StringComparison.Ordinal);
         Assert.Single(Directory.GetFiles(runDirectory, "*", SearchOption.AllDirectories));
     }
 
