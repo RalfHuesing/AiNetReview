@@ -1,6 +1,6 @@
 # Wenige starke Signale für agentische Code-Audits
 
-Status: ergänzende Ideennotiz, keine verbindliche Spezifikation und kein implementiertes Produktverhalten. Die [erste Ideensammlung](erste-fachliche-review-signale.md) beschreibt die statistische Kandidatenauswahl im Detail.
+Status: ergänzende Ideennotiz, keine verbindliche Spezifikation und kein implementiertes Produktverhalten. Die statistische Kandidatenauswahl ist als Regel [method-control-flow-outliers](../../docs/review/findings.md) umgesetzt; die [Ideensammlung](erste-fachliche-review-signale.md) diskutiert weitere Ansätze.
 
 ## Grundgedanke
 
@@ -14,7 +14,7 @@ Zwanzig ineinanderliegende `if`-Blöcke wären ein sehr starker Anlass, den Abla
 
 Aktuelle Benchmarks zeigen Schwierigkeiten beim Verstehen komplexen Codes, belegen aber keinen isolierten C#-Grenzwert für Verschachtelung. In [LongCodeU](https://aclanthology.org/2025.acl-long.1324/) waren Beziehungen zwischen Codeeinheiten für die untersuchten Modelle besonders schwierig. Die [SWE-Flux-Vorabveröffentlichung](https://arxiv.org/abs/2609.28449) untersucht Laufzeitfragen in Python-Repositories und berichtet größere Probleme bei Datenfluss, Ausführung über Methoden hinweg und präzisem Zustand als bei lokalem Kontrollfluss. Das ist ein Hinweis gegen rein kosmetisches Verteilen verschachtelter Logik auf viele Hilfsmethoden, kein Beweis, dass Verschachtelung harmlos wäre. Ergebnisse hängen von Aufgaben, Sprachen, Modellen und Werkzeugunterstützung ab.
 
-Für einen ersten Audit erscheinen deshalb **separate, erklärte Messwerte** sinnvoll: Anzahl von Entscheidungen, maximale Verschachtelung, kognitive Komplexität und Methodenumfang. Die statistische Relevanzauswahl aus der [ersten Ideensammlung](erste-fachliche-review-signale.md) kann darauf angewandt werden. Der Bericht sollte alle relevanten Kandidaten und ihre Rohwerte zeigen, ohne eine feste Höchstzahl und ohne einen automatischen Refactoring-Auftrag.
+Für einen ersten Audit erscheinen deshalb **separate, erklärte Messwerte** sinnvoll: Anzahl von Entscheidungen, maximale Verschachtelung, kognitive Komplexität und Methodenumfang. Die statistische Relevanzauswahl (wie in [method-control-flow-outliers](../../docs/review/findings.md) umgesetzt) kann darauf angewandt werden. Der Bericht sollte alle relevanten Kandidaten und ihre Rohwerte zeigen, ohne eine feste Höchstzahl und ohne einen automatischen Refactoring-Auftrag.
 
 ## Drei mögliche Blickrichtungen
 
