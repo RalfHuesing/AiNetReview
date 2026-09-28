@@ -2,7 +2,6 @@ namespace AiNetReview.IntegrationTests;
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -11,17 +10,15 @@ using System.Threading.Tasks;
 using AiNetReview.Bootstrap;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
-using AiNetReview.Core.Findings;
 using Microsoft.Extensions.DependencyInjection;
 
 public sealed partial class AuditRepositoryIntegrationTests
 {
     private const string TargetEnvironmentVariable = "AINETREVIEW_AUDIT_TARGET";
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     [Fact]
     [Trait("Category", "Audit")]
-    public async Task ConfiguredTarget_PublishesCentralMarkdownAndFindingsJson()
+    public async Task ConfiguredTarget_PublishesOnlyCentralMarkdown()
     {
         var selectedTargetName = Environment.GetEnvironmentVariable(TargetEnvironmentVariable);
         Assert.Matches(TargetNamePattern(), selectedTargetName ?? string.Empty);
@@ -76,72 +73,22 @@ public sealed partial class AuditRepositoryIntegrationTests
 
         var runDirectory = Path.Combine(outputDirectory, published.RunId);
         Assert.True(File.Exists(Path.Combine(runDirectory, "index.md")));
-        Assert.True(Directory.Exists(Path.Combine(runDirectory, "rules")));
+        var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
+        var escapedRepositoryPath = repositoryPath.Replace("\\", "\\\\", StringComparison.Ordinal);
+        Assert.Contains($"- Repository: `{escapedRepositoryPath}`", index, StringComparison.Ordinal);
         AssertMarkdownLinksResolve(runDirectory, repositoryPath);
         Assert.Equal(Path.Combine(outputDirectory, published.RunId, "index.md"),
             Path.GetFullPath(Path.Combine(repositoryPath, published.IndexPath.Replace('/', Path.DirectorySeparatorChar))));
 
-        var gitState = await TryReadGitStateAsync(repositoryPath);
-        var effectiveRules = config.Rules
-            .OrderBy(static rule => rule.RuleId, StringComparer.Ordinal)
-            .Select(rule => new
-            {
-                ruleId = rule.RuleId,
-                title = rule.Rule.Descriptor.Title,
-                behaviorVersion = rule.Rule.Descriptor.BehaviorVersion,
-                effectiveOptions = rule.EffectiveOptions.Values.ToDictionary(
-                    static option => option.Key,
-                    static option => option.Value,
-                    StringComparer.Ordinal),
-            })
+        var publishedFiles = Directory.EnumerateFiles(runDirectory, "*", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(runDirectory, path).Replace('\\', '/'))
+            .OrderBy(static path => path, StringComparer.Ordinal)
             .ToArray();
-        var findingRecords = result.Rules
-            .SelectMany(rule => rule.Result.Findings.Select(finding => new
-            {
-                ruleId = rule.RuleId,
-                projectPath = finding.ProjectPath,
-                sourcePath = finding.SourcePath,
-                subjectId = finding.SubjectId,
-                discriminator = finding.Discriminator,
-                startLine = finding.StartLine,
-                rationale = finding.Rationale,
-                metrics = finding.Metrics,
-                evidence = finding.Evidence.Select(static item => new
-                {
-                    sourcePath = item.SourcePath,
-                    line = item.Line,
-                    label = item.Label,
-                    detail = item.Detail,
-                    snippet = item.Snippet,
-                }),
-            }))
-            .ToArray();
-        var findingsDocument = new
-        {
-            schemaVersion = 1,
-            generatedAtUtc = DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
-            repository = new { name = targetName, path = repositoryPath },
-            solution = new { path = solution, absolutePath = solutionPath },
-            git = new { commit = gitState.Commit, workingTreeDirty = gitState.WorkingTreeDirty },
-            runId = published.RunId,
-            rules = effectiveRules,
-            counts = new
-            {
-                detected = result.DetectedCount,
-                byRule = result.Rules.ToDictionary(static rule => rule.RuleId, static rule => rule.DetectedCount, StringComparer.Ordinal),
-            },
-            findings = findingRecords,
-        };
-        var findingsPath = Path.Combine(runDirectory, "findings.json");
-        await WriteFindingsJsonAsync(findingsPath, JsonSerializer.Serialize(findingsDocument, JsonOptions));
-        using var serializedFindings = JsonDocument.Parse(await File.ReadAllTextAsync(findingsPath));
-        var findingsRoot = serializedFindings.RootElement;
-        Assert.Equal(published.RunId, findingsRoot.GetProperty("runId").GetString());
-        Assert.True(DateTimeOffset.TryParse(findingsRoot.GetProperty("generatedAtUtc").GetString(), out _));
-        Assert.Equal(effectiveRules.Length, findingsRoot.GetProperty("rules").GetArrayLength());
-        Assert.Equal(result.DetectedCount, findingsRoot.GetProperty("counts").GetProperty("detected").GetInt32());
-        Assert.Equal(result.DetectedCount, findingsRoot.GetProperty("findings").GetArrayLength());
-        Assert.True(findingsRoot.GetProperty("git").TryGetProperty("workingTreeDirty", out _));
+        Assert.DoesNotContain("findings.json", publishedFiles, StringComparer.Ordinal);
+        Assert.All(publishedFiles, path => Assert.True(
+            path == "index.md" || (path.StartsWith("rules/", StringComparison.Ordinal) && path.EndsWith(".md", StringComparison.Ordinal)),
+            $"Unexpected manual audit artifact: '{path}'."));
+        Assert.Contains("index.md", publishedFiles, StringComparer.Ordinal);
     }
 
     [Fact]
@@ -222,85 +169,16 @@ public sealed partial class AuditRepositoryIntegrationTests
             || canonicalPath.StartsWith(canonicalRoot + Path.DirectorySeparatorChar, comparison);
     }
 
-    private static async Task<(string? Commit, bool? WorkingTreeDirty)> TryReadGitStateAsync(string repositoryPath)
-    {
-        var commit = await RunGitAsync(repositoryPath, "rev-parse", "HEAD");
-        if (commit is null)
-        {
-            return (null, null);
-        }
-
-        var status = await RunGitAsync(repositoryPath, "status", "--porcelain");
-        return (commit, status is null ? null : status.Length > 0);
-    }
-
-    private static async Task<string?> RunGitAsync(string repositoryPath, params string[] arguments)
-    {
-        try
-        {
-            var startInfo = new ProcessStartInfo("git")
-            {
-                WorkingDirectory = repositoryPath,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            foreach (var argument in arguments)
-            {
-                startInfo.ArgumentList.Add(argument);
-            }
-
-            using var process = Process.Start(startInfo);
-            if (process is null)
-            {
-                return null;
-            }
-
-            var output = process.StandardOutput.ReadToEndAsync();
-            var error = process.StandardError.ReadToEndAsync();
-            using var timeout = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5));
-            try
-            {
-                await process.WaitForExitAsync(timeout.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync();
-                return null;
-            }
-
-            _ = await error;
-            return process.ExitCode == 0 ? (await output).Trim() : null;
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception or System.Threading.Tasks.TaskCanceledException)
-        {
-            return null;
-        }
-    }
-
-    private static async Task WriteFindingsJsonAsync(string path, string contents)
-    {
-        var temporaryPath = path + ".tmp-" + Guid.NewGuid().ToString("N");
-        try
-        {
-            await File.WriteAllTextAsync(temporaryPath, contents + Environment.NewLine, new System.Text.UTF8Encoding(false));
-            File.Move(temporaryPath, path);
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath))
-            {
-                File.Delete(temporaryPath);
-            }
-        }
-    }
-
     private static void AssertMarkdownLinksResolve(string runDirectory, string repositoryPath)
     {
         var linkPattern = SourceLinkPattern();
-        foreach (var reportPath in Directory.EnumerateFiles(Path.Combine(runDirectory, "rules"), "*.md"))
+        var rulesDirectory = Path.Combine(runDirectory, "rules");
+        if (!Directory.Exists(rulesDirectory))
+        {
+            return;
+        }
+
+        foreach (var reportPath in Directory.EnumerateFiles(rulesDirectory, "*.md"))
         {
             var report = File.ReadAllText(reportPath);
             foreach (Match link in linkPattern.Matches(report))

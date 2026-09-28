@@ -6,7 +6,7 @@
   - Nicht: Keine Erkennungslogik, keine künstliche Schwere oder Wahrscheinlichkeit, keine Checkboxen oder Fortschrittsdatei; die manuelle `findings.json` wird erst im nächsten Punkt entfernt.
   - Abnahme: FastTests und IntegrationTests decken gemischte und leere Ergebnisse, null aktive Regeln, Tabellenzeilen und alle Duplicate-Code-Fundstellen ab. Build, betroffene Tests, `git diff --check` und Bericht-Diff bestehen; Änderungen sind als eigener Slice committet.
 
-- [ ] **Manuellen Auditlauf auf Markdown beschränken**
+- [x] **Manuellen Auditlauf auf Markdown beschränken**
   - Intention: Auch das separat gestartete Repository-Audit veröffentlicht nur den für den Agenten vorgesehenen Bericht.
   - Scope: `findings.json` samt nur dafür benötigter Erzeugung und Tests aus dem manuellen Audit entfernen. Den zentral veröffentlichten Index mit absolutem Repositorypfad und funktionierenden Quelllinks prüfen. Betroffene aktuelle `docs/`-Seiten im selben Slice anpassen.
   - Nicht: Keine Änderung am Audit-Profilformat, der CLI-Erfolgsantwort oder den Review-Regeln.
