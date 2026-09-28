@@ -38,7 +38,6 @@ public sealed class ReviewConfigValidatorTests
         Assert.Equal("Project.slnx", config.SolutionPath);
         Assert.Equal("reports/current", config.OutputDirectory);
         Assert.True(Directory.Exists(config.ResolvedOutputDirectory));
-        Assert.False(Directory.Exists(temp.GetPath(".review-store")));
         Assert.Single(config.Rules);
         Assert.Equal("template-noop", config.Rules[0].RuleId);
         Assert.Empty(config.Rules[0].EffectiveOptions.Values);
@@ -47,7 +46,6 @@ public sealed class ReviewConfigValidatorTests
     [Theory]
     [InlineData("{\"schemaVersion\":1,\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"template-noop\":{}}}")]
     [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"extra\":true,\"rules\":{\"template-noop\":{}}}")]
-    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"storageDirectory\":\"store\",\"rules\":{\"template-noop\":{}}}")]
     [InlineData("{\"schemaVersion\":2,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"template-noop\":{}}}")]
     [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"unknown\":{}}}")]
     [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"template-noop\":{\"unknown\":true}}}")]
