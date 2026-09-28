@@ -14,7 +14,9 @@ Die Arbeitsthese bleibt: Code ist für Agenten besonders schwer zu beurteilen, w
 
 Ein Aufruf der `.exe` lädt die angegebene `.sln` oder `.slnx` und die Regelkonfiguration, führt eine vollständige Analyse aus und erzeugt Markdown-Dateien im Ausgabeordner. Ein fehlgeschlagener oder unvollständiger Lauf darf nicht als „keine Findings“ erscheinen. Jeder Lauf betrachtet allein den aktuellen Code und die aktuelle Konfiguration.
 
-Die Berichte sind die einzigen dauerhaften Ergebnisse des Werkzeugs. Es gibt keinen MCP-Server, keinen Finding-Store, keine gespeicherten Quellcode-Stände oder Snapshots, keine Checksummen zum Vergleich mit früheren Läufen, keine Ereignisketten und kein Archiv früherer Review-Entscheidungen. Eine Bewertung wie `accepted` oder `false-positive`, ihre automatische Unterdrückung und die Zustände `new`, `updated`, `reopened` und `resolved` lassen sich ohne Zustand zwischen Läufen nicht anbieten und gehören nicht zu diesem Zielbild.
+Jeder vollständige Lauf erhält ein eigenes Zeitstempel-Verzeichnis mit Markdown-Berichten. Alte Berichte bleiben erhalten, bis der Nutzer sie löscht. Die Anwendung liest sie bei späteren Läufen nicht als Zustand. Interne Logdateien bleiben unter `logs/` relativ zum Verzeichnis der EXE.
+
+Es gibt keinen MCP-Server, keinen Finding-Store, keine separaten gespeicherten Quellcode-Stände oder Snapshots, keine Checksummen zum Vergleich mit früheren Läufen, keine Ereignisketten und kein Archiv früherer Review-Entscheidungen. Die erhaltenen Markdown-Berichte können kurze Codeausschnitte als Evidenz enthalten; sie werden nicht als Zustand eingelesen. Eine Bewertung wie `accepted` oder `false-positive`, ihre automatische Unterdrückung und die Zustände `new`, `updated`, `reopened` und `resolved` gehören nicht zu diesem Zielbild. Jedes aktuell erkannte Finding erscheint bei jedem Lauf erneut, auch wenn es zuvor im Gespräch akzeptiert wurde.
 
 Die einzige produktive Startregel bleibt `template-noop`; sie liefert absichtlich keine Findings. Eine testgebundene Fixture-Regel belegt den vollständigen Weg von der Analyse bis zum Markdown-Bericht. Fachliche Review-Regeln werden später gesondert festgelegt. Der Regelvertrag soll ihre Ergänzung ohne Änderungen an CLI, Runner und Berichtsgenerator erlauben.
 
@@ -33,17 +35,17 @@ AiNetLinter bleibt ein getrenntes, nur lesend verwendetes Referenzprojekt für p
 
 - Kein MCP-Server und keine zweite Analyse-Schnittstelle.
 - Kein persistierter Review-Zustand, keine vorherigen Code-Stände, keine Vergleichs-Checksummen, keine Review-Urteile, kein Verlauf und keine automatische Unterdrückung früher akzeptierter Findings.
+- Kein generierter JSON-Konfigurationsentwurf und kein eigener Katalogbefehl; `ainetreview.json` bleibt die vom Nutzer bereitgestellte Eingabe.
 - Keine neue fachliche Produktregel, kein automatisches Refactoring, kein Build-Gate für Review-Hinweise und keine Änderung am AiNetLinter-Repository.
 - Keine Implementierung oder neue Umsetzungs-Roadmap in dieser Konzeptphase.
 
 ## Verifikation
 
-Eine produktive EXE erzeugt mit `template-noop` nach vollständiger Analyse gültige Markdown-Ausgabe ohne Findings. Die Fixture-Regel erzeugt überprüfbare, nach Regel und Quellort geordnete Hinweise mit aktueller Evidenz. Wiederholte Läufe benötigen keinen gespeicherten Vorzustand und geben bei identischer Eingabe inhaltlich identische Berichte aus. Ungültige Konfiguration, Lade- oder Analysefehler sowie Fehler beim Schreiben führen zu einem klaren Fehlschlag. Tests und Repository-Inspektion belegen, dass kein MCP-Zugang und kein persistierter Review-Zustand im Produkt verbleiben.
+Eine produktive EXE erzeugt mit `template-noop` nach vollständiger Analyse gültige Markdown-Ausgabe ohne Findings. Die Fixture-Regel erzeugt überprüfbare, nach Regel und Quellort geordnete Hinweise mit aktueller Evidenz. Wiederholte Läufe benötigen keinen gespeicherten Vorzustand; bei identischer Eingabe bleiben Findings und Reihenfolge gleich, während Run-ID und Laufzeiten neu sind. Ungültige Konfiguration, Lade- oder Analysefehler sowie Fehler beim Schreiben führen zu einem klaren Fehlschlag. Tests und Repository-Inspektion belegen, dass kein MCP-Zugang und kein persistierter Review-Zustand im Produkt verbleiben.
 
 ## Arbeitsgedächtnis (nur Draft)
 
-- Der bisherige Detailvertrag in [Epic 1](epics/01-Eingaben-und-Host.md), [Epic 2](epics/02-Regel-und-Findings.md), [Epic 3](epics/03-Storage-und-Berichte.md), [Epic 4](epics/04-Umsetzung-und-Abnahme.md) und der [Roadmap](roadmap.md) beschreibt noch Storage/MCP und ist für die Neuausrichtung **nicht freigegeben**. Er wird erst nach Klärung der offenen Entscheidungen konsistent ersetzt. `tasks/initial-infrastructure-umsetzen/` ist ein separater, inzwischen überholter Arbeitsstand und wird hier nicht geändert.
+- [Epic 1](epics/01-Eingaben-und-Host.md), [Epic 2](epics/02-Regel-und-Findings.md), [Epic 3](epics/03-Storage-und-Berichte.md) und [Epic 4](epics/04-Umsetzung-und-Abnahme.md) sind auf den zustandslosen Ablauf umgeschrieben. Sie sind Teil dieses Entwurfs. Die [alte Roadmap](roadmap.md) bildet noch den früheren Storage-/MCP-Stand ab und wird erst im gesondert aufzurufenden Roadmap-Schritt ersetzt.
 - Die Repository-Regeln zu MCP und Storage sowie die Ist-Dokumentation müssen nach der Konzeptfreigabe gegen den tatsächlich geänderten Produktstand bereinigt werden. Während dieses Planungsschritts bleiben Produktcode und Ist-Dokumentation unverändert.
-- Offen: Soll ein akzeptierter Hinweis künftig bei jedem Lauf erneut erscheinen? Jede automatische Unterdrückung benötigt eine dauerhafte Entscheidung oder eine explizite Regel-/Konfigurationsausnahme und würde das Ziel „nur aktuelle Analyse, keine gespeicherte Entscheidung“ ändern.
-- Offen: Bedeutet „es kommen md-files raus, nicht mehr und nicht weniger“ auch, dass das bisherige EXE-relative Serilog-Dateilogging und generierte Katalog-/JSON-Dateien entfallen? Der Entwurf behandelt Markdown als einziges dauerhaftes Analyseergebnis; die Grenze für sonstige Host-Dateien muss feststehen.
-- Für die Umsetzung zu entscheiden: Werden Dateien im dedizierten Ausgabeordner bei jedem Lauf ersetzt, oder legt jeder Lauf einen eigenen Berichtssatz an? Letzteres würde ohne Store trotzdem einen Verlauf von Markdown-Dateien hinterlassen. Empfehlung: ein definierter Berichtssatz, der beim nächsten vollständigen Lauf ersetzt wird, ohne fremde Dateien im Ausgabeordner zu löschen.
+- Der Nutzer löscht und erstellt `tasks/initial-infrastructure-umsetzen/` später selbst neu. Dieses Verzeichnis wird hier nicht geändert.
+- Der Entwurf wartet auf ausdrückliche Freigabe für `status: ready`; bis dahin beginnt keine weitere Umsetzung.

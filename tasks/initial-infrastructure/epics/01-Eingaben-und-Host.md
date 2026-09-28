@@ -1,10 +1,10 @@
 # Epic 1 – Eingaben und Host-Verträge
 
-Dieses Epic ist der verbindliche Vertrag für Konfiguration, CLI, MCP, Pfade und Parallelität. Ziele und DoD stehen im [Konzept](../AiNetReview-Konzept.md); Finding- und Speicherbegriffe stehen in Epic 2 und 3.
+Dieses Epic definiert die einzige Produktschnittstelle: einen synchronen CLI-Aufruf der EXE. Das [Konzept](../AiNetReview-Konzept.md) beschreibt den Zweck; [Epic 2](02-Regel-und-Findings.md) definiert die Regelresultate und [Epic 3](03-Storage-und-Berichte.md) die Markdown-Ausgabe.
 
 ## Konfiguration und Projektwurzel
 
-`ainetreview.json` liegt unmittelbar in der Projektwurzel. Beide Analysezugänge lesen ausschließlich diese Datei. `configPath` und `--config` müssen absolute Pfade auf eine Datei mit genau diesem Namen sein. Die Projektwurzel ist ihr Elternverzeichnis; ein Git-Repository ist dafür nicht erforderlich. Ein zweiter Konfigurationsmodus und direkte Rule-Overrides in der CLI existieren nicht.
+`ainetreview.json` liegt unmittelbar in der Projektwurzel. `--config` muss ein absoluter Pfad zu einer Datei mit genau diesem Namen sein. Die Projektwurzel ist ihr Elternverzeichnis. Ein Git-Repository ist nicht erforderlich; direkte Regel-Overrides in der CLI und weitere Konfigurationsmodi gibt es nicht.
 
 Schema-Version 1 hat genau diese Felder:
 
@@ -13,56 +13,34 @@ Schema-Version 1 hat genau diese Felder:
   "schemaVersion": 1,
   "solution": "Project.slnx",
   "outputDirectory": "audit-reporting",
-  "storageDirectory": ".ainetreview",
   "rules": {
     "template-noop": {}
   }
 }
 ```
 
-`schemaVersion` ist die Zahl `1`; alle drei Pfade sind nichtleere Strings. `rules` ist ein nichtleeres Objekt. Seine Keys müssen registrierte Regel-IDs sein. Jede Regelkonfiguration ist ein Objekt mit ausschließlich den im Regeldeskriptor benannten Feldern; fehlende Felder erhalten die dort definierten Defaults. Die einzige produktive Startregel `template-noop` hat keine Parameter und daher nur `{}` als gültigen Wert. Unbekannte oder doppelte JSON-Keys, unbekannte Regel-IDs, falsche Typen und unbekannte Schemaversionen sind `INVALID_INPUT`. Die wirksame Konfiguration umfasst die normalisierten Pfade sowie für jede aktive Regel das aus Defaults und JSON-Feldern gebildete, nach Key sortierte Optionsobjekt. MCP und CLI erzeugen aus derselben Datei dieselbe wirksame Konfiguration.
+`schemaVersion` ist die Zahl `1`. `solution` und `outputDirectory` sind nichtleere Strings. `rules` ist ein nichtleeres Objekt mit registrierten Regel-IDs als Keys. Jede Regelkonfiguration ist ein Objekt mit ausschließlich den im Regeldeskriptor benannten Feldern; fehlende Felder erhalten dessen Defaults. Die einzige produktive Startregel `template-noop` hat keine Parameter und akzeptiert nur `{}`. Unbekannte oder doppelte JSON-Keys, unbekannte Regel-IDs, falsche Typen und unbekannte Schemaversionen ergeben `INVALID_INPUT`. Wirksame Optionen werden aus Defaults und JSON-Feldern gebildet und nach Key sortiert.
 
-Interne Pfade verwenden `/`, beginnen nicht mit einem Laufwerksbuchstaben oder Separator und enthalten keine `..`-Segmente. Die Auflösung einschließlich Symlinks/Junctions muss innerhalb der Projektwurzel bleiben. `solution` zeigt auf eine vorhandene `.sln` oder `.slnx`. Ausgabe- und Speicherverzeichnis sind verschieden, dürfen weder ineinander liegen noch C#-Quellen der Solution enthalten und werden bei Bedarf angelegt. Eine eingebundene Quelldatei außerhalb der Projektwurzel macht den Scan unvollständig und damit fehlerhaft. Vor dem Regellauf muss jedes analysierte C#-Projekt eine Compilation ohne Roslyn-Diagnosen mit `Severity.Error` liefern; Lade-, Restore- und Kompilationsfehler ergeben `ANALYSIS_FAILED`. Persistierte Pfade und Tool-Ergebnisse verwenden ausschließlich repo-relative `/`-Pfade; lokale absolute Pfade erscheinen nur in Eingabeparametern und internen Diagnosen.
+Interne Konfigurationspfade verwenden `/`, beginnen weder mit einem Laufwerksbuchstaben noch einem Separator und enthalten keine `..`-Segmente. Die Auflösung einschließlich Symlinks und Junctions muss innerhalb der Projektwurzel bleiben. `solution` zeigt auf eine vorhandene `.sln` oder `.slnx`. Das Ausgabeverzeichnis darf keine C#-Quelldateien der Solution enthalten und wird bei Bedarf angelegt. Eine eingebundene Quelldatei außerhalb der Projektwurzel macht die Analyse unvollständig und damit fehlerhaft. Vor jedem Regellauf muss jedes analysierte C#-Projekt eine Compilation ohne Roslyn-Diagnosen mit `Severity.Error` liefern; Lade-, Restore- und Kompilationsfehler ergeben `ANALYSIS_FAILED`.
 
-Git ist keine Laufzeitabhängigkeit. Das Werkzeug ruft `git` nicht auf und verlangt weder `.git` noch `.gitignore`. Im neu angelegten AiNetReview-Repository ignoriert `.gitignore` den Ausgabeordner und lässt den Speicherordner versionieren. Für analysierte Repositories wird dieselbe Einstellung dokumentiert, aber nicht erzwungen. So funktionieren auch CI-Artefakte und temporäre Testprojekte ohne Git.
+Das Werkzeug ruft `git` nicht auf und verlangt weder `.git` noch `.gitignore`. Die Projektwurzel kann auch ein temporäres Testprojekt sein. Berichte verwenden repo-relative `/`-Pfade; lokale absolute Pfade erscheinen nur in Eingabeparametern und internen Diagnosen. Die Anwendung erzeugt keine Konfigurations- oder Store-Datei.
 
 ## CLI
 
-- `ainetreview mcp` startet den lokalen MCP-Server über stdin/stdout; der Befehl nimmt keine Optionen an. Protokollausgaben gehen ausschließlich auf stdout, Diagnosen auf stderr.
-- `ainetreview review --config <absoluter-pfad>` startet einen Review synchron. `--config` ist der einzige Pflichtparameter; weitere Analyseparameter werden abgewiesen.
-- `ainetreview catalog --repo <absoluter-pfad>` erzeugt unter dieser Projektwurzel `docs/ainetreview-rules.md` und `ainetreview.example.json` aus der Registry. `docs` wird angelegt. Die beiden als generiert gekennzeichneten Dateien werden deterministisch ersetzt; `ainetreview.json` wird nie verändert. Die Beispiel-JSON enthält alle registrierten Regeln mit Defaults, `outputDirectory: "audit-reporting"`, `storageDirectory: ".ainetreview"` und `solution: ""` als vor Nutzung auszufüllendes Feld. Git ist auch hierfür nicht nötig.
+`ainetreview review --config <absoluter-pfad>` startet die Analyse synchron. `--config` ist der einzige Pflichtparameter; zusätzliche Analyseparameter und andere Produktbefehle werden abgewiesen. Die EXE führt die Regeln gegen den aktuellen Solution-Stand aus und veröffentlicht bei vollständigem Erfolg die in [Epic 3](03-Storage-und-Berichte.md) definierten Markdown-Dateien unter `<outputDirectory>/<runId>/`.
 
-`review` schreibt bei Erfolg genau eine kompakte JSON-Zeile auf stdout: `{"status":"completed","runId":"...","indexPath":"audit-reporting/<run-id>/index.md","counts":{...}}`. Fehler schreiben genau eine JSON-Zeile `{"code":"...","message":"..."}` auf stderr; keine halben Ergebnisse auf stdout. Progress und nutzergerichtete Diagnosen gehen auf stderr; Serilog schreibt ausschließlich in Dateien. Exit-Codes: `0` vollständiger Lauf auch mit Findings, `2` Eingabe-/Konfigurationsfehler, `3` Analyse-/Roslyn-Fehler oder geänderte Quellen, `4` Storage-/Schreibfehler oder Speicherkonflikt, `5` belegter Repository-Lock, `130` Abbruch durch Nutzer. `catalog` verwendet `0`, `2` und `4` entsprechend.
+Erfolg schreibt genau eine kompakte JSON-Zeile auf stdout:
+
+```json
+{"status":"completed","runId":"20260928T163802Z-a1b2c3d4","indexPath":"audit-reporting/20260928T163802Z-a1b2c3d4/index.md","counts":{"detected":0}}
+```
+
+Diese Zeile ist eine Prozessantwort, keine gespeicherte Datei. `indexPath` ist relativ zur Projektwurzel. Ein vollständiger Lauf mit Findings hat ebenfalls Exit-Code `0`. Fehler schreiben genau eine JSON-Zeile `{"code":"...","message":"..."}` auf stderr und keine halben Ergebnisse auf stdout. Progress und nutzergerichtete Diagnosen gehen auf stderr; Serilog schreibt nur in Dateien. Exit-Codes: `0` vollständiger Lauf, `2` Eingabe- oder Konfigurationsfehler, `3` Analyse- oder Roslyn-Fehler, `4` Logging- oder Berichtsschreibfehler, `130` Abbruch durch Nutzer. Bei Fehlern wird kein fertiger Berichtslauf veröffentlicht.
 
 ## Logging
 
-Der Host initialisiert Serilog vor CLI-Parsing oder MCP-Start einmal pro Prozess. Der einzige Sink schreibt unter `<AppContext.BaseDirectory>/logs/`; das ist das Verzeichnis des ausgeführten Hosts, unabhängig von Arbeitsverzeichnis, `--config` und analysierter Projektwurzel. Die Logs liegen niemals im analysierten Projekt, außer die EXE befindet sich selbst dort.
+Der Host initialisiert Serilog vor dem CLI-Parsing einmal pro Prozess. Sein einziger Sink schreibt unter `<AppContext.BaseDirectory>/logs/`, also relativ zum Verzeichnis der EXE, unabhängig vom Arbeitsverzeichnis, `--config` und der analysierten Projektwurzel. Die Logs liegen nur dann im analysierten Projekt, wenn die EXE selbst dort liegt. Logdateien sind interne Betriebsdiagnostik und kein Review-Store.
 
-Die Datei `ainetreview-.log` rotiert täglich und bei 10 MiB; höchstens 30 Logdateien bleiben erhalten. Der File-Sink erlaubt gemeinsames Schreiben durch gleichzeitige CLI- und MCP-Prozesse. Ereignisse enthalten Zeit, Level, Befehl oder Operation, Run-ID soweit vorhanden und Fehlerkontext. Quellcode, vollständige Konfigurationen, Review-Kommentare und Geheimnisse werden nicht geloggt.
+Die Datei `ainetreview-.log` rotiert täglich und bei 10 MiB; höchstens 30 Logdateien bleiben erhalten. Der File-Sink erlaubt gemeinsames Schreiben durch gleichzeitige Prozesse. Ereignisse enthalten Zeit, Level, Befehl, Run-ID soweit vorhanden und Fehlerkontext. Quellcode, vollständige Konfigurationen, Review-Kommentare und Geheimnisse werden nicht geloggt.
 
-Kann der Host das Logverzeichnis oder die Logdatei nicht beschreiben, endet der Start mit `LOGGING_FAILED` und Exit-Code `4`. Die Fehlermeldung erscheint als eine JSON-Zeile auf stderr; stdout bleibt leer. Für `mcp` gilt dies vor dem Protokollstart. Serilog schreibt niemals auf stdout oder stderr; stderr bleibt den im CLI-Vertrag beschriebenen Antworten und Diagnosen vorbehalten.
-
-## MCP-Tools
-
-Jedes Tool liefert genau einen Text-Content-Block mit einem kompakten JSON-Objekt. `structuredContent` wird nicht gesetzt. Werkzeugfehler setzen `isError: true` und liefern `{"code":"...","message":"..."}`. Protokollfehler und unbekannte Tools behandelt das MCP-SDK. Die Fehlercodes sind `INVALID_INPUT`, `BUSY`, `ANALYSIS_FAILED`, `STORAGE_FAILED`, `STORAGE_CONFLICT`, `STALE_FINDING` und `UNKNOWN_FINDING`. Fehlermeldungen enthalten keine absoluten Quellpfade.
-
-`start_review(configPath)` validiert den Eingabevertrag und reserviert den Repository-Lock, bevor es `{"operationToken":"<32 hex>"}` liefert. Solution-Laden und Analyse laufen danach im Serverprozess. Ein zweiter Aufruf mit derselben wirksamen Konfiguration während dieses Laufs liefert denselben Token. Ein anderer Aufruf für dieselbe Projektwurzel liefert `BUSY`. Nach einem Server-Neustart sind alte Tokens unbekannt.
-
-`get_review_status(operationToken)` liefert eines dieser Objekte:
-
-```text
-{"status":"running","completedRules":0,"totalRules":1}
-{"status":"completed","runId":"20260927T163802Z-a1b2c3d4","indexPath":"audit-reporting/20260927T163802Z-a1b2c3d4/index.md","ruleReports":["audit-reporting/20260927T163802Z-a1b2c3d4/rules/template-noop.md"],"counts":{"detected":0,"open":0,"new":0,"updated":0,"reopened":0,"accepted":0,"falsePositive":0,"resolved":0}}
-{"status":"failed","code":"ANALYSIS_FAILED","message":"Solution konnte nicht vollständig geladen werden."}
-{"status":"unknown"}
-```
-
-Die vier Zeilen sind vier alternative Antworten, kein einzelnes JSON-Dokument. `completedRules` zählt vollständig abgeschlossene Regeln; ein Prozentwert wird nicht behauptet. `completed` gibt es nur für vollständig veröffentlichte Berichte und Store-Daten. `counts` ist in Epic 3 definiert. Der Server behält Status und Tokens bis zum Prozessende; `unknown` ist ein normales Statusresultat, kein Tool-Fehler.
-
-`report_review(configPath, findingId, fingerprint, verdict)` akzeptiert als `verdict` nur `accepted` oder `false-positive`. Erfolg liefert `{"decisionId":"D-<32 hex>","findingId":"F-<32 hex>","status":"accepted"}` beziehungsweise den anderen Status. Ein unbekanntes Finding ergibt `UNKNOWN_FINDING`, ein inzwischen geänderter Code- oder Konfigurationsstand `STALE_FINDING`, ein belegter Lock `BUSY`. Erfolg wird erst nach dauerhaft veröffentlichter Entscheidung gemeldet. Der Server lädt den Zustand bei jedem Aufruf frisch; ein vorheriger Operation-Token ist nicht nötig.
-
-Für die Stale-Prüfung muss das Finding in den `observations` des neuesten vollständigen Runs stehen. `report_review` vergleicht den übergebenen Fingerprint mit dieser Beobachtung, `solution` aus deren Manifest sowie `behaviorVersion` und `effectiveOptions` der betroffenen Regel mit der aktuellen JSON. Es berechnet außerdem SHA-256 über jede in `sourceFiles` gespeicherte Quelldatei und vergleicht die Byte-Hashes. Eine deaktivierte Regel, ein inzwischen `resolved` stehendes Finding oder ein neuester Run ohne Beobachtung dieses Findings ergibt `STALE_FINDING`. Eine Änderung nur von `outputDirectory` ändert die fachliche Entscheidung nicht; ein anderes `storageDirectory` ist ein anderer Verlauf. Jede Veränderung einer relevanten Quelldatei seit dem Scan verlangt einen neuen Lauf, auch wenn sie außerhalb des ursächlichen Ausschnitts liegt. Zeitstempel allein genügen nicht.
-
-## Lock und Abbruch
-
-Der exklusive Lock liegt unter `<storageDirectory>/.lock`. Der Prozess öffnet ihn mit `FileShare.None` und hält den Handle während des gesamten Scans einschließlich Veröffentlichung sowie während einer einzelnen Review-Entscheidung. Bei belegtem Handle antwortet er sofort mit `BUSY`; es gibt kein Warten. Der Dateiname darf nach dem Schließen bestehen bleiben: Entscheidend ist der OS-Handle, der auch nach einem Prozessabsturz freigegeben wird. Ein im Leerlauf befindlicher MCP-Server hält keinen Lock; die CLI darf dann laufen. Abbruch während eines Scans veröffentlicht weder einen neuen Run noch ein positives Tool-Ergebnis.
+Kann der Host das Logverzeichnis oder die Logdatei nicht beschreiben, endet der Start mit `LOGGING_FAILED` und Exit-Code `4`. Die Fehlermeldung erscheint als eine JSON-Zeile auf stderr; stdout bleibt leer. Serilog schreibt nie auf stdout oder stderr.
