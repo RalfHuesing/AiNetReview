@@ -1,6 +1,6 @@
 # Current-state documentation
 
-The host initializes executable-relative Serilog file logging, but command handling is still a placeholder. Core currently provides explicit rule registration, strict configuration validation, project path boundaries, Git-independent `.sln`/`.slnx` loading with materialized source text and compilation checks, a stateless rule runner, and a Markdown report writer that publishes each completed report set atomically while preserving older runs. The functional CLI is not implemented yet.
+The host provides the synchronous `review --config` command, initializes executable-relative Serilog file logging, and composes configuration validation, solution loading, rule execution, and Markdown publication. The production rule registry contains only `template-noop`. Core also provides project path boundaries, Git-independent `.sln`/`.slnx` loading with materialized source text and compilation checks, a stateless rule runner, and a Markdown report writer that publishes each completed report set atomically while preserving older runs.
 
 | Area | Pages |
 | --- | --- |

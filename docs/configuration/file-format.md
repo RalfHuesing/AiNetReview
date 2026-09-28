@@ -21,4 +21,4 @@ The root object must contain exactly `schemaVersion`, `solution`, `outputDirecto
 
 Unknown or duplicate JSON keys, unknown rule IDs, invalid option values, wrong field types, unsupported schema versions, paths escaping through `..`, symlinks, or junctions, and missing solution files raise `InvalidReviewInputException`. A loaded solution that includes C# source outside the project root or inside the output directory is rejected. Each C# project must produce a Roslyn compilation without error diagnostics; solution load, restore, missing reference, or compilation failures raise `AnalysisFailedException`.
 
-`SolutionLoader` uses `MSBuildWorkspace` to load `.sln` and `.slnx` files and does not invoke Git. The host command handler is still a placeholder and does not yet invoke these Core APIs.
+`SolutionLoader` uses `MSBuildWorkspace` to load `.sln` and `.slnx` files and does not invoke Git. The `review --config` host command invokes the validator, loader, rule runner, and Markdown report writer in sequence. A complete run publishes a report directory; handled input, analysis, cancellation, or report failures do not return a success response.
