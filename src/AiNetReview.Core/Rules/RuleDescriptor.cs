@@ -22,7 +22,8 @@ public sealed class RuleDescriptor
         string measurement,
         IEnumerable<string> reviewQuestions,
         IEnumerable<RuleOptionDescriptor>? options = null,
-        bool isTemplate = false)
+        bool isTemplate = false,
+        bool defaultEnabled = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(ruleId);
         if (!StringComparer.Ordinal.Equals(ruleId, ruleId.Trim()))
@@ -75,6 +76,7 @@ public sealed class RuleDescriptor
         Purpose = purpose;
         Measurement = measurement;
         IsTemplate = isTemplate;
+        DefaultEnabled = defaultEnabled;
     }
 
     public string RuleId { get; }
@@ -92,6 +94,8 @@ public sealed class RuleDescriptor
     public IReadOnlyList<RuleOptionDescriptor> Options => options;
 
     public bool IsTemplate { get; }
+
+    public bool DefaultEnabled { get; }
 
     private static bool IsSafeRuleId(string ruleId)
     {

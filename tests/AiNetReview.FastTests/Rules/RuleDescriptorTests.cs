@@ -62,6 +62,13 @@ public sealed class RuleDescriptorTests
     }
 
     [Fact]
+    public void Constructor_ProvidesEnabledRuleDefault()
+    {
+        Assert.True(CreateDescriptor().DefaultEnabled);
+        Assert.False(CreateDescriptor(defaultEnabled: false).DefaultEnabled);
+    }
+
+    [Fact]
     public void Constructor_RejectsDuplicateOptionNames()
     {
         var option = RuleOptionDescriptor.String("scenario", "Scenario", "base");
@@ -135,12 +142,14 @@ public sealed class RuleDescriptorTests
         int behaviorVersion = 1,
         string purpose = "Test purpose.",
         IReadOnlyList<string>? reviewQuestions = null,
-        IReadOnlyList<RuleOptionDescriptor>? options = null) => new(
+        IReadOnlyList<RuleOptionDescriptor>? options = null,
+        bool defaultEnabled = true) => new(
             ruleId: ruleId,
             title: "Test Rule",
             behaviorVersion: behaviorVersion,
             purpose: purpose,
             measurement: "Test measurement.",
             reviewQuestions: reviewQuestions ?? ["Is this test descriptor valid?"],
-            options: options);
+            options: options,
+            defaultEnabled: defaultEnabled);
 }

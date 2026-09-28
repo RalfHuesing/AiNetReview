@@ -1,6 +1,6 @@
 # Roadmap: Integrations-Vereinfachung & Zero-Config Review
 
-- [ ] **Punkt 1 — Solution-Erkennung, Rule-Defaults und Konfigurations-Generator (Core)**
+- [x] **Punkt 1 — Solution-Erkennung, Rule-Defaults und Konfigurations-Generator (Core)**
   - Intention: Bereitstellung der Kernmechanismen im Core: Automatische Erkennung von Projektmappen mit Heuristik, Kapselung von Standardwerten an den Rules und Generierung einer schema-validen `ainetreview.json`.
   - Scope:
     - `SolutionDiscovery`: Suche nach `.slnx`/`.sln` direkt im Projekt-Root (Top-Level); Heuristik bei Mehrdeutigkeit (1. Namensgleichheit mit Ordner, 2. `.slnx` vor `.sln`, 3. alphabetisch).

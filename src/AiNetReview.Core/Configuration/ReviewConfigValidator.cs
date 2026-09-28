@@ -191,7 +191,7 @@ public sealed class ReviewConfigValidator
             }
 
             RequireKind(configuredRule.Value, JsonValueKind.Object, $"Configuration for rule '{configuredRule.Name}' must be an object.");
-            var enabled = true;
+            var enabled = rule.Descriptor.DefaultEnabled;
             if (configuredRule.Value.TryGetProperty("enabled", out var enabledValue))
             {
                 if (enabledValue.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
