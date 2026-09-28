@@ -29,7 +29,7 @@
     - Alle IntegrationTests laufen grün (`dotnet test tests/AiNetReview.IntegrationTests`).
     - `stdout` enthält genau eine Erfolgszeile im Zero-Config-Fall.
 
-- [ ] **Punkt 3 — Dokumentation aktualisieren**
+- [x] **Punkt 3 — Dokumentation aktualisieren**
   - Intention: Dokumentation des aktuellen Stands anpassen, damit Nutzer und Entwickler die neue vereinfachte CLI und Zero-Config-Nutzung kennen.
   - Scope:
     - `docs/interfaces/cli.md`: Neue Aufrufvarianten (`ainetreview`, `ainetreview [path]`, `--config` Verhalten bei fehlender Datei) dokumentieren.
