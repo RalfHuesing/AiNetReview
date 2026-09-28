@@ -542,8 +542,6 @@ internal sealed class DeadCodeIndirectUsageIndex
 
     private static IEnumerable<INamedTypeSymbol> FindSourceTypes(Compilation compilation) => SourceTypes(compilation.Assembly.GlobalNamespace);
 
-    private static IEnumerable<INamedTypeSymbol> FindSourceTypes(IEnumerable<Compilation> compilations) => compilations.SelectMany(FindSourceTypes);
-
     private static IEnumerable<INamedTypeSymbol> SourceTypes(INamespaceSymbol root)
     {
         foreach (var member in root.GetMembers())
