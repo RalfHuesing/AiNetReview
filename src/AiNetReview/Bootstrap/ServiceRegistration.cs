@@ -4,6 +4,7 @@ using AiNetReview.Core.ReviewAnalyses;
 using AiNetReview.Core.ReviewAnalyses.MethodControlFlowOutliers;
 using AiNetReview.Core.ReviewAnalyses.DeadCodeCandidates;
 using AiNetReview.Core.ReviewAnalyses.DuplicateCodeCandidates;
+using AiNetReview.Core.ReviewAnalyses.NonAsciiIdentifiers;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Reporting;
@@ -32,6 +33,7 @@ public static class ServiceRegistration
         services.AddSingleton<IReviewAnalysis, MethodControlFlowOutliersAnalysis>();
         services.AddSingleton<IReviewAnalysis, DeadCodeCandidatesAnalysis>();
         services.AddSingleton<IReviewAnalysis, DuplicateCodeCandidatesAnalysis>();
+        services.AddSingleton<IReviewAnalysis, NonAsciiIdentifiersAnalysis>();
         return services;
     }
 }

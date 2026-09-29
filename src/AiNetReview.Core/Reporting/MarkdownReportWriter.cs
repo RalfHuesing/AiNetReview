@@ -411,6 +411,11 @@ public sealed class MarkdownReportWriter
             return $"{FormatNumber(Metric(finding, "memberCount"))} methods; {FormatPercent(similarity)} similarity (minimum {FormatPercent(minimumSimilarity)})";
         }
 
+        if (analysisId == "non-ascii-identifiers")
+        {
+            return finding.Rationale;
+        }
+
         return finding.Rationale;
     }
 

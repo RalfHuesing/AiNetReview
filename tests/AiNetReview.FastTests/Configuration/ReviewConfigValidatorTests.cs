@@ -9,10 +9,33 @@ using AiNetReview.Core.ReviewAnalyses;
 using AiNetReview.Core.ReviewAnalyses.MethodControlFlowOutliers;
 using AiNetReview.Core.ReviewAnalyses.DeadCodeCandidates;
 using AiNetReview.Core.ReviewAnalyses.DuplicateCodeCandidates;
+using AiNetReview.Core.ReviewAnalyses.NonAsciiIdentifiers;
 
 public sealed class ReviewConfigValidatorTests
 {
-    private static ReviewAnalysisRegistry Registry() => new([new MethodControlFlowOutliersAnalysis(), new DeadCodeCandidatesAnalysis(), new DuplicateCodeCandidatesAnalysis()]);
+    private static ReviewAnalysisRegistry Registry() => new([
+        new MethodControlFlowOutliersAnalysis(),
+        new DeadCodeCandidatesAnalysis(),
+        new DuplicateCodeCandidatesAnalysis(),
+        new NonAsciiIdentifiersAnalysis()]);
+
+    [Fact]
+    public void Validate_AppliesAndValidatesNonAsciiIdentifiersOptions()
+    {
+        using var temp = TestTempDirectory.Create();
+        temp.CreateFile("Project.slnx", "<Solution />");
+        var validator = new ReviewConfigValidator(Registry());
+
+        var config = validator.Validate(temp.DirectoryPath,
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"non-ascii-identifiers\":{}}}");
+
+        var analysis = Assert.Single(config.Analyses);
+        Assert.Equal("non-ascii-identifiers", analysis.AnalysisId);
+        Assert.Empty(analysis.EffectiveOptions.Values);
+
+        Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"non-ascii-identifiers\":{\"unknownOption\":true}}}"));
+    }
 
     [Fact]
     public void Validate_AppliesAndValidatesDuplicateCodeOptions()

@@ -290,7 +290,7 @@ public sealed class HostAdapterIntegrationTests
         var report = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "all-findings", "fixture-finding.md"));
         Assert.Contains("Fixture scenario 'base' requires review of FixtureCaseA.", report, StringComparison.Ordinal);
         Assert.Equal(
-            new[] { "dead-code-candidates", "duplicate-code-candidates", "fixture-finding", "method-control-flow-outliers" },
+            new[] { "dead-code-candidates", "duplicate-code-candidates", "fixture-finding", "method-control-flow-outliers", "non-ascii-identifiers" },
             provider.GetRequiredService<ReviewAnalysisRegistry>().Analyses.Select(static analysis => analysis.Descriptor.AnalysisId));
     }
 

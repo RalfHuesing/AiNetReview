@@ -5,7 +5,7 @@
   - Nicht: Keine Host-Registrierung oder Doku-Änderungen in diesem Schritt.
   - Abnahme: `NonAsciiIdentifiersAnalysisTests` in `AiNetReview.FastTests` prüft alle Bezeichner-Typen, Sonderzeichen/Umlaute, Verbatim-Bezeichner und Ausschlussfilter erfolgreich.
 
-- [ ] **Punkt 2 — Host-Registrierung, Root-Konfiguration und Reporting anbinden**
+- [x] **Punkt 2 — Host-Registrierung, Root-Konfiguration und Reporting anbinden**
   - Intention: Registrierung der Analyse in `ServiceRegistration.AddAiNetReviewAnalyses`, Eintrag in das Repo-Root `ainetreview.json` (`"enabled": true` nach Regel 08), Anpassung/Prüfung von `DefaultReviewConfigGenerator`, `ReviewConfigValidator` und Signal-Darstellung in `MarkdownReportWriter`.
   - Nicht: Keine Änderungen an der Analyse-Kernlogik.
   - Abnahme: Alle Konfigurations-, Validator- und Reporting-Tests in `AiNetReview.FastTests` laufen erfolgreich durch; Root-`ainetreview.json` ist valide.

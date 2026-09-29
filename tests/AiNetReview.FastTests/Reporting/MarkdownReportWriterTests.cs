@@ -11,9 +11,36 @@ using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Findings;
 using AiNetReview.Core.Reporting;
 using AiNetReview.Core.ReviewAnalyses;
+using AiNetReview.Core.ReviewAnalyses.NonAsciiIdentifiers;
 
 public sealed class MarkdownReportWriterTests
 {
+    [Fact]
+    public async Task WriteAsync_FormatsNonAsciiIdentifiersSignalAndReport()
+    {
+        using var temp = TestTempDirectory.Create();
+        var analysis = new NonAsciiIdentifiersAnalysis();
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        var finding = new FindingDraft(
+            "Sample/Sample.csproj",
+            "Sample.cs",
+            "T:Sample.BestätigungsService",
+            "type",
+            10,
+            "The type identifier 'BestätigungsService' contains non-ASCII characters (e.g. 'ä').",
+            new Dictionary<string, double>(),
+            [new FindingEvidence("Sample.cs", 10, "Type declaration", "detail", "BestätigungsService")]);
+
+        var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
+            new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([finding])),
+        ]));
+        var markdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "all-findings", "non-ascii-identifiers.md"));
+
+        Assert.Contains("## Findings", markdown, StringComparison.Ordinal);
+        Assert.Contains("`Sample.cs`: `T:Sample.BestätigungsService`", markdown, StringComparison.Ordinal);
+        Assert.Contains("Signal: The type identifier 'BestätigungsService' contains non\\-ASCII characters (e.g. 'ä').", markdown, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task WriteAsync_ReportsEmptyActiveAnalysesWithoutCreatingAnalysisFiles()
     {
@@ -222,9 +249,9 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains($" baseline '{config.ProjectRoot}'", index, StringComparison.Ordinal);
     }
 
-    private static ReviewConfig CreateConfig(string root, params ReportAnalysis[] analyses) => CreateConfig(root, true, analyses);
+    private static ReviewConfig CreateConfig(string root, params IReviewAnalysis[] analyses) => CreateConfig(root, true, analyses);
 
-    private static ReviewConfig CreateConfig(string root, bool enabled, params ReportAnalysis[] analyses)
+    private static ReviewConfig CreateConfig(string root, bool enabled, params IReviewAnalysis[] analyses)
     {
         File.WriteAllText(Path.Combine(root, "Sample.slnx"), "<Solution />");
         var registry = new ReviewAnalysisRegistry(analyses);
