@@ -1,6 +1,14 @@
 # Laufstand: Drei Review-Tasks
 
-## Vorabprüfung vom 29.09.2026
+## Aktueller Stand — B1 abgeschlossen (29.09.2026)
+
+- Ausgangsstand: `HEAD b39b3e60a6a97351bd8b5e6c79c2249ddb672468`, Arbeitsbaum sauber. Core-Roadmap Punkt 4, Core-Aggregat und beide benötigten APIs waren abgeschlossen und wurden erneut gegen Code geprüft: `ControlFlowMetrics.Measure` akzeptiert ausführbare Block-/Expression-Bodies und liefert die vier Messwerte; `TestFrameworkClassifier.IsActiveTestRoot` verwendet `ReviewSourceClassifier.IsTestProject` sowie semantische Framework-Metadaten. Kein Vertragsunterschied zum Core-Konzept.
+- B1 implementiert deterministische Auswahl ausführbarer Produktionsfunktionen: Methoden, Konstruktoren, Property-/Indexer-Getter und Setter, Event-Add-/Remove-Accessors, Operatoren und Konversionen. Expression-Bodies und Implementierungsteile partieller Methoden sind enthalten; bodylose Deklarationen, lokale Funktionen/Lambdas, Testprojekte und generierte Dokumente/Symbole sind ausgeschlossen. Jeder Funktionsrumpf wird einmal über `ControlFlowMetrics.Measure` gemessen. Die Hauptschwelle verwendet `decisionCount >= minDecisionCount OR maxDecisionNesting >= minDecisionNesting`; die indirekte Eignung wird getrennt per OR-Gate markiert und kann die Hauptschwelle nicht umgehen.
+- Verifikation: fokussierte `MissingTestEvidenceCandidateSelectorTests` **3/3 bestanden**; `pwsh -File ./scripts/build.ps1` **0 Warnungen, 0 Fehler**; `git diff --check` bestanden. `docs/` nach vorhandenen Current-State-Aussagen geprüft; die Testabdeckungsanalyse ist noch nicht registriert oder publiziert, daher ist keine Ist-Stand-Dokumentation zu ändern. Keine Testpfad-, Registrierungs- oder Berichtslogik begonnen.
+- B1-Commit: `feat(test-analysis): select missing-test evidence candidates` (atomarer B1-Slice; Hash wird durch den Git-Commitverlauf belegt).
+- Nächster Punkt: **B2a — Semantischen Graphen aufbauen**.
+
+## Historische Vorabprüfung vom 29.09.2026
 
 Schritt 3 wurde noch nicht gestartet. Bei `HEAD 1c96537` war der Arbeitsbaum vor der Prüfung sauber; kein fachlicher Umsetzungspunkt ist abgeschlossen.
 

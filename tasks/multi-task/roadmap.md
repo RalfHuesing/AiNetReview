@@ -26,7 +26,7 @@ Bei einer dokumentierten harten Blockade bleibt die betreffende Checkbox offen. 
 Start nur nach geschlossenem Core-Aggregat und Prüfung von `ControlFlowMetrics.Measure` und `TestFrameworkClassifier.IsActiveTestRoot` im Code.
 
 - [ ] **Testabdeckungs-Task abgeschlossen** — Aggregat aller folgenden Punkte; bei lokaler harter Blockade offen lassen und nach Dokumentation mit C fortfahren.
-  - [ ] **B1 — Kandidaten bestimmen** — [Testabdeckungs-Roadmap, Punkt 1](../analyse-test-abdeckung/roadmap.md) vollständig ausführen und abnehmen.
+  - [x] **B1 — Kandidaten bestimmen** — [Testabdeckungs-Roadmap, Punkt 1](../analyse-test-abdeckung/roadmap.md) vollständig ausführen und abnehmen.
   - [ ] **B2 — Semantische Testpfade bestimmen** — Aggregat aus [Testabdeckungs-Roadmap, Punkt 2a und 2b](../analyse-test-abdeckung/roadmap.md); erst nach beiden Slices und der kombinierten Abnahme schließen.
     - [ ] **B2a — Semantischen Graphen aufbauen** — [Testabdeckungs-Roadmap, Punkt 2a](../analyse-test-abdeckung/roadmap.md) vollständig ausführen und abnehmen.
     - [ ] **B2b — Testpfade klassifizieren** — [Testabdeckungs-Roadmap, Punkt 2b](../analyse-test-abdeckung/roadmap.md) vollständig ausführen und abnehmen.

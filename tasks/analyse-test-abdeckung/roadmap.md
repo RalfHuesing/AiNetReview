@@ -2,7 +2,7 @@
 
 The contract is [Konzept.md](Konzept.md). [Shared code measurements and test roots](../core-code-metriken/Konzept.md) must be completed and verified before point 1 starts. At kickoff, inspect the delivered `ControlFlowMetrics.Measure` and `TestFrameworkClassifier.IsActiveTestRoot` APIs against that prerequisite; reconcile a contract mismatch before implementing this analysis. Complete the points in order. Each implementation point includes its own focused tests, affected project gates, documentation check, checkbox update, and atomic commit. Do not change production behavior without an automated contract test.
 
-- [ ] **1. Candidate enumeration using shared control-flow metrics**
+- [x] **1. Candidate enumeration using shared control-flow metrics**
   - Intention: Produce a deterministic set of structurally nontrivial production functions from the completed Core measurement without duplicating its decision rules.
   - Scope: Select the function kinds and executable bodies in the concept, apply project/document/symbol exclusions, call `ControlFlowMetrics.Measure` on each body, and apply both pairs of complexity gates. Keep local functions and lambdas out of candidate measurements as defined by the shared API.
   - Not: Test attribution, registration, or report publication.
