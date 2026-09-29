@@ -50,7 +50,6 @@ public sealed class ZeroConfigIntegrationTests
     }
 
     [Theory]
-    [InlineData()]
     [InlineData("--cmd", "baseline")]
     [InlineData("--config", "ainetreview.json")]
     [InlineData("unknown")]
@@ -68,6 +67,52 @@ public sealed class ZeroConfigIntegrationTests
         using var response = JsonDocument.Parse(result.Error);
         Assert.Equal("INVALID_INPUT", response.RootElement.GetProperty("code").GetString());
         Assert.Contains("review [project-path]", response.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ReviewCommand_WithoutArguments_DisplaysHelp()
+    {
+        await using var services = BuildServices();
+
+        var result = await InvokeAsync([], services);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("AiNetReview", result.Output, StringComparison.Ordinal);
+        Assert.Contains("review", result.Output, StringComparison.Ordinal);
+        Assert.Contains("baseline", result.Output, StringComparison.Ordinal);
+        Assert.Empty(result.Error);
+    }
+
+    [Theory]
+    [InlineData("--help")]
+    [InlineData("-h")]
+    [InlineData("-?")]
+    public async Task ReviewCommand_WithHelpFlag_DisplaysHelp(string helpFlag)
+    {
+        await using var services = BuildServices();
+
+        var result = await InvokeAsync([helpFlag], services);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("AiNetReview", result.Output, StringComparison.Ordinal);
+        Assert.Contains("review", result.Output, StringComparison.Ordinal);
+        Assert.Contains("baseline", result.Output, StringComparison.Ordinal);
+        Assert.Empty(result.Error);
+    }
+
+    [Theory]
+    [InlineData("review")]
+    [InlineData("baseline")]
+    public async Task ReviewCommand_SubcommandHelp_DisplaysSubcommandHelp(string subcommand)
+    {
+        await using var services = BuildServices();
+
+        var result = await InvokeAsync([subcommand, "--help"], services);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains(subcommand, result.Output, StringComparison.Ordinal);
+        Assert.Contains("project-path", result.Output, StringComparison.Ordinal);
+        Assert.Empty(result.Error);
     }
 
     [Fact]

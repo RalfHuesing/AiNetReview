@@ -276,16 +276,29 @@ public sealed class HostProcessIntegrationTests
     }
 
     [Fact]
-    public async Task ProcessInvocation_WithoutArguments_FailsWithExitCodeTwo()
+    public async Task ProcessInvocation_WithoutArguments_DisplaysHelp()
     {
         using var host = IsolatedHost.Create();
         using var process = host.Start(host.CreateWorkingDirectory());
         var (stdout, stderr) = await ReadProcessOutputAsync(process);
 
-        Assert.Equal(2, process.ExitCode);
-        using var error = JsonDocument.Parse(stderr);
-        Assert.Equal("INVALID_INPUT", error.RootElement.GetProperty("code").GetString());
-        Assert.True(string.IsNullOrWhiteSpace(stdout), "Stdout should be empty when no command is provided.");
+        Assert.Equal(0, process.ExitCode);
+        Assert.Contains("review", stdout, StringComparison.Ordinal);
+        Assert.Contains("baseline", stdout, StringComparison.Ordinal);
+        Assert.True(string.IsNullOrWhiteSpace(stderr), "Stderr should be empty when help is displayed.");
+    }
+
+    [Fact]
+    public async Task ProcessInvocation_WithHelpOption_DisplaysHelp()
+    {
+        using var host = IsolatedHost.Create();
+        using var process = host.Start(host.CreateWorkingDirectory(), "--help");
+        var (stdout, stderr) = await ReadProcessOutputAsync(process);
+
+        Assert.Equal(0, process.ExitCode);
+        Assert.Contains("review", stdout, StringComparison.Ordinal);
+        Assert.Contains("baseline", stdout, StringComparison.Ordinal);
+        Assert.True(string.IsNullOrWhiteSpace(stderr), "Stderr should be empty when help is displayed.");
     }
 
     [Fact]

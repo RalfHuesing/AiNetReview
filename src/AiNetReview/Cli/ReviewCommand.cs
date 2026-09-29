@@ -35,10 +35,11 @@ public sealed class ReviewCommand
         ArgumentNullException.ThrowIfNull(standardOutput);
         ArgumentNullException.ThrowIfNull(standardError);
 
-        var root = new RootCommand();
-        var review = new Command("review");
+        var root = new RootCommand("AiNetReview - Code review and architectural analysis tool for .NET solutions.");
+        var review = new Command("review", "Runs review analyses on the specified solution and publishes a markdown report.");
         var reviewProjectPathArgument = new Argument<string?>("project-path")
         {
+            Description = "Path to the project or solution root directory containing ainetreview.json or a .sln/.slnx file. Defaults to current directory.",
             Arity = ArgumentArity.ZeroOrOne,
         };
         review.Arguments.Add(reviewProjectPathArgument);
@@ -50,9 +51,10 @@ public sealed class ReviewCommand
             token).ConfigureAwait(false));
         root.Subcommands.Add(review);
 
-        var baseline = new Command("baseline");
+        var baseline = new Command("baseline", "Captures a source baseline snapshot without running review analyses.");
         var baselineProjectPathArgument = new Argument<string?>("project-path")
         {
+            Description = "Path to the project or solution root directory containing ainetreview.json or a .sln/.slnx file. Defaults to current directory.",
             Arity = ArgumentArity.ZeroOrOne,
         };
         baseline.Arguments.Add(baselineProjectPathArgument);
@@ -64,11 +66,18 @@ public sealed class ReviewCommand
             token).ConfigureAwait(false));
         root.Subcommands.Add(baseline);
 
-        var parse = root.Parse(args);
-        if (args.Length == 0 || args[0] is not ("review" or "baseline")
-            || parse.Errors.Count > 0 || parse.UnmatchedTokens.Count > 0)
+        if (args.Length == 0)
         {
-            await WriteErrorAsync(standardError, "INVALID_INPUT", "Expected 'ainetreview review [project-path]' or 'ainetreview baseline [project-path]'.")
+            args = ["--help"];
+        }
+
+        var parse = root.Parse(args);
+        if (parse.Errors.Count > 0 || parse.UnmatchedTokens.Count > 0)
+        {
+            var errorMessage = parse.Errors.Count > 0
+                ? string.Join(" ", parse.Errors.Select(static e => e.Message))
+                : $"Unrecognized argument(s): {string.Join(", ", parse.UnmatchedTokens)}.";
+            await WriteErrorAsync(standardError, "INVALID_INPUT", $"{errorMessage} Expected 'ainetreview review [project-path]' or 'ainetreview baseline [project-path]'. Run 'ainetreview --help' for usage.")
                 .ConfigureAwait(false);
             return InvalidInputExitCode;
         }
@@ -348,6 +357,11 @@ public sealed class ReviewCommand
         try
         {
             var projectRoot = Path.GetFullPath(projectPath ?? Environment.CurrentDirectory, Environment.CurrentDirectory);
+            if (File.Exists(projectRoot))
+            {
+                throw new InvalidReviewInputException($"The project path '{projectPath}' is a file. Pass the directory containing the solution or project instead.");
+            }
+
             return (projectRoot, Path.Combine(projectRoot, "ainetreview.json"));
         }
         catch (InvalidReviewInputException)
