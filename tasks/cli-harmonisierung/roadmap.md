@@ -35,7 +35,7 @@
   - Abnahme:
     - Alle Fast- und Integrationstests laufen fehlerfrei durch.
 
-- [ ] **Punkt 4 — Audit**
+- [x] **Punkt 4 — Audit**
   - Intention: Vollständige Prüfung der Umsetzung gegen Konzept, Regeln und Gesamtsystem.
   - Scope:
     - Verifikation aller Punkte aus `tasks/cli-harmonisierung/Konzept.md`.
