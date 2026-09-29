@@ -85,6 +85,24 @@ internal static class MissingTestEvidencePathClassifier
             .Where(input => !input.IsGlobal && input.AffectedMethod is not null && reachable.Contains(input.Source))
             .Select(static input => input.AffectedMethod!)
             .ToHashSet(MethodSymbolComparer.Instance);
+        var uncertainQueue = new Queue<IMethodSymbol>(affectedUncertainty);
+        while (uncertainQueue.TryDequeue(out var uncertainMethod))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!outgoing.TryGetValue(uncertainMethod, out var downstream))
+            {
+                continue;
+            }
+
+            foreach (var target in downstream)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (affectedUncertainty.Add(target))
+                {
+                    uncertainQueue.Enqueue(target);
+                }
+            }
+        }
 
         return graph.Nodes.ToDictionary(
             static node => node.Method,

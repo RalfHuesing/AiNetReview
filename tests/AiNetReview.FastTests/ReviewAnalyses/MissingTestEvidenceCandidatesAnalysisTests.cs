@@ -12,6 +12,7 @@ using AiNetReview.Core.Findings;
 using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
 
 public sealed class MissingTestEvidenceCandidatesAnalysisTests
@@ -144,6 +145,54 @@ public sealed class MissingTestEvidenceCandidatesAnalysisTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_IncludesSourceGeneratedIntermediateInIndirectPathEvidence()
+    {
+        using var fixture = CreateFixture(
+            productionSource: "public sealed class Worker { public static void Target(int value) { if (value > 0) { } if (value > 1) { } if (value > 2) { } if (value > 3) { } if (value > 4) { } } }",
+            testSource: "using Xunit; public sealed class Tests { [Fact] public void Root() { GeneratedIntermediate.GeneratedEntry(); } }");
+        var project = fixture.Context.Solution.Projects.Single(static project => project.Name == "Example.Core");
+        var changedProject = project.AddAnalyzerReference(new TestAnalyzerReference(new GeneratedIntermediateSourceGenerator()));
+        var solution = fixture.Context.Solution.WithProjectAnalyzerReferences(project.Id, changedProject.AnalyzerReferences);
+        var context = new ReviewContext(solution, fixture.Context.ProjectRoot);
+        var analysis = new MissingTestEvidenceCandidatesAnalysis();
+
+        var result = await analysis.ExecuteAsync(context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
+
+        var finding = Assert.Single(result.Findings, static item => item.SubjectId.Contains("Target", StringComparison.Ordinal));
+        Assert.Contains("GeneratedIntermediate", finding.Rationale, StringComparison.Ordinal);
+        Assert.Contains(finding.Evidence, static evidence => evidence.Label.Contains("GeneratedIntermediate", StringComparison.Ordinal));
+        Assert.Equal(4, finding.Evidence.Count);
+        var validated = await new CurrentFindingValidator().ValidateAndSortAsync(
+            analysis.Descriptor.AnalysisId, context, result.Findings, CancellationToken.None);
+        Assert.Equal(result.Findings.Count, validated.Count);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_MarksDownstreamCandidatesUncertainWithoutAddingAResolvedPath()
+    {
+        using var fixture = CreateFixture(
+            productionSource: "public static class Worker { public static void MethodGroupTarget() { Downstream(1); } public static void Downstream(int value) { if (value > 0) { } if (value > 1) { } if (value > 2) { } } }",
+            testSource: "using System; using Xunit; public sealed class Tests { [Fact] public void Root() { Action callback = Worker.MethodGroupTarget; } }");
+        var graph = await MissingTestEvidenceSemanticGraphBuilder.BuildAsync(fixture.Context.Solution, CancellationToken.None);
+        Assert.Contains(graph.UncertaintyInputs, static input => input.Kind == MissingTestEvidenceUncertaintyKind.MethodGroup
+            && input.AffectedMethod?.Name == "MethodGroupTarget");
+        Assert.Contains(graph.Edges, static edge => edge.From.Name == "MethodGroupTarget" && edge.To.Name == "Downstream");
+        var paths = MissingTestEvidencePathClassifier.Classify(graph, CancellationToken.None);
+        var downstream = Assert.Single(graph.Nodes.Where(static node => node.Method.Name == "Downstream"));
+        Assert.True(paths[downstream.Method].IsAttributionUncertain);
+        var analysis = new MissingTestEvidenceCandidatesAnalysis();
+
+        var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
+
+        var finding = Assert.Single(result.Findings);
+        Assert.Contains("Downstream", finding.SubjectId, StringComparison.Ordinal);
+        Assert.Equal("no-static-test-path", finding.Discriminator);
+        Assert.Contains("Attribution uncertain", finding.Rationale, StringComparison.Ordinal);
+        Assert.DoesNotContain("Shortest resolved test path:", finding.Rationale, StringComparison.Ordinal);
+        Assert.Equal(1, finding.Metrics["attributionUncertain"]);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ReturnsEmptyForNoCandidatesAndHonorsCancellation()
     {
         using var fixture = CreateFixture("public sealed class Worker { public void Trivial() { } }", null);
@@ -232,4 +281,34 @@ public sealed class MissingTestEvidenceCandidatesAnalysisTests
             return MetadataReference.CreateFromImage(assembly.ToArray(), filePath: "xunit.analysis.contracts.dll");
         }
     }
+
+#pragma warning disable RS1042 // Roslyn compiler extension used only as a local AdhocWorkspace test generator.
+    private sealed class GeneratedIntermediateSourceGenerator : ISourceGenerator
+    {
+        public void Initialize(GeneratorInitializationContext context) { }
+
+        public void Execute(GeneratorExecutionContext context) => context.AddSource("GeneratedIntermediate.g.cs", """
+            public static class GeneratedIntermediate
+            {
+                public static void GeneratedEntry() { Worker.Target(1); }
+            }
+            """);
+    }
+
+    private sealed class TestAnalyzerReference(ISourceGenerator generator) : AnalyzerReference
+    {
+        public override object Id => Display;
+
+        public override string Display => "Missing-test-evidence test generator";
+
+        public override string FullPath => Display;
+
+        public override System.Collections.Immutable.ImmutableArray<DiagnosticAnalyzer> GetAnalyzersForAllLanguages() => [];
+
+        public override System.Collections.Immutable.ImmutableArray<DiagnosticAnalyzer> GetAnalyzers(string language) => [];
+
+        public override System.Collections.Immutable.ImmutableArray<ISourceGenerator> GetGenerators(string language) =>
+            language == LanguageNames.CSharp ? [generator] : [];
+    }
+#pragma warning restore RS1042
 }

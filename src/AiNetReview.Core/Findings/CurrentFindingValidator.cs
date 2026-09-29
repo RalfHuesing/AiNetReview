@@ -51,6 +51,31 @@ public sealed class CurrentFindingValidator
 
                 documents.Add(new SourceDocument(project.Id, text));
             }
+
+            var generatedDocuments = await project.GetSourceGeneratedDocumentsAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var document in generatedDocuments)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var generatedPath = document.FilePath ?? document.Name;
+                string relativePath;
+                try
+                {
+                    relativePath = context.GetProjectRelativePath(generatedPath);
+                }
+                catch (AnalysisFailedException)
+                {
+                    relativePath = project.Name + "/" + Path.GetFileName(generatedPath);
+                }
+
+                if (!sourceDocuments.TryGetValue(relativePath, out var documents))
+                {
+                    documents = [];
+                    sourceDocuments.Add(relativePath, documents);
+                }
+
+                var text = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
+                documents.Add(new SourceDocument(project.Id, text));
+            }
         }
 
         var uniqueKeys = new HashSet<FindingKey>();

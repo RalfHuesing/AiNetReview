@@ -121,15 +121,12 @@ public sealed class MissingTestEvidenceCandidatesAnalysis : IReviewAnalysis
             foreach (var node in path.Path)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var pathDocument = context.Solution.GetDocument(node.DocumentId);
-                var pathLocation = node.FilePath is null ? "<unknown source>" : GetProjectRelativeSourcePath(context, node.ProjectName, node.FilePath);
-                var pathLine = "?";
-                if (pathDocument is not null)
-                {
-                    var pathText = await pathDocument.GetTextAsync(cancellationToken).ConfigureAwait(false);
-                    pathLine = (pathText.Lines.GetLineFromPosition(node.DeclarationSpan.Start).LineNumber + 1)
-                        .ToString(System.Globalization.CultureInfo.InvariantCulture);
-                }
+                var pathDocument = await GetPathDocumentAsync(context.Solution, node, cancellationToken).ConfigureAwait(false)
+                    ?? throw new AnalysisFailedException($"Indirect test path source document is unavailable for '{GetStableSymbolId(node.Method)}'.");
+                var pathLocation = GetDocumentSourcePath(context, node.ProjectName, pathDocument);
+                var pathText = await pathDocument.GetTextAsync(cancellationToken).ConfigureAwait(false);
+                var pathLine = (pathText.Lines.GetLineFromPosition(node.DeclarationSpan.Start).LineNumber + 1)
+                    .ToString(System.Globalization.CultureInfo.InvariantCulture);
 
                 pathNodes.Add($"{GetStableSymbolId(node.Method)} ({pathLocation}:{pathLine})");
             }
@@ -165,25 +162,17 @@ public sealed class MissingTestEvidenceCandidatesAnalysis : IReviewAnalysis
                     throw new AnalysisFailedException($"Indirect test path contains a node without a source location: '{GetStableSymbolId(node.Method)}'.");
                 }
 
-                var pathDocument = context.Solution.GetDocument(node.DocumentId);
-                if (pathDocument is null || !context.CSharpDocuments.Any(item => item.Id == pathDocument.Id)
-                    || string.IsNullOrWhiteSpace(pathDocument.FilePath) || string.IsNullOrWhiteSpace(pathDocument.Project.FilePath))
-                {
-                    continue;
-                }
+                var pathDocument = await GetPathDocumentAsync(context.Solution, node, cancellationToken).ConfigureAwait(false)
+                    ?? throw new AnalysisFailedException($"Indirect test path source document is unavailable for '{GetStableSymbolId(node.Method)}'.");
 
                 var pathText = await pathDocument.GetTextAsync(cancellationToken).ConfigureAwait(false);
                 var line = pathText.Lines.GetLineFromPosition(node.DeclarationSpan.Start);
-                string pathSource;
-                try
+                var pathSource = GetDocumentSourcePath(context, node.ProjectName, pathDocument);
+                if (string.IsNullOrWhiteSpace(pathDocument.Project.FilePath))
                 {
-                    pathSource = context.GetProjectRelativePath(pathDocument.FilePath);
+                    throw new AnalysisFailedException($"Indirect test path project file is unavailable for '{GetStableSymbolId(node.Method)}'.");
                 }
-                catch (AnalysisFailedException)
-                {
-                    // Source-generated documents can live outside the project root and are not validator evidence sources.
-                    continue;
-                }
+
                 var pathProject = context.GetProjectRelativePath(pathDocument.Project.FilePath);
                 var pathId = GetStableSymbolId(node.Method);
                 evidence.Add(new FindingEvidence(pathSource, line.LineNumber + 1, pathId,
@@ -213,15 +202,36 @@ public sealed class MissingTestEvidenceCandidatesAnalysis : IReviewAnalysis
             relatedSymbols);
     }
 
-    private static string GetProjectRelativeSourcePath(ReviewContext context, string projectName, string path)
+    private static async Task<Document?> GetPathDocumentAsync(
+        Solution solution,
+        MissingTestEvidenceGraphNode node,
+        CancellationToken cancellationToken)
     {
+        if (solution.GetDocument(node.DocumentId) is { } document)
+        {
+            return document;
+        }
+
+        var project = solution.GetProject(node.ProjectId);
+        if (project is null)
+        {
+            return null;
+        }
+
+        var generatedDocuments = await project.GetSourceGeneratedDocumentsAsync(cancellationToken).ConfigureAwait(false);
+        return generatedDocuments.FirstOrDefault(candidate => candidate.Id == node.DocumentId);
+    }
+
+    private static string GetDocumentSourcePath(ReviewContext context, string projectName, Document document)
+    {
+        var sourcePath = document.FilePath ?? document.Name;
         try
         {
-            return context.GetProjectRelativePath(path);
+            return context.GetProjectRelativePath(sourcePath);
         }
         catch (AnalysisFailedException)
         {
-            return projectName + "/" + System.IO.Path.GetFileName(path);
+            return projectName + "/" + System.IO.Path.GetFileName(sourcePath);
         }
     }
 

@@ -328,6 +328,28 @@ public sealed class MissingTestEvidenceSemanticGraphBuilderTests
     }
 
     [Fact]
+    public async Task Classify_PropagatesAffectedUncertaintyThroughResolvedDownstreamCalls()
+    {
+        using var fixture = CreateFixture(
+            productionSources:
+            [
+                ("Worker.cs", "public static class Worker { public static void MethodGroupTarget() { Downstream(); } public static void Downstream() { } }"),
+            ],
+            testSource: "using System; using Xunit; public sealed class Tests { [Fact] public void Root() { Action callback = Worker.MethodGroupTarget; } }");
+
+        var graph = await MissingTestEvidenceSemanticGraphBuilder.BuildAsync(fixture.Workspace.CurrentSolution, CancellationToken.None);
+        var paths = MissingTestEvidencePathClassifier.Classify(graph, CancellationToken.None);
+        var target = Assert.Single(graph.Nodes.Where(static node => node.Method.Name == "MethodGroupTarget"));
+        var downstream = Assert.Single(graph.Nodes.Where(static node => node.Method.Name == "Downstream"));
+
+        Assert.Equal(MissingTestEvidencePathKind.NoPath, paths[target.Method].Kind);
+        Assert.True(paths[target.Method].IsAttributionUncertain);
+        Assert.Equal(MissingTestEvidencePathKind.NoPath, paths[downstream.Method].Kind);
+        Assert.True(paths[downstream.Method].IsAttributionUncertain);
+        Assert.Empty(paths[downstream.Method].Path);
+    }
+
+    [Fact]
     public async Task BuildAsync_RejectsSolutionsWithoutRequiredCSharpCompilation()
     {
         using var workspace = new AdhocWorkspace();

@@ -256,6 +256,7 @@ public sealed class MarkdownReportWriterTests
             [
                 new FindingEvidence("Sample/Indirect.cs", 4, "M:Sample.Indirect.Run", "Eligible candidate", "Run"),
                 new FindingEvidence("Sample.Tests/Tests.cs", 3, "M:Sample.Tests.Tests.CallsApi", "Test root", "CallsApi"),
+                new FindingEvidence("Sample/Generated/Worker.g.cs", 2, "M:Sample.GeneratedIntermediate.Run", "Generated intermediate", "Run"),
                 new FindingEvidence("Sample/Api.cs", 8, "M:Sample.Api.Run", "Intermediate", "Run"),
                 new FindingEvidence("Sample/Indirect.cs", 4, "M:Sample.Indirect.Run", "Candidate", "Run"),
             ],
@@ -286,6 +287,7 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("indirect test path only; 5 decisions, nesting 3", allFindings, StringComparison.Ordinal);
         Assert.Contains("Shortest resolved test path:", allFindings, StringComparison.Ordinal);
         Assert.Contains("M:Sample.Tests.Tests.CallsApi (Sample.Tests/Tests.cs:3)", allFindings, StringComparison.Ordinal);
+        Assert.Contains("M:Sample.GeneratedIntermediate.Run (Sample/Generated/Worker.g.cs:2)", allFindings, StringComparison.Ordinal);
         Assert.Contains("M:Sample.Api.Run (Sample/Api.cs:8)", allFindings, StringComparison.Ordinal);
         Assert.Contains("M:Sample.Indirect.Run (Sample/Indirect.cs:4)", allFindings, StringComparison.Ordinal);
         Assert.Contains("Reflection, dependency injection, external test projects, dynamic dispatch, branch execution, and custom test discovery", allFindings, StringComparison.Ordinal);
