@@ -67,6 +67,9 @@ public sealed partial class AuditRepositoryIntegrationTests
         var config = services.GetRequiredService<ReviewConfigValidator>()
             .ValidateForAudit(repositoryPath, standardConfigJson, outputDirectory);
         using var loaded = await services.GetRequiredService<SolutionLoader>().LoadAsync(config);
+        var baselinePath = Path.Combine(outputDirectory, "baseline.json");
+        await services.GetRequiredService<AiNetReview.Core.Reporting.BaselineWriter>().WriteAsync(config, loaded);
+        Assert.True(File.Exists(baselinePath));
         var result = await services.GetRequiredService<ReviewRunner>().RunAsync(config, loaded);
         var published = await services.GetRequiredService<AiNetReview.Core.Reporting.MarkdownReportWriter>()
             .WriteAsync(config, result);

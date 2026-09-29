@@ -2,7 +2,7 @@
 
 Verbindlicher Produktvertrag: [Konzept](Konzept.md). Jeder Punkt ist ein abgeschlossener Umsetzungsschnitt mit passenden automatisierten Tests, aktualisierten betroffenen `docs/`-Seiten und einem eigenen Commit. Der nächste Punkt beginnt erst nach der Verifikation des vorherigen. Schritt 3 des Agent-Workflows wird erst durch einen gesonderten Nutzerauftrag gestartet.
 
-- [ ] **1 — Eigenständige Dateibaseline**
+- [x] **1 — Eigenständige Dateibaseline**
   - Intention: `--cmd baseline` setzt den aktuellen Dateistand ohne vorherigen Audit als Vergleichspunkt.
   - Scope: Gemeinsamen Dateiumfang und dieselbe SHA-256-Bildung für Baseline-Aufruf und Review-Lauf bereitstellen; jede im konfigurierten Analyse-Snapshot enthaltene Quelldatei auch ohne Finding erfassen. `baseline.json` direkt im aufgelösten Ausgabeverzeichnis vollständig und sicher ersetzen; gelöschte Dateien fallen beim nächsten Aufruf weg. Den CLI-Aufruf für das normale Zielprojekt und den bereits vorhandenen zentralen Audit-Kontext verdrahten, ohne Review-Analysen auszuführen. Fehlende Baseline ist zulässig, fehlerhafte Eingabe oder Schreibfehler dürfen keine scheinbar erfolgreiche neue Baseline hinterlassen.
   - Nicht: Findings speichern, einen Berichtslauf voraussetzen, Git zur Laufzeit verwenden oder die Review-Analysen verändern.

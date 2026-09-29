@@ -27,6 +27,8 @@ GitHub [releases](https://github.com/RalfHuesing/AiNetReview/releases) provide W
 
 The command requires a loadable C# solution without compiler errors. A completed review exits with code `0` even when it reports findings. See the [configuration reference](docs/configuration/file-format.md) and [CLI contract](docs/interfaces/cli.md) for options and failure codes.
 
+To save the current source snapshot as a comparison point without running review analyses, call `AiNetReview.exe --cmd baseline --config C:\path\to\project\ainetreview.json`. This writes or replaces `baseline.json` in the configured output directory. When launched from the project root, `AiNetReview.exe --cmd baseline` uses that root's configuration or creates the default configuration first.
+
 ## Development and releases
 
 See [Build and tests](docs/development/build-and-tests.md) for local build, test, and release commands. Version tags matching `v*` trigger the GitHub Actions workflow that publishes a Windows x64 archive.

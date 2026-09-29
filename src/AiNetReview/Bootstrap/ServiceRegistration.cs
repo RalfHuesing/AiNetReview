@@ -21,6 +21,7 @@ public static class ServiceRegistration
         services.AddSingleton<SolutionLoader>();
         services.AddSingleton<ReviewRunner>();
         services.AddSingleton<MarkdownReportWriter>();
+        services.AddSingleton<BaselineWriter>();
         return services;
     }
 

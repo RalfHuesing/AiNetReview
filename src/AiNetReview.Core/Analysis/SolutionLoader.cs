@@ -63,6 +63,8 @@ public sealed class SolutionLoader
             var markupDocuments = config.Analyses.Any(static analysis => string.Equals(analysis.AnalysisId, MarkupAnalysisId, StringComparison.Ordinal))
                 ? await MarkupSnapshotLoader.CaptureAsync(csharpProjects, config.ProjectRoot, cancellationToken).ConfigureAwait(false)
                 : Array.Empty<MarkupDocumentSnapshot>();
+            var sourceFiles = await SourceSnapshotLoader.CaptureAsync(solution, markupDocuments, config.ProjectRoot, cancellationToken)
+                .ConfigureAwait(false);
 
             foreach (var project in csharpProjects)
             {
@@ -86,7 +88,7 @@ public sealed class SolutionLoader
                 }
             }
 
-            return new LoadedSolution(workspace, solution, markupDocuments);
+            return new LoadedSolution(workspace, solution, markupDocuments, sourceFiles);
         }
         catch (OperationCanceledException)
         {

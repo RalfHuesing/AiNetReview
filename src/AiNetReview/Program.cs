@@ -66,10 +66,13 @@ public static class Program
         }
     }
 
-    private static string GetCommandCategory(string[] args) => args.FirstOrDefault() switch
-    {
-        "review" => "review",
-        null => "none",
-        _ => "unknown",
-    };
+    private static string GetCommandCategory(string[] args) => args.Contains("--cmd", StringComparer.Ordinal)
+        && args.SkipWhile(static argument => argument != "--cmd").Skip(1).FirstOrDefault() == "baseline"
+            ? "baseline"
+            : args.FirstOrDefault() switch
+            {
+                "review" => "review",
+                null => "none",
+                _ => "unknown",
+            };
 }

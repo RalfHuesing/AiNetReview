@@ -40,11 +40,14 @@ public sealed class ReviewCommand
             Arity = ArgumentArity.ZeroOrOne,
         };
         var rootConfigOption = new Option<string?>("--config");
+        var rootCommandOption = new Option<string?>("--cmd");
         root.Arguments.Add(rootProjectPathArgument);
         root.Options.Add(rootConfigOption);
+        root.Options.Add(rootCommandOption);
         root.SetAction(async (parseResult, token) => await ExecuteReviewAsync(
             parseResult.GetValue(rootProjectPathArgument),
             parseResult.GetValue(rootConfigOption),
+            parseResult.GetValue(rootCommandOption),
             services,
             standardOutput,
             standardError,
@@ -61,6 +64,7 @@ public sealed class ReviewCommand
         review.SetAction(async (parseResult, token) => await ExecuteReviewAsync(
             parseResult.GetValue(reviewProjectPathArgument),
             parseResult.GetValue(reviewConfigOption),
+            null,
             services,
             standardOutput,
             standardError,
@@ -86,11 +90,24 @@ public sealed class ReviewCommand
     private static async Task<int> ExecuteReviewAsync(
         string? projectPath,
         string? configPath,
+        string? command,
         IServiceProvider services,
         TextWriter standardOutput,
         TextWriter standardError,
         CancellationToken cancellationToken)
     {
+        if (command is not null)
+        {
+            if (command.Equals("baseline", StringComparison.Ordinal))
+            {
+                return await ExecuteBaselineAsync(projectPath, configPath, services, standardOutput, standardError, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await WriteErrorAsync(standardError, "INVALID_INPUT", "The '--cmd' option only accepts 'baseline'.").ConfigureAwait(false);
+            return InvalidInputExitCode;
+        }
+
         using var commandScope = LogContext.PushProperty("Command", "review");
         var logger = services.GetRequiredService<ILogger<ReviewCommand>>();
         try
@@ -213,6 +230,117 @@ public sealed class ReviewCommand
         {
             logger.LogInformation("Review cancelled by user");
             await WriteErrorAsync(standardError, "CANCELLED", "Review was cancelled.").ConfigureAwait(false);
+            return CancelledExitCode;
+        }
+    }
+
+    private static async Task<int> ExecuteBaselineAsync(
+        string? projectPath,
+        string? configPath,
+        IServiceProvider services,
+        TextWriter standardOutput,
+        TextWriter standardError,
+        CancellationToken cancellationToken)
+    {
+        using var commandScope = LogContext.PushProperty("Command", "baseline");
+        var logger = services.GetRequiredService<ILogger<ReviewCommand>>();
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var (projectRoot, absoluteConfigPath) = ResolvePaths(projectPath, configPath);
+            if (!File.Exists(absoluteConfigPath))
+            {
+                var solutionFileName = services.GetRequiredService<SolutionDiscovery>().Discover(projectRoot);
+                if (solutionFileName is null)
+                {
+                    throw new InvalidReviewInputException("No .sln or .slnx file was found directly under the project directory.");
+                }
+
+                var generatedConfig = services.GetRequiredService<DefaultReviewConfigGenerator>().Generate(solutionFileName);
+                try
+                {
+                    var created = await CreateConfigFileAsync(absoluteConfigPath, generatedConfig, cancellationToken).ConfigureAwait(false);
+                    logger.LogInformation(
+                        created ? "Created default review configuration at {ConfigPath}" : "Default review configuration already exists at {ConfigPath}",
+                        absoluteConfigPath);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    throw new InvalidReviewInputException("Default review configuration could not be created.", exception);
+                }
+            }
+
+            var config = services.GetRequiredService<ReviewConfigValidator>().Load(absoluteConfigPath);
+            logger.LogInformation("Baseline started for {SolutionPath}", config.SolutionPath);
+
+            LoadedSolution loaded;
+            try
+            {
+                loaded = await services.GetRequiredService<SolutionLoader>()
+                    .LoadAsync(config, cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidReviewInputException)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(exception, "Solution source snapshot could not be loaded");
+                await WriteErrorAsync(standardError, "ANALYSIS_FAILED", "Solution source snapshot could not be loaded completely.")
+                    .ConfigureAwait(false);
+                return AnalysisFailedExitCode;
+            }
+
+            using (loaded)
+            {
+                string baselinePath;
+                try
+                {
+                    baselinePath = await services.GetRequiredService<BaselineWriter>()
+                        .WriteAsync(config, loaded, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    logger.LogError(exception, "Source baseline could not be published");
+                    await WriteErrorAsync(standardError, "BASELINE_FAILED", "Source baseline could not be published.")
+                        .ConfigureAwait(false);
+                    return FailedOutputExitCode;
+                }
+
+                logger.LogInformation("Baseline completed with {FileCount} source file(s)", loaded.SourceFiles.Count);
+                await standardOutput.WriteLineAsync(JsonSerializer.Serialize(new
+                {
+                    status = "completed",
+                    baselinePath,
+                    files = loaded.SourceFiles.Count,
+                })).ConfigureAwait(false);
+                return 0;
+            }
+        }
+        catch (InvalidReviewInputException exception)
+        {
+            logger.LogWarning("Invalid baseline input: {Reason}", exception.Message);
+            await WriteErrorAsync(standardError, "INVALID_INPUT", exception.Message).ConfigureAwait(false);
+            return InvalidInputExitCode;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            logger.LogWarning("Project directory was not found");
+            await WriteErrorAsync(standardError, "INVALID_INPUT", "Project directory does not exist.").ConfigureAwait(false);
+            return InvalidInputExitCode;
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogInformation("Baseline cancelled by user");
+            await WriteErrorAsync(standardError, "CANCELLED", "Baseline was cancelled.").ConfigureAwait(false);
             return CancelledExitCode;
         }
     }
