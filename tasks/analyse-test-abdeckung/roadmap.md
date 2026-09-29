@@ -29,7 +29,7 @@ The contract is [Konzept.md](Konzept.md). [Shared code measurements and test roo
   - Not: Build diagnostics, test generation, minimum test counts, suppressions, or changes to other analysis thresholds.
   - Acceptance: FastTests cover exact JSON option names and defaults from the concept, omitted options, invalid types and values, one finding per eligible zero-path or indirect-only function, exclusion below each category's gate, suppression by a single direct path, uncertainty wording, complete empty results, repeat runs, cancellation, and validation-compatible evidence. Run affected FastTests and the build gate before committing.
 
-- [ ] **4. Host registration, baseline selection, and current-state documentation**
+- [x] **4. Host registration, baseline selection, and current-state documentation**
   - Intention: Publish the complete analysis through the normal CLI without hiding newly missing-test findings from the primary report view.
   - Scope: Register and enable the analysis by default; update the repository example config and generated defaults. Render both finding categories and one shortest indirect path in Markdown. Apply its C#-snapshot-wide `changed-files` selection without changing other analyses' file-based selection; explain the exception in the report index. Update README and affected `docs/` pages with verified behavior.
   - Not: Baseline schema changes, dynamic analysis loading, or a new CLI mode.

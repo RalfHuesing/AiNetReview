@@ -45,6 +45,7 @@ public sealed class MarkdownReportWriter
         }
 
         var findings = GetFindings(result);
+        var changedFindings = findings.Where(finding => IsChangedForReport(finding, result)).ToArray();
         Directory.CreateDirectory(config.ResolvedOutputDirectory);
 
         while (true)
@@ -65,21 +66,21 @@ public sealed class MarkdownReportWriter
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var allFindings = findings.Where(finding => finding.AnalysisId == configuredAnalysis.AnalysisId).ToArray();
-                    var changedFindings = allFindings.Where(static finding => finding.IsChanged).ToArray();
-                    await WriteViewAnalysisAsync(temporaryPath, "changed-files", configuredAnalysis, changedFindings, findings, cancellationToken)
+                    var analysisChangedFindings = changedFindings.Where(finding => finding.AnalysisId == configuredAnalysis.AnalysisId).ToArray();
+                    await WriteViewAnalysisAsync(temporaryPath, "changed-files", configuredAnalysis, analysisChangedFindings, findings, cancellationToken)
                         .ConfigureAwait(false);
                     await WriteViewAnalysisAsync(temporaryPath, "all-findings", configuredAnalysis, allFindings, findings, cancellationToken)
                         .ConfigureAwait(false);
                 }
 
-                await WriteViewIndexAsync(temporaryPath, "changed-files", "Changed files", analyses, findings, changedOnly: true, cancellationToken)
+                await WriteViewIndexAsync(temporaryPath, "changed-files", "Changed files", analyses, changedFindings, changedOnly: true, cancellationToken)
                     .ConfigureAwait(false);
                 await WriteViewIndexAsync(temporaryPath, "all-findings", "All findings", analyses, findings, changedOnly: false, cancellationToken)
                     .ConfigureAwait(false);
 
                 cancellationToken.ThrowIfCancellationRequested();
                 var indexPath = Path.Combine(temporaryPath, "index.md");
-                await WriteUtf8Async(indexPath, FormatIndex(runId, config, analyses, findings, configurationPath, baselineCommandContext), cancellationToken)
+                await WriteUtf8Async(indexPath, FormatIndex(runId, config, analyses, findings, changedFindings, configurationPath, baselineCommandContext), cancellationToken)
                     .ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (beforePublication is not null)
@@ -137,6 +138,7 @@ public sealed class MarkdownReportWriter
         ReviewConfig config,
         ConfiguredReviewAnalysis[] analyses,
         IReadOnlyList<ReviewFinding> findings,
+        IReadOnlyList<ReviewFinding> changedFindings,
         string? configurationPath,
         BaselineCommandContext? baselineCommandContext)
     {
@@ -146,7 +148,7 @@ public sealed class MarkdownReportWriter
             .Append("- Repository: `").Append(EscapeInline(Path.GetFullPath(config.ProjectRoot))).Append("`\n")
             .Append("- Solution: `").Append(EscapeInline(config.SolutionPath)).Append("`\n\n");
 
-        var changedCount = findings.Count(static finding => finding.IsChanged);
+        var changedCount = changedFindings.Count;
         var allCount = findings.Count;
         if (allCount == 0)
         {
@@ -159,10 +161,15 @@ public sealed class MarkdownReportWriter
             .Append("- [`changed-files/`](changed-files/index.md) contains findings that involve at least one source file that is new or changed since the optional baseline (")
             .Append(changedCount.ToString(CultureInfo.InvariantCulture)).Append(" findings). Without a baseline, all current source files are treated as new. This file based filter can miss indirect effects in unchanged files.\n\n");
 
+        if (analyses.Any(static analysis => analysis.AnalysisId == "missing-test-evidence-candidates"))
+        {
+            builder.Append("For `missing-test-evidence-candidates`, the changed-files view follows the complete C# snapshot: without a baseline it shows every current finding; with a baseline it shows every current finding when any C# path was added, changed, or deleted, and none when the C# snapshot is unchanged. Other analyses keep their file-based selection. The `all-findings/` view always contains every current finding.\n\n");
+        }
+
         var reportLinks = new List<string>();
         foreach (var analysis in analyses)
         {
-            var count = findings.Count(finding => finding.AnalysisId == analysis.AnalysisId && finding.IsChanged);
+            var count = changedFindings.Count(finding => finding.AnalysisId == analysis.AnalysisId);
             if (count > 0)
             {
                 reportLinks.Add("- [" + EscapeLinkText(analysis.Analysis.Descriptor.Title) + " ("
@@ -222,8 +229,7 @@ public sealed class MarkdownReportWriter
             builder.Append("> **Notice for AI agents:** This view contains the entire repository baseline for reference. Do not review or report these findings unless the user explicitly requested a full repository audit. Use [`changed-files/`](../changed-files/index.md) for active review.\n\n");
         }
 
-        var visible = analyses.Where(analysis => findings.Any(finding => finding.AnalysisId == analysis.AnalysisId
-                && (!changedOnly || finding.IsChanged)))
+        var visible = analyses.Where(analysis => findings.Any(finding => finding.AnalysisId == analysis.AnalysisId))
             .ToArray();
         if (visible.Length == 0)
         {
@@ -233,7 +239,7 @@ public sealed class MarkdownReportWriter
         {
             foreach (var analysis in visible)
             {
-                var count = findings.Count(finding => finding.AnalysisId == analysis.AnalysisId && (!changedOnly || finding.IsChanged));
+                var count = findings.Count(finding => finding.AnalysisId == analysis.AnalysisId);
                 builder.Append("- [").Append(EscapeLinkText(analysis.Analysis.Descriptor.Title)).Append(" (")
                     .Append(count.ToString(CultureInfo.InvariantCulture)).Append(")](")
                     .Append(EncodePathSegment(analysis.AnalysisId)).Append(".md)\n");
@@ -258,6 +264,11 @@ public sealed class MarkdownReportWriter
             return new ReviewFinding(analysis.AnalysisId, finding, paths, Array.Empty<ReviewFindingReference>(), paths);
         })).ToArray();
     }
+
+    private static bool IsChangedForReport(ReviewFinding finding, ReviewRunResult result) =>
+        finding.AnalysisId == "missing-test-evidence-candidates"
+            ? result.HasCSharpSnapshotChanges != false
+            : finding.IsChanged;
 
     private static async Task WriteViewAnalysisAsync(
         string runDirectory,
@@ -295,6 +306,11 @@ public sealed class MarkdownReportWriter
             builder.Append("- ").Append(EscapeInline(question)).Append('\n');
         }
 
+        if (configuredAnalysis.AnalysisId == "missing-test-evidence-candidates")
+        {
+            builder.Append("\nThis is static test-path evidence from the loaded snapshot, not runtime coverage. Reflection, dependency injection, external test projects, dynamic dispatch, branch execution, and custom test discovery can hide associations.\n");
+        }
+
         builder.Append("\n## Findings\n\n");
 
         foreach (var reviewFinding in findings.OrderBy(static item => item.Finding.ProjectPath, StringComparer.Ordinal)
@@ -313,6 +329,18 @@ public sealed class MarkdownReportWriter
                 {
                     builder.Append("  - `").Append(member.SourcePath).Append("`: `")
                         .Append(member.Label).Append("`\n");
+                }
+            }
+            else if (reviewFinding.AnalysisId == "missing-test-evidence-candidates")
+            {
+                builder.Append("- `").Append(finding.SourcePath).Append("`: `")
+                    .Append(finding.SubjectId).Append("`\n")
+                    .Append("  - Signal: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append('\n');
+                if (finding.Discriminator == "indirect-test-path-only" && finding.Evidence.Count > 1)
+                {
+                    var path = finding.Evidence.Skip(1)
+                        .Select(static evidence => $"{evidence.Label} ({evidence.SourcePath}:{evidence.Line})");
+                    builder.Append("  - Shortest resolved test path: ").Append(EscapeInline(string.Join(" -> ", path))).Append('\n');
                 }
             }
             else if (isCluster)
@@ -430,6 +458,25 @@ public sealed class MarkdownReportWriter
         if (analysisId == "non-ascii-identifiers")
         {
             return finding.Rationale;
+        }
+
+        if (analysisId == "missing-test-evidence-candidates")
+        {
+            var category = finding.Discriminator switch
+            {
+                "no-static-test-path" => "no static test path",
+                "indirect-test-path-only" => "indirect test path only",
+                _ => finding.Discriminator,
+            };
+            var signal = new StringBuilder(category)
+                .Append("; ").Append(FormatNumber(Metric(finding, "decisionCount"))).Append(" decisions, nesting ")
+                .Append(FormatNumber(Metric(finding, "maxDecisionNesting")));
+            if (Metric(finding, "attributionUncertain") > 0)
+            {
+                signal.Append("; attribution uncertain");
+            }
+
+            return signal.ToString();
         }
 
         return finding.Rationale;

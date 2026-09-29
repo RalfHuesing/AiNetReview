@@ -233,6 +233,127 @@ public sealed class HostAdapterIntegrationTests
     }
 
     [Fact]
+    public async Task ReviewCommand_MissingTestEvidenceUsesSnapshotWideChangedFilesAndPublishesOnlyCompleteRuns()
+    {
+        using var tempDirectory = TestTempDirectory.Create("ainet-host-missing-test-evidence-");
+        var projectRoot = tempDirectory.GetPath("adapter-project");
+        var productionDirectory = Path.Combine(projectRoot, "Sample.Core");
+        var testsDirectory = Path.Combine(projectRoot, "Sample.Tests");
+        Directory.CreateDirectory(productionDirectory);
+        Directory.CreateDirectory(testsDirectory);
+        var productionProject = Path.Combine(productionDirectory, "Sample.Core.csproj");
+        var testProject = Path.Combine(testsDirectory, "Sample.Tests.csproj");
+        var apiPath = Path.Combine(productionDirectory, "Api.cs");
+        var workerPath = Path.Combine(productionDirectory, "Worker.cs");
+        var extraPath = Path.Combine(productionDirectory, "Extra.cs");
+        const string projectProperties = "<PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>";
+        await File.WriteAllTextAsync(productionProject, $"<Project Sdk=\"Microsoft.NET.Sdk\">{projectProperties}</Project>");
+        await File.WriteAllTextAsync(testProject,
+            $"<Project Sdk=\"Microsoft.NET.Sdk\">{projectProperties}<ItemGroup><ProjectReference Include=\"..\\Sample.Core\\Sample.Core.csproj\" /><PackageReference Include=\"xunit.v3.core\" /></ItemGroup></Project>");
+        await File.WriteAllTextAsync(apiPath, "namespace Sample; public static class Api { public static int Run(int value) => Worker.Run(value); }");
+        await File.WriteAllTextAsync(workerPath,
+            "namespace Sample; public static class Worker { public static int Run(int value) => value switch { 0 => 0, 1 => 1, 2 => 2, 3 => 3, 4 => 4, _ => 5 }; public static int Uncovered(int value) => value switch { 0 => 0, 1 => 1, 2 => 2, _ => 3 }; }");
+        await File.WriteAllTextAsync(Path.Combine(testsDirectory, "ApiTests.cs"),
+            "using Xunit; using Sample; public sealed class ApiTests { [Fact] public void CallsApi() => _ = Api.Run(1); }");
+        await RestoreProjectAsync(testProject, testsDirectory);
+        await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
+            "<Solution><Project Path=\"Sample.Core/Sample.Core.csproj\" /><Project Path=\"Sample.Tests/Sample.Tests.csproj\" /></Solution>");
+        var configPath = Path.Combine(projectRoot, "ainetreview.json");
+        const string validConfig = "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"missing-test-evidence-candidates\":{}}}";
+        await File.WriteAllTextAsync(configPath, validConfig);
+
+        var first = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, first.ExitCode);
+        using var firstResponse = JsonDocument.Parse(first.Output);
+        var firstRunId = firstResponse.RootElement.GetProperty("runId").GetString()!;
+        Assert.Equal(2, firstResponse.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
+        var firstRunDirectory = Path.Combine(projectRoot, "reports", firstRunId);
+        var allReport = await File.ReadAllTextAsync(Path.Combine(firstRunDirectory, "all-findings", "missing-test-evidence-candidates.md"));
+        var changedReport = await File.ReadAllTextAsync(Path.Combine(firstRunDirectory, "changed-files", "missing-test-evidence-candidates.md"));
+        var index = await File.ReadAllTextAsync(Path.Combine(firstRunDirectory, "index.md"));
+        Assert.Contains("no static test path", allReport, StringComparison.Ordinal);
+        Assert.Contains("indirect test path only", allReport, StringComparison.Ordinal);
+        Assert.Contains("Shortest resolved test path:", allReport, StringComparison.Ordinal);
+        Assert.Equal(allReport, changedReport);
+        Assert.Contains("any C# path was added, changed, or deleted", index, StringComparison.Ordinal);
+
+        var baseline = await InvokeProductionCommandAsync(["baseline", projectRoot]);
+        Assert.Equal(0, baseline.ExitCode);
+        var unchanged = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, unchanged.ExitCode);
+        using var unchangedResponse = JsonDocument.Parse(unchanged.Output);
+        var unchangedRunId = unchangedResponse.RootElement.GetProperty("runId").GetString()!;
+        Assert.NotEqual(firstRunId, unchangedRunId);
+        var unchangedDirectory = Path.Combine(projectRoot, "reports", unchangedRunId);
+        Assert.Equal(2, unchangedResponse.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
+        Assert.False(File.Exists(Path.Combine(unchangedDirectory, "changed-files", "missing-test-evidence-candidates.md")));
+        Assert.True(File.Exists(Path.Combine(unchangedDirectory, "all-findings", "missing-test-evidence-candidates.md")));
+
+        await File.WriteAllTextAsync(Path.Combine(projectRoot, "notes.md"), "non-C# change");
+        var nonCSharpOnly = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, nonCSharpOnly.ExitCode);
+        using var nonCSharpResponse = JsonDocument.Parse(nonCSharpOnly.Output);
+        var nonCSharpDirectory = Path.Combine(projectRoot, "reports", nonCSharpResponse.RootElement.GetProperty("runId").GetString()!);
+        Assert.False(File.Exists(Path.Combine(nonCSharpDirectory, "changed-files", "missing-test-evidence-candidates.md")));
+
+        await File.WriteAllTextAsync(extraPath, "namespace Sample; public sealed class Extra { }");
+        var added = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, added.ExitCode);
+        using var addedResponse = JsonDocument.Parse(added.Output);
+        var addedDirectory = Path.Combine(projectRoot, "reports", addedResponse.RootElement.GetProperty("runId").GetString()!);
+        Assert.True(File.Exists(Path.Combine(addedDirectory, "changed-files", "missing-test-evidence-candidates.md")));
+
+        await InvokeProductionCommandAsync(["baseline", projectRoot]);
+        await File.AppendAllTextAsync(apiPath, " // changed C# snapshot path");
+        var changed = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, changed.ExitCode);
+        using var changedResponse = JsonDocument.Parse(changed.Output);
+        var changedDirectory = Path.Combine(projectRoot, "reports", changedResponse.RootElement.GetProperty("runId").GetString()!);
+        Assert.True(File.Exists(Path.Combine(changedDirectory, "changed-files", "missing-test-evidence-candidates.md")));
+
+        await InvokeProductionCommandAsync(["baseline", projectRoot]);
+        File.Delete(extraPath);
+        var deleted = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, deleted.ExitCode);
+        using var deletedResponse = JsonDocument.Parse(deleted.Output);
+        var deletedDirectory = Path.Combine(projectRoot, "reports", deletedResponse.RootElement.GetProperty("runId").GetString()!);
+        Assert.True(File.Exists(Path.Combine(deletedDirectory, "changed-files", "missing-test-evidence-candidates.md")));
+
+        var publishedRuns = Directory.GetDirectories(Path.Combine(projectRoot, "reports"), "20*", SearchOption.TopDirectoryOnly).Length;
+        await File.WriteAllTextAsync(configPath,
+            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"missing-test-evidence-candidates\":{},\"zzzz-failing-analysis\":{}}}");
+        var failed = await InvokeProductionCommandAsync(["review", projectRoot], serviceProvider: BuildProductionServices(new FailingAnalysis()));
+        Assert.Equal(3, failed.ExitCode);
+        using (var failureResponse = JsonDocument.Parse(failed.Error))
+        {
+            Assert.Equal("ANALYSIS_FAILED", failureResponse.RootElement.GetProperty("code").GetString());
+        }
+        Assert.Equal(publishedRuns, Directory.GetDirectories(Path.Combine(projectRoot, "reports"), "20*", SearchOption.TopDirectoryOnly).Length);
+
+        using var cancellation = new CancellationTokenSource();
+        await File.WriteAllTextAsync(configPath,
+            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"missing-test-evidence-candidates\":{},\"zzzz-cancelling-analysis\":{}}}");
+        var cancelled = await InvokeProductionCommandAsync(
+            ["review", projectRoot], cancellation.Token, BuildProductionServices(new CancellingAnalysis(cancellation)));
+        Assert.Equal(130, cancelled.ExitCode);
+        using (var cancelledResponse = JsonDocument.Parse(cancelled.Error))
+        {
+            Assert.Equal("CANCELLED", cancelledResponse.RootElement.GetProperty("code").GetString());
+        }
+        Assert.Equal(publishedRuns, Directory.GetDirectories(Path.Combine(projectRoot, "reports"), "20*", SearchOption.TopDirectoryOnly).Length);
+
+        await File.WriteAllTextAsync(configPath,
+            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"missing-test-evidence-candidates\":{\"minDecisionCount\":2147483647,\"minDecisionNesting\":2147483647,\"minIndirectDecisionCount\":2147483647,\"minIndirectDecisionNesting\":2147483647}}}");
+        var empty = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, empty.ExitCode);
+        using var emptyResponse = JsonDocument.Parse(empty.Output);
+        var emptyDirectory = Path.Combine(projectRoot, "reports", emptyResponse.RootElement.GetProperty("runId").GetString()!);
+        Assert.Equal(0, emptyResponse.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
+        Assert.False(File.Exists(Path.Combine(emptyDirectory, "changed-files", "missing-test-evidence-candidates.md")));
+        Assert.False(File.Exists(Path.Combine(emptyDirectory, "all-findings", "missing-test-evidence-candidates.md")));
+    }
+
+    [Fact]
     public async Task ReviewCommand_RepeatedFixtureScansUseCurrentSourcesAndOptions()
     {
         using var tempDirectory = TestTempDirectory.Create("ainet-host-adapter-repeated-");
@@ -365,7 +486,7 @@ public sealed class HostAdapterIntegrationTests
         var report = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "all-findings", "fixture-finding.md"));
         Assert.Contains("Fixture scenario 'base' requires review of FixtureCaseA.", report, StringComparison.Ordinal);
         Assert.Equal(
-            new[] { "dead-code-candidates", "duplicate-code-candidates", "fixture-finding", "indirection-drift-candidates", "method-control-flow-outliers", "non-ascii-identifiers" },
+            new[] { "dead-code-candidates", "duplicate-code-candidates", "fixture-finding", "indirection-drift-candidates", "method-control-flow-outliers", "missing-test-evidence-candidates", "non-ascii-identifiers" },
             provider.GetRequiredService<ReviewAnalysisRegistry>().Analyses.Select(static analysis => analysis.Descriptor.AnalysisId));
     }
 
@@ -480,6 +601,18 @@ public sealed class HostAdapterIntegrationTests
             response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
     }
 
+    private static async Task<(int ExitCode, string Output, string Error)> InvokeProductionCommandAsync(
+        string[] arguments,
+        CancellationToken cancellationToken = default,
+        ServiceProvider? serviceProvider = null)
+    {
+        await using var provider = serviceProvider ?? BuildProductionServices();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var exitCode = await new ReviewCommand().InvokeAsync(arguments, provider, output, error, cancellationToken);
+        return (exitCode, output.ToString(), error.ToString());
+    }
+
     private static async Task<(string RunId, int Detected)> RunProductionIndirectionAsync(string configPath)
     {
         var result = await InvokeProductionIndirectionAsync(configPath);
@@ -588,12 +721,38 @@ public sealed class HostAdapterIntegrationTests
     private static string WrapDuplicateMethod(string className, string methodName, string body) =>
         $"namespace {className} {{ public static class {className} {{ public static int {methodName}(int value) {{ {body} }} }} }}\n";
 
-    private static ServiceProvider BuildProductionServices()
+    private static ServiceProvider BuildProductionServices(IReviewAnalysis? additionalAnalysis = null)
     {
         var services = new ServiceCollection();
         services.AddAiNetReviewServices();
         services.AddAiNetReviewAnalyses();
+        if (additionalAnalysis is not null)
+        {
+            services.AddSingleton<IReviewAnalysis>(additionalAnalysis);
+        }
+
         services.AddLogging();
         return services.BuildServiceProvider();
+    }
+
+    private sealed class FailingAnalysis : IReviewAnalysis
+    {
+        public ReviewAnalysisDescriptor Descriptor { get; } = new(
+            "zzzz-failing-analysis", "Failing analysis", 1, "Failure fixture.", "Failure fixture.", ["Does failure prevent publication?"]);
+
+        public Task<ReviewAnalysisResult> ExecuteAsync(ReviewContext context, ReviewAnalysisOptions options, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Fixture failure after missing-test analysis.");
+    }
+
+    private sealed class CancellingAnalysis(CancellationTokenSource cancellationSource) : IReviewAnalysis
+    {
+        public ReviewAnalysisDescriptor Descriptor { get; } = new(
+            "zzzz-cancelling-analysis", "Cancelling analysis", 1, "Cancellation fixture.", "Cancellation fixture.", ["Does cancellation prevent publication?"]);
+
+        public async Task<ReviewAnalysisResult> ExecuteAsync(ReviewContext context, ReviewAnalysisOptions options, CancellationToken cancellationToken)
+        {
+            await cancellationSource.CancelAsync();
+            return ReviewAnalysisResult.Empty;
+        }
     }
 }

@@ -10,6 +10,7 @@ using AiNetReview.Core.ReviewAnalyses.MethodControlFlowOutliers;
 using AiNetReview.Core.ReviewAnalyses.DeadCodeCandidates;
 using AiNetReview.Core.ReviewAnalyses.DuplicateCodeCandidates;
 using AiNetReview.Core.ReviewAnalyses.NonAsciiIdentifiers;
+using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
 
 public sealed class ReviewConfigValidatorTests
 {
@@ -17,6 +18,7 @@ public sealed class ReviewConfigValidatorTests
         new MethodControlFlowOutliersAnalysis(),
         new DeadCodeCandidatesAnalysis(),
         new DuplicateCodeCandidatesAnalysis(),
+        new MissingTestEvidenceCandidatesAnalysis(),
         new NonAsciiIdentifiersAnalysis()]);
 
     [Fact]
@@ -53,6 +55,35 @@ public sealed class ReviewConfigValidatorTests
         Assert.Equal("exact", analysis.EffectiveOptions["minimumSimilarity"].GetString());
         Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
             "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"duplicate-code-candidates\":{\"minimumSimilarity\":\"loose\"}}}"));
+    }
+
+    [Fact]
+    public void Validate_AppliesAndValidatesMissingTestEvidenceOptions()
+    {
+        using var temp = TestTempDirectory.Create();
+        temp.CreateFile("Project.slnx", "<Solution />");
+        var validator = new ReviewConfigValidator(Registry());
+        const string prefix = "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"missing-test-evidence-candidates\":{";
+
+        var defaults = Assert.Single(validator.Validate(temp.DirectoryPath, prefix + "}}}").Analyses).EffectiveOptions;
+        Assert.Equal(3, defaults["minDecisionCount"].GetInt32());
+        Assert.Equal(2, defaults["minDecisionNesting"].GetInt32());
+        Assert.Equal(5, defaults["minIndirectDecisionCount"].GetInt32());
+        Assert.Equal(3, defaults["minIndirectDecisionNesting"].GetInt32());
+
+        var configured = Assert.Single(validator.Validate(temp.DirectoryPath,
+            prefix + "\"enabled\":true,\"minDecisionCount\":1,\"minDecisionNesting\":2,\"minIndirectDecisionCount\":2147483647,\"minIndirectDecisionNesting\":3}}}").Analyses);
+        Assert.Equal(1, configured.EffectiveOptions["minDecisionCount"].GetInt32());
+        Assert.Equal(int.MaxValue, configured.EffectiveOptions["minIndirectDecisionCount"].GetInt32());
+
+        Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
+            prefix + "\"enabled\":false,\"minDecisionCount\":0}}}"));
+        Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
+            prefix + "\"minDecisionNesting\":2147483648}}}"));
+        Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
+            prefix + "\"minIndirectDecisionCount\":\"5\"}}}"));
+        Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
+            prefix + "\"minIndirectDecisionNesting\":null}}}"));
     }
 
     [Fact]

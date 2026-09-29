@@ -13,6 +13,7 @@ using AiNetReview.Core.Reporting;
 using AiNetReview.Core.ReviewAnalyses;
 using AiNetReview.Core.ReviewAnalyses.NonAsciiIdentifiers;
 using AiNetReview.Core.ReviewAnalyses.IndirectionDriftCandidates;
+using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
 
 public sealed class MarkdownReportWriterTests
 {
@@ -232,6 +233,79 @@ public sealed class MarkdownReportWriterTests
         Assert.DoesNotContain("Cluster:", allFindings, StringComparison.Ordinal);
         Assert.DoesNotContain("return BService.Run(value)", allFindings, StringComparison.Ordinal);
         Assert.DoesNotContain("#L1", allFindings, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task WriteAsync_RendersMissingTestEvidenceCategoriesPathsLimitsAndSnapshotSelection()
+    {
+        using var temp = TestTempDirectory.Create();
+        var analysis = new MissingTestEvidenceCandidatesAnalysis();
+        var otherAnalysis = new ReportAnalysis("other-analysis", "Other Analysis", "file based selection");
+        var config = CreateConfig(temp.DirectoryPath, analysis, otherAnalysis);
+        var noPath = new FindingDraft("Sample/Sample.csproj", "Sample/NoPath.cs", "M:Sample.NoPath.Run", "no-static-test-path", 2,
+            "no static test path", new Dictionary<string, double>
+            {
+                ["decisionCount"] = 3, ["maxDecisionNesting"] = 2, ["attributionUncertain"] = 1,
+            },
+            [new FindingEvidence("Sample/NoPath.cs", 2, "Declaration", "Eligible candidate", "Run")]);
+        var indirect = new FindingDraft("Sample/Sample.csproj", "Sample/Indirect.cs", "M:Sample.Indirect.Run", "indirect-test-path-only", 4,
+            "indirect test path only", new Dictionary<string, double>
+            {
+                ["decisionCount"] = 5, ["maxDecisionNesting"] = 3, ["attributionUncertain"] = 0,
+            },
+            [
+                new FindingEvidence("Sample/Indirect.cs", 4, "M:Sample.Indirect.Run", "Eligible candidate", "Run"),
+                new FindingEvidence("Sample.Tests/Tests.cs", 3, "M:Sample.Tests.Tests.CallsApi", "Test root", "CallsApi"),
+                new FindingEvidence("Sample/Api.cs", 8, "M:Sample.Api.Run", "Intermediate", "Run"),
+                new FindingEvidence("Sample/Indirect.cs", 4, "M:Sample.Indirect.Run", "Candidate", "Run"),
+            ],
+            [new FindingSymbol("Sample/Sample.csproj", "Sample.Tests/Tests.cs", "M:Sample.Tests.Tests.CallsApi", 3),
+                new FindingSymbol("Sample/Sample.csproj", "Sample/Api.cs", "M:Sample.Api.Run", 8),
+                new FindingSymbol("Sample/Sample.csproj", "Sample/Indirect.cs", "M:Sample.Indirect.Run", 4)]);
+        var otherFinding = Finding("Sample/Other.cs", 1, "M:Sample.Other.Run", "unchanged analysis finding", "Run", "case");
+        var result = new ReviewRunResult([
+            new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([noPath, indirect])),
+            new ReviewAnalysisRunResult(otherAnalysis.Descriptor.AnalysisId, new ReviewAnalysisResult([otherFinding])),
+        ])
+        {
+            Findings = [
+                new ReviewFinding(analysis.Descriptor.AnalysisId, noPath, ["Sample/NoPath.cs"], [], []),
+                new ReviewFinding(analysis.Descriptor.AnalysisId, indirect, ["Sample/Indirect.cs", "Sample/Api.cs", "Sample.Tests/Tests.cs"], [], []),
+                new ReviewFinding(otherAnalysis.Descriptor.AnalysisId, otherFinding, ["Sample/Other.cs"], [], []),
+            ],
+            HasCSharpSnapshotChanges = false,
+        };
+
+        var report = await new MarkdownReportWriter().WriteAsync(config, result);
+        var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
+        var allFindings = await File.ReadAllTextAsync(Path.Combine(runDirectory, "all-findings", "missing-test-evidence-candidates.md"));
+        var changedIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "changed-files", "index.md"));
+        var rootIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
+
+        Assert.Contains("no static test path; 3 decisions, nesting 2; attribution uncertain", allFindings, StringComparison.Ordinal);
+        Assert.Contains("indirect test path only; 5 decisions, nesting 3", allFindings, StringComparison.Ordinal);
+        Assert.Contains("Shortest resolved test path:", allFindings, StringComparison.Ordinal);
+        Assert.Contains("M:Sample.Tests.Tests.CallsApi (Sample.Tests/Tests.cs:3)", allFindings, StringComparison.Ordinal);
+        Assert.Contains("M:Sample.Api.Run (Sample/Api.cs:8)", allFindings, StringComparison.Ordinal);
+        Assert.Contains("M:Sample.Indirect.Run (Sample/Indirect.cs:4)", allFindings, StringComparison.Ordinal);
+        Assert.Contains("Reflection, dependency injection, external test projects, dynamic dispatch, branch execution, and custom test discovery", allFindings, StringComparison.Ordinal);
+        Assert.Contains("No findings in this view.", changedIndex, StringComparison.Ordinal);
+        Assert.Contains("shows every current finding when any C# path was added, changed, or deleted", rootIndex, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(runDirectory, "all-findings", "index.md")));
+        Assert.False(File.Exists(Path.Combine(runDirectory, "changed-files", "missing-test-evidence-candidates.md")));
+        Assert.True(File.Exists(Path.Combine(runDirectory, "all-findings", "other-analysis.md")));
+
+        var changedSnapshotReport = await new MarkdownReportWriter().WriteAsync(config, result with { HasCSharpSnapshotChanges = true });
+        var changedSnapshotDirectory = Path.Combine(config.ResolvedOutputDirectory, changedSnapshotReport.RunId);
+        var selected = await File.ReadAllTextAsync(Path.Combine(changedSnapshotDirectory, "changed-files", "missing-test-evidence-candidates.md"));
+        var selectedIndex = await File.ReadAllTextAsync(Path.Combine(changedSnapshotDirectory, "changed-files", "index.md"));
+        Assert.Contains("no static test path", selected, StringComparison.Ordinal);
+        Assert.Contains("indirect test path only", selected, StringComparison.Ordinal);
+        Assert.DoesNotContain("Other Analysis", selectedIndex, StringComparison.Ordinal);
+
+        var withoutBaselineReport = await new MarkdownReportWriter().WriteAsync(config, result with { HasCSharpSnapshotChanges = null });
+        var withoutBaselineDirectory = Path.Combine(config.ResolvedOutputDirectory, withoutBaselineReport.RunId);
+        Assert.True(File.Exists(Path.Combine(withoutBaselineDirectory, "changed-files", "missing-test-evidence-candidates.md")));
     }
 
     [Fact]

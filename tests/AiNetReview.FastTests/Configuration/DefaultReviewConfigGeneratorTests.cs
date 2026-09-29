@@ -9,6 +9,7 @@ using AiNetReview.Core.ReviewAnalyses.DuplicateCodeCandidates;
 using AiNetReview.Core.ReviewAnalyses.MethodControlFlowOutliers;
 using AiNetReview.Core.ReviewAnalyses.NonAsciiIdentifiers;
 using AiNetReview.Core.ReviewAnalyses.IndirectionDriftCandidates;
+using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
 
 public sealed class DefaultReviewConfigGeneratorTests
 {
@@ -30,6 +31,7 @@ public sealed class DefaultReviewConfigGeneratorTests
             new MethodControlFlowOutliersAnalysis(),
             new NonAsciiIdentifiersAnalysis(),
             new IndirectionDriftCandidatesAnalysis(),
+            new MissingTestEvidenceCandidatesAnalysis(),
         ]);
         var generator = new DefaultReviewConfigGenerator(registry);
 
@@ -59,6 +61,13 @@ public sealed class DefaultReviewConfigGeneratorTests
         Assert.Equal("Project.slnx", config.SolutionPath);
         Assert.Equal("audit-reporting", config.OutputDirectory);
         Assert.Equal(registry.Analyses.Count, config.Analyses.Count);
+
+        var missingTestEvidence = generatedAnalyses.GetProperty("missing-test-evidence-candidates");
+        Assert.True(missingTestEvidence.GetProperty("enabled").GetBoolean());
+        Assert.Equal(3, missingTestEvidence.GetProperty("minDecisionCount").GetInt32());
+        Assert.Equal(2, missingTestEvidence.GetProperty("minDecisionNesting").GetInt32());
+        Assert.Equal(5, missingTestEvidence.GetProperty("minIndirectDecisionCount").GetInt32());
+        Assert.Equal(3, missingTestEvidence.GetProperty("minIndirectDecisionNesting").GetInt32());
     }
 
     [Fact]

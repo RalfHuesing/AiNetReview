@@ -6,6 +6,7 @@ using AiNetReview.Core.ReviewAnalyses.DeadCodeCandidates;
 using AiNetReview.Core.ReviewAnalyses.DuplicateCodeCandidates;
 using AiNetReview.Core.ReviewAnalyses.NonAsciiIdentifiers;
 using AiNetReview.Core.ReviewAnalyses.IndirectionDriftCandidates;
+using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Reporting;
@@ -36,6 +37,7 @@ public static class ServiceRegistration
         services.AddSingleton<IReviewAnalysis, DuplicateCodeCandidatesAnalysis>();
         services.AddSingleton<IReviewAnalysis, NonAsciiIdentifiersAnalysis>();
         services.AddSingleton<IReviewAnalysis, IndirectionDriftCandidatesAnalysis>();
+        services.AddSingleton<IReviewAnalysis, MissingTestEvidenceCandidatesAnalysis>();
         return services;
     }
 }

@@ -2,6 +2,7 @@ namespace AiNetReview.Core.Analysis;
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -71,7 +72,30 @@ public sealed class ReviewRunner
         return new ReviewRunResult(Array.AsReadOnly(results.ToArray()))
         {
             Findings = ReviewFindingBuilder.Build(results, loadedSolution.SourceFiles, baselineFiles),
+            HasCSharpSnapshotChanges = baselineFiles is null ? null : HasCSharpSnapshotChanges(loadedSolution.SourceFiles, baselineFiles),
         };
+    }
+
+    private static bool HasCSharpSnapshotChanges(
+        IReadOnlyList<SourceFileSnapshot> sourceFiles,
+        IReadOnlyDictionary<string, string> baselineFiles)
+    {
+        var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var currentCSharpFiles = sourceFiles
+            .Where(static file => Path.GetExtension(file.Path).Equals(".cs", StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(static file => file.Path, static file => file.Sha256, pathComparer);
+
+        foreach (var current in currentCSharpFiles)
+        {
+            if (!baselineFiles.TryGetValue(current.Key, out var baselineHash)
+                || !string.Equals(current.Value, baselineHash, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return baselineFiles.Any(file => Path.GetExtension(file.Key).Equals(".cs", StringComparison.OrdinalIgnoreCase)
+            && !currentCSharpFiles.ContainsKey(file.Key));
     }
 
     private static StringComparer PathComparer => OperatingSystem.IsWindows()
@@ -90,4 +114,7 @@ public sealed record ReviewRunResult(IReadOnlyList<ReviewAnalysisRunResult> Anal
 
     /// <summary>Per-finding source, comparison, and cross-analysis relationships for report generation.</summary>
     public IReadOnlyList<ReviewFinding> Findings { get; init; } = Array.Empty<ReviewFinding>();
+
+    /// <summary>Null means no baseline; otherwise indicates whether any C# snapshot path was added, changed, or deleted.</summary>
+    public bool? HasCSharpSnapshotChanges { get; init; }
 }

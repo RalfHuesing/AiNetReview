@@ -10,6 +10,7 @@ AiNetReview helps audit C# code after the usual build, tests, and static analysi
 | `dead-code-candidates` | Types and methods without known uses in the analyzed solution; indirect or external uses may still exist. |
 | `duplicate-code-candidates` | Groups of substantially similar method bodies; similarity does not by itself justify merging them. |
 | `indirection-drift-candidates` | Current statically declared paths with at least two transparent forwarding edges across three types and three production C# files; runtime dispatch and historical growth are not measured. |
+| `missing-test-evidence-candidates` | Structurally nontrivial production functions with no static test path, or only an indirect path when both higher complexity thresholds are met; this is not runtime coverage evidence. |
 
 The reports are prompts for an audit, not defect claims. See [Current findings](docs/review/findings.md) for the analyses' scope and limitations.
 
@@ -24,7 +25,7 @@ GitHub [releases](https://github.com/RalfHuesing/AiNetReview/releases) provide W
    .\AiNetReview.exe review C:\path\to\project
    ```
 
-3. Open the `index.md` named by the command's JSON response. The index links to `changed-files/`, which contains findings involving new or changed source files, and `all-findings/`, which contains every current finding. Each run gets its own report directory, so earlier reports remain available.
+3. Open the `index.md` named by the command's JSON response. The index links to `changed-files/`, which contains findings involving new or changed source files, and `all-findings/`, which contains every current finding. For `missing-test-evidence-candidates`, a baseline selects all current findings when any C# snapshot path was added, changed, or deleted, and none when the C# snapshot is unchanged; without a baseline it selects all current findings. Each run gets its own report directory, so earlier reports remain available.
 
 The command requires a loadable C# solution without compiler errors. A completed review exits with code `0` even when it reports findings. See the [configuration reference](docs/configuration/file-format.md) and [CLI contract](docs/interfaces/cli.md) for options and failure codes.
 

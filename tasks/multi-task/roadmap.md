@@ -36,7 +36,7 @@ Start nur nach geschlossenem Core-Aggregat und Prüfung von `ControlFlowMetrics.
     - Nicht: Laufzeitabdeckung behaupten oder Framework-Erkennung duplizieren.
     - Abnahme: Kein offener Pflichtbefund zu B1/B2; geprüfte Commits, akzeptierte Restbefunde und verbrauchte Runden sind dokumentiert.
   - [x] **B3 — Findings und Optionen ergänzen** — [Testabdeckungs-Roadmap, Punkt 3](../analyse-test-abdeckung/roadmap.md) vollständig ausführen und abnehmen.
-  - [ ] **B4 — Host und Berichte integrieren** — [Testabdeckungs-Roadmap, Punkt 4](../analyse-test-abdeckung/roadmap.md) vollständig ausführen und abnehmen.
+  - [x] **B4 — Host und Berichte integrieren** — [Testabdeckungs-Roadmap, Punkt 4](../analyse-test-abdeckung/roadmap.md) vollständig ausführen und abnehmen.
   - [ ] **B5 — Testabdeckungs-Schlussaudit** — [Testabdeckungs-Roadmap, Punkt 5](../analyse-test-abdeckung/roadmap.md) mit einem unabhängigen Audit-Agenten ausführen; alle Verträge, Berichtsansichten und Gates prüfen. Die Runden aus B2-Audit zählen zum Task-Limit. Audit-Ergebnis und etwaige Korrekturen dokumentieren und committen.
 
 ## C. Größenanalyse
