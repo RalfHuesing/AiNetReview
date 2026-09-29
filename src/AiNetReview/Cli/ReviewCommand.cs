@@ -15,7 +15,7 @@ using Serilog.Context;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 
-/// <summary>Adapts the single review command to injectable services and streams.</summary>
+/// <summary>Adapts the review and baseline commands to injectable services and streams.</summary>
 public sealed class ReviewCommand
 {
     private const int InvalidInputExitCode = 2;
@@ -36,52 +36,39 @@ public sealed class ReviewCommand
         ArgumentNullException.ThrowIfNull(standardError);
 
         var root = new RootCommand();
-        var rootProjectPathArgument = new Argument<string?>("project-path")
-        {
-            Arity = ArgumentArity.ZeroOrOne,
-        };
-        var rootConfigOption = new Option<string?>("--config");
-        var rootCommandOption = new Option<string?>("--cmd");
-        var rootOutputDirectoryOption = new Option<string?>("--output-directory");
-        var rootProjectPathOption = new Option<string?>("--project-path");
-        root.Arguments.Add(rootProjectPathArgument);
-        root.Options.Add(rootConfigOption);
-        root.Options.Add(rootCommandOption);
-        root.Options.Add(rootOutputDirectoryOption);
-        root.Options.Add(rootProjectPathOption);
-        root.SetAction(async (parseResult, token) => await ExecuteReviewAsync(
-            parseResult.GetValue(rootProjectPathOption) ?? parseResult.GetValue(rootProjectPathArgument),
-            parseResult.GetValue(rootConfigOption),
-            parseResult.GetValue(rootCommandOption),
-            parseResult.GetValue(rootOutputDirectoryOption),
-            services,
-            standardOutput,
-            standardError,
-            token).ConfigureAwait(false));
-
         var review = new Command("review");
         var reviewProjectPathArgument = new Argument<string?>("project-path")
         {
             Arity = ArgumentArity.ZeroOrOne,
         };
-        var reviewConfigOption = new Option<string?>("--config");
         review.Arguments.Add(reviewProjectPathArgument);
-        review.Options.Add(reviewConfigOption);
         review.SetAction(async (parseResult, token) => await ExecuteReviewAsync(
             parseResult.GetValue(reviewProjectPathArgument),
-            parseResult.GetValue(reviewConfigOption),
-            null,
-            null,
             services,
             standardOutput,
             standardError,
             token).ConfigureAwait(false));
         root.Subcommands.Add(review);
 
-        var parse = root.Parse(args);
-        if (parse.Errors.Count > 0 || parse.UnmatchedTokens.Count > 0)
+        var baseline = new Command("baseline");
+        var baselineProjectPathArgument = new Argument<string?>("project-path")
         {
-            await WriteErrorAsync(standardError, "INVALID_INPUT", "Expected 'ainetreview [project-path] [--config <path-to-ainetreview.json>]' or 'ainetreview --cmd baseline --project-path <target-root> --config <config-file> --output-directory <absolute-path>'.")
+            Arity = ArgumentArity.ZeroOrOne,
+        };
+        baseline.Arguments.Add(baselineProjectPathArgument);
+        baseline.SetAction(async (parseResult, token) => await ExecuteBaselineAsync(
+            parseResult.GetValue(baselineProjectPathArgument),
+            services,
+            standardOutput,
+            standardError,
+            token).ConfigureAwait(false));
+        root.Subcommands.Add(baseline);
+
+        var parse = root.Parse(args);
+        if (args.Length == 0 || args[0] is not ("review" or "baseline")
+            || parse.Errors.Count > 0 || parse.UnmatchedTokens.Count > 0)
+        {
+            await WriteErrorAsync(standardError, "INVALID_INPUT", "Expected 'ainetreview review [project-path]' or 'ainetreview baseline [project-path]'.")
                 .ConfigureAwait(false);
             return InvalidInputExitCode;
         }
@@ -96,38 +83,17 @@ public sealed class ReviewCommand
 
     private static async Task<int> ExecuteReviewAsync(
         string? projectPath,
-        string? configPath,
-        string? command,
-        string? outputDirectory,
         IServiceProvider services,
         TextWriter standardOutput,
         TextWriter standardError,
         CancellationToken cancellationToken)
     {
-        if (command is not null)
-        {
-            if (command.Equals("baseline", StringComparison.Ordinal))
-            {
-                return await ExecuteBaselineAsync(projectPath, configPath, outputDirectory, services, standardOutput, standardError, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            await WriteErrorAsync(standardError, "INVALID_INPUT", "The '--cmd' option only accepts 'baseline'.").ConfigureAwait(false);
-            return InvalidInputExitCode;
-        }
-
-        if (outputDirectory is not null)
-        {
-            await WriteErrorAsync(standardError, "INVALID_INPUT", "'--output-directory' is only supported with '--cmd baseline'.").ConfigureAwait(false);
-            return InvalidInputExitCode;
-        }
-
         using var commandScope = LogContext.PushProperty("Command", "review");
         var logger = services.GetRequiredService<ILogger<ReviewCommand>>();
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var (projectRoot, absoluteConfigPath) = ResolvePaths(projectPath, configPath);
+            var (projectRoot, absoluteConfigPath) = ResolvePaths(projectPath);
             if (!File.Exists(absoluteConfigPath))
             {
                 var solutionFileName = services.GetRequiredService<SolutionDiscovery>().Discover(projectRoot);
@@ -268,8 +234,6 @@ public sealed class ReviewCommand
 
     private static async Task<int> ExecuteBaselineAsync(
         string? projectPath,
-        string? configPath,
-        string? outputDirectory,
         IServiceProvider services,
         TextWriter standardOutput,
         TextWriter standardError,
@@ -280,61 +244,30 @@ public sealed class ReviewCommand
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            string projectRoot;
-            string absoluteConfigPath;
-            ReviewConfig config;
-            if (outputDirectory is null)
+            var (projectRoot, absoluteConfigPath) = ResolvePaths(projectPath);
+            if (!File.Exists(absoluteConfigPath))
             {
-                (projectRoot, absoluteConfigPath) = ResolvePaths(projectPath, configPath);
-                if (!File.Exists(absoluteConfigPath))
+                var solutionFileName = services.GetRequiredService<SolutionDiscovery>().Discover(projectRoot);
+                if (solutionFileName is null)
                 {
-                    var solutionFileName = services.GetRequiredService<SolutionDiscovery>().Discover(projectRoot);
-                    if (solutionFileName is null)
-                    {
-                        throw new InvalidReviewInputException("No .sln or .slnx file was found directly under the project directory.");
-                    }
-
-                    var generatedConfig = services.GetRequiredService<DefaultReviewConfigGenerator>().Generate(solutionFileName);
-                    try
-                    {
-                        var created = await CreateConfigFileAsync(absoluteConfigPath, generatedConfig, cancellationToken).ConfigureAwait(false);
-                        logger.LogInformation(
-                            created ? "Created default review configuration at {ConfigPath}" : "Default review configuration already exists at {ConfigPath}",
-                            absoluteConfigPath);
-                    }
-                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-                    {
-                        throw new InvalidReviewInputException("Default review configuration could not be created.", exception);
-                    }
+                    throw new InvalidReviewInputException("No .sln or .slnx file was found directly under the project directory.");
                 }
 
-                config = services.GetRequiredService<ReviewConfigValidator>().Load(absoluteConfigPath);
-            }
-            else
-            {
-                if (string.IsNullOrWhiteSpace(projectPath) || string.IsNullOrWhiteSpace(configPath))
-                {
-                    throw new InvalidReviewInputException("'--project-path', '--config', and '--output-directory' must be supplied together for a central baseline.");
-                }
-
+                var generatedConfig = services.GetRequiredService<DefaultReviewConfigGenerator>().Generate(solutionFileName);
                 try
                 {
-                    projectRoot = Path.GetFullPath(projectPath, Environment.CurrentDirectory);
-                    absoluteConfigPath = Path.GetFullPath(configPath, Environment.CurrentDirectory);
-                    var absoluteOutputDirectory = Path.GetFullPath(outputDirectory, Environment.CurrentDirectory);
-                    var configJson = await File.ReadAllTextAsync(absoluteConfigPath, cancellationToken).ConfigureAwait(false);
-                    config = services.GetRequiredService<ReviewConfigValidator>()
-                        .ValidateForAudit(projectRoot, configJson, absoluteOutputDirectory);
+                    var created = await CreateConfigFileAsync(absoluteConfigPath, generatedConfig, cancellationToken).ConfigureAwait(false);
+                    logger.LogInformation(
+                        created ? "Created default review configuration at {ConfigPath}" : "Default review configuration already exists at {ConfigPath}",
+                        absoluteConfigPath);
                 }
-                catch (InvalidReviewInputException)
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
                 {
-                    throw;
-                }
-                catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException or NotSupportedException)
-                {
-                    throw new InvalidReviewInputException("Central baseline configuration could not be resolved or read.", exception);
+                    throw new InvalidReviewInputException("Default review configuration could not be created.", exception);
                 }
             }
+
+            var config = services.GetRequiredService<ReviewConfigValidator>().Load(absoluteConfigPath);
 
             logger.LogInformation("Baseline started for {SolutionPath}", config.SolutionPath);
 
@@ -410,26 +343,12 @@ public sealed class ReviewCommand
         }
     }
 
-    private static (string ProjectRoot, string ConfigPath) ResolvePaths(string? projectPath, string? configPath)
+    private static (string ProjectRoot, string ConfigPath) ResolvePaths(string? projectPath)
     {
         try
         {
-            var absoluteConfigPath = configPath is null
-                ? null
-                : Path.GetFullPath(configPath, Environment.CurrentDirectory);
-            var projectRoot = Path.GetFullPath(
-                projectPath ?? (absoluteConfigPath is null ? Environment.CurrentDirectory : Path.GetDirectoryName(absoluteConfigPath)!),
-                Environment.CurrentDirectory);
-            var resolvedConfigPath = absoluteConfigPath ?? Path.Combine(projectRoot, "ainetreview.json");
-            var pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-
-            if (!Path.GetFileName(resolvedConfigPath).Equals("ainetreview.json", StringComparison.Ordinal)
-                || !Path.GetFullPath(Path.GetDirectoryName(resolvedConfigPath)!).Equals(projectRoot, pathComparison))
-            {
-                throw new InvalidReviewInputException("Configuration path must be 'ainetreview.json' directly under the project directory.");
-            }
-
-            return (projectRoot, resolvedConfigPath);
+            var projectRoot = Path.GetFullPath(projectPath ?? Environment.CurrentDirectory, Environment.CurrentDirectory);
+            return (projectRoot, Path.Combine(projectRoot, "ainetreview.json"));
         }
         catch (InvalidReviewInputException)
         {

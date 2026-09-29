@@ -5,21 +5,34 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
+using AiNetReview;
 using AiNetReview.Bootstrap;
 using AiNetReview.Cli;
 using Microsoft.Extensions.DependencyInjection;
 
 public sealed class ZeroConfigIntegrationTests
 {
+    [Theory]
+    [InlineData("review", "review")]
+    [InlineData("baseline", "baseline")]
+    [InlineData("--cmd", "--cmd")]
+    [InlineData(null, "unknown")]
+    public void Program_GetCommandCategory_UsesFirstArgument(string? firstArgument, string expected)
+    {
+        var args = firstArgument is null ? Array.Empty<string>() : [firstArgument, "ignored"];
+
+        Assert.Equal(expected, Program.GetCommandCategory(args));
+    }
+
     [Fact]
-    public async Task ReviewCommand_ProjectPathVariantsAndMissingExplicitConfigBootstrapAndPublishReports()
+    public async Task ReviewCommand_SubcommandBootstrapsProjectConfigAndPublishesReports()
     {
         using var tempDirectory = TestTempDirectory.Create("ainet-zero-config-");
         var projectRoot = await CreateProjectAsync(tempDirectory.DirectoryPath);
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
         await using var services = BuildServices();
 
-        var defaultCommand = await InvokeAsync([projectRoot], services);
+        var defaultCommand = await InvokeAsync(["review", projectRoot], services);
         AssertSuccessfulReview(projectRoot, defaultCommand);
         Assert.True(File.Exists(configPath));
         var generatedConfig = await File.ReadAllTextAsync(configPath);
@@ -31,9 +44,49 @@ public sealed class ZeroConfigIntegrationTests
         AssertSuccessfulReview(projectRoot, reviewSubcommand);
 
         File.Delete(configPath);
-        var explicitMissingConfig = await InvokeAsync(["review", "--config", configPath], services);
-        AssertSuccessfulReview(projectRoot, explicitMissingConfig);
+        var missingConfig = await InvokeAsync(["review", projectRoot], services);
+        AssertSuccessfulReview(projectRoot, missingConfig);
         Assert.True(File.Exists(configPath));
+    }
+
+    [Theory]
+    [InlineData()]
+    [InlineData("--cmd", "baseline")]
+    [InlineData("--config", "ainetreview.json")]
+    [InlineData("unknown")]
+    [InlineData("C:\\project")]
+    [InlineData("review", "--cmd", "baseline")]
+    [InlineData("review", "--config", "ainetreview.json")]
+    public async Task ReviewCommand_RejectsMissingOrUnknownSubcommandAndLegacyOptions(params string[] args)
+    {
+        await using var services = BuildServices();
+
+        var result = await InvokeAsync(args, services);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Empty(result.Output);
+        using var response = JsonDocument.Parse(result.Error);
+        Assert.Equal("INVALID_INPUT", response.RootElement.GetProperty("code").GetString());
+        Assert.Contains("review [project-path]", response.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BaselineCommand_BootstrapsConfigurationAndWritesBaseline()
+    {
+        using var tempDirectory = TestTempDirectory.Create("ainet-cli-baseline-");
+        var projectRoot = await CreateProjectAsync(tempDirectory.DirectoryPath);
+        File.Delete(Path.Combine(projectRoot, "ainetreview.json"));
+        await using var services = BuildServices();
+
+        var relativeProjectRoot = Path.GetRelativePath(Environment.CurrentDirectory, projectRoot);
+        var result = await InvokeAsync(["baseline", relativeProjectRoot], services);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Empty(result.Error);
+        using var response = JsonDocument.Parse(Assert.Single(result.Output.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)));
+        Assert.Equal("completed", response.RootElement.GetProperty("status").GetString());
+        Assert.True(File.Exists(Path.Combine(projectRoot, "ainetreview.json")));
+        Assert.True(File.Exists(Path.Combine(projectRoot, "audit-reporting", "baseline.json")));
     }
 
     [Fact]
@@ -45,7 +98,7 @@ public sealed class ZeroConfigIntegrationTests
         using var output = new StringWriter();
         using var error = new StringWriter();
 
-        var exitCode = await new ReviewCommand().InvokeAsync([projectRoot], services, output, error);
+        var exitCode = await new ReviewCommand().InvokeAsync(["review", projectRoot], services, output, error);
 
         Assert.Equal(2, exitCode);
         Assert.Empty(output.ToString());

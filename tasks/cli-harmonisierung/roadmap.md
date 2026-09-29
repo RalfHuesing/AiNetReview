@@ -1,6 +1,6 @@
 # Roadmap: CLI-Harmonisierung
 
-- [ ] **Punkt 1 — Subcommands und CLI-Parser im Host implementieren**
+- [x] **Punkt 1 — Subcommands und CLI-Parser im Host implementieren**
   - Intention: `RootCommand` auf die beiden strikten Subcommands `review` und `baseline` umstellen, `--cmd` und `--config` entfernen, Vorab-Logging in `Program.cs` anpassen.
   - Scope:
     - `src/AiNetReview/Cli/ReviewCommand.cs`: `RootCommand` ohne eigene Action, Subcommands `review` und `baseline` mit einheitlichem Argument `project-path`.
