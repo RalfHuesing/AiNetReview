@@ -33,7 +33,8 @@ public sealed class MarkdownReportWriter
         ReviewConfig config,
         ReviewRunResult result,
         CancellationToken cancellationToken = default,
-        string? configurationPath = null)
+        string? configurationPath = null,
+        BaselineCommandContext? baselineCommandContext = null)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(result);
@@ -78,7 +79,7 @@ public sealed class MarkdownReportWriter
 
                 cancellationToken.ThrowIfCancellationRequested();
                 var indexPath = Path.Combine(temporaryPath, "index.md");
-                await WriteUtf8Async(indexPath, FormatIndex(runId, config, analyses, findings, configurationPath), cancellationToken)
+                await WriteUtf8Async(indexPath, FormatIndex(runId, config, analyses, findings, configurationPath, baselineCommandContext), cancellationToken)
                     .ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (beforePublication is not null)
@@ -136,7 +137,8 @@ public sealed class MarkdownReportWriter
         ReviewConfig config,
         ConfiguredReviewAnalysis[] analyses,
         IReadOnlyList<ReviewFinding> findings,
-        string? configurationPath)
+        string? configurationPath,
+        BaselineCommandContext? baselineCommandContext)
     {
         var builder = new StringBuilder();
         builder.Append("# AiNetReview – ").Append(runId).Append("\n\n")
@@ -159,16 +161,55 @@ public sealed class MarkdownReportWriter
             .Append("- [`all-findings/`](all-findings/index.md) always contains every current finding (")
             .Append(allCount.ToString(CultureInfo.InvariantCulture)).Append(" findings). Keep this complete view intact while editing the working view.\n\n");
 
-        var executable = Environment.ProcessPath ?? throw new InvalidOperationException("The current process executable path is unavailable.");
-        var baselineConfigPath = configurationPath is null
-            ? Path.Combine(config.ProjectRoot, "ainetreview.json")
-            : Path.GetFullPath(configurationPath);
+        builder.Append("## Analysis reports\n\n");
+        var reportLinks = new List<string>();
+        foreach (var analysis in analyses)
+        {
+            if (findings.Any(finding => finding.AnalysisId == analysis.AnalysisId && finding.IsChanged))
+            {
+                reportLinks.Add("- [" + EscapeLinkText(analysis.Analysis.Descriptor.Title) + " — changed files](changed-files/"
+                    + EncodePathSegment(analysis.AnalysisId) + ".md)");
+            }
+
+            if (findings.Any(finding => finding.AnalysisId == analysis.AnalysisId))
+            {
+                reportLinks.Add("- [" + EscapeLinkText(analysis.Analysis.Descriptor.Title) + " — all findings](all-findings/"
+                    + EncodePathSegment(analysis.AnalysisId) + ".md)");
+            }
+        }
+
+        builder.Append(reportLinks.Count == 0 ? "No analysis report files were created.\n\n" : string.Join('\n', reportLinks) + "\n\n");
+
+        var executable = baselineCommandContext?.ExecutablePath
+            ?? Environment.ProcessPath
+            ?? throw new InvalidOperationException("The current process executable path is unavailable.");
+        var baselineConfigPath = baselineCommandContext?.ConfigurationPath
+            ?? (configurationPath is null ? Path.Combine(config.ProjectRoot, "ainetreview.json") : Path.GetFullPath(configurationPath));
         builder.Append("## Changed files report\n\n[Open the changed files view](changed-files/index.md)\n\n")
             .Append("## All findings report\n\n[Open the complete findings view](all-findings/index.md)\n\n")
             .Append("## Set a new baseline\n\n")
             .Append("Run this PowerShell command from any directory to set the comparison point to the current source files:\n\n")
-            .Append("```powershell\n& ").Append(QuotePowerShell(executable)).Append(" --cmd baseline --config ").Append(QuotePowerShell(baselineConfigPath)).Append("\n```\n\n")
-            .Append("The command replaces the baseline for all source files and does not require a report.\n\n")
+            .Append("```powershell\n& ").Append(QuotePowerShell(Path.GetFullPath(executable))).Append(" --cmd baseline ");
+        if (baselineCommandContext is not null)
+        {
+            builder.Append("--project-path ").Append(QuotePowerShell(Path.GetFullPath(config.ProjectRoot))).Append(' ');
+        }
+
+        builder.Append("--config ").Append(QuotePowerShell(Path.GetFullPath(baselineConfigPath)));
+        if (baselineCommandContext is not null)
+        {
+            builder.Append(" --output-directory ").Append(QuotePowerShell(Path.GetFullPath(baselineCommandContext.OutputDirectory)));
+        }
+
+        builder.Append("\n```\n\n");
+        if (baselineCommandContext is not null)
+        {
+            builder.Append("This writes `baseline.json` to `")
+                .Append(Path.GetFullPath(baselineCommandContext.OutputDirectory).Replace('\\', '/'))
+                .Append("`. ");
+        }
+
+        builder.Append("The command replaces the baseline for all source files and does not require a report.\n\n")
             .Append("## Review guidance\n\n")
             .Append("These findings are review signals, not proven defects or automatic change requests. Read the target repository's applicable instructions and relevant design documents. Consider the behavior of the application as a whole, including contracts, callers, tests, and related findings across analyses. First remove only clear false positives from `changed-files/` and leave uncertain cases for review. Then work through the remaining findings one decision at a time while keeping the wider context in view. Avoid local workarounds and refactoring driven only by a metric. Explain consequential changes and tradeoffs to the user. Keep report files and links consistent when editing them.\n");
         return builder.ToString();
@@ -280,7 +321,7 @@ public sealed class MarkdownReportWriter
         {
             var finding = reviewFinding.Finding;
             var anchor = anchorByKey[FindingKey(reviewFinding)];
-            builder.Append("| <a id=\"").Append(anchor).Append("\"></a>`").Append(EscapeInline(FormatSymbol(finding))).Append("` | [")
+            builder.Append("| <a id=\"").Append(anchor).Append("\"></a>").Append(FormatSymbol(config.ProjectRoot, finding, reportDirectory)).Append(" | [")
                 .Append(EscapeLinkText(finding.SourcePath)).Append(':').Append(finding.StartLine.ToString(CultureInfo.InvariantCulture)).Append("](")
                 .Append(SourceLink(config.ProjectRoot, finding.SourcePath, finding.StartLine, reportDirectory)).Append(") | ")
                 .Append(EscapeTable(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append(" | ")
@@ -290,14 +331,18 @@ public sealed class MarkdownReportWriter
         return builder.ToString();
     }
 
-    private static string FormatSymbol(FindingDraft finding)
+    private static string FormatSymbol(string projectRoot, FindingDraft finding, string reportDirectory)
     {
         if (finding.RelatedSymbols.Count <= 1)
         {
-            return finding.SubjectId;
+            return "`" + EscapeInline(finding.SubjectId) + "`";
         }
 
-        return string.Join(", ", finding.RelatedSymbols.Select(static symbol => symbol.SymbolId + " (" + symbol.SourcePath + ":" + symbol.Line.ToString(CultureInfo.InvariantCulture) + ")"));
+        return string.Join(", ", finding.RelatedSymbols.Select(symbol =>
+        {
+            var label = EscapeLinkText(symbol.SymbolId + " (" + symbol.SourcePath + ":" + symbol.Line.ToString(CultureInfo.InvariantCulture) + ")");
+            return "[" + label + "](" + SourceLink(projectRoot, symbol.SourcePath, symbol.Line, reportDirectory) + ")";
+        }));
     }
 
     private static string FormatRelatedLinks(

@@ -129,6 +129,54 @@ public sealed class MarkdownReportWriterTests
     }
 
     [Fact]
+    public async Task WriteAsync_LinksEveryClusterMemberToItsSourceLocationAndAddsRootReportLinks()
+    {
+        using var temp = TestTempDirectory.Create();
+        var analysis = new ReportAnalysis("duplicate-code-candidates", "Duplicate code", "active");
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        await File.WriteAllTextAsync(Path.Combine(temp.DirectoryPath, "First.cs"), "class First { }");
+        await File.WriteAllTextAsync(Path.Combine(temp.DirectoryPath, "Second.cs"), "class Second { }");
+        var first = new FindingSymbol("Sample/Sample.csproj", "First.cs", "M:First.Run", 2);
+        var second = new FindingSymbol("Sample/Sample.csproj", "Second.cs", "M:Second.Run", 5);
+        var finding = new FindingDraft("Sample/Sample.csproj", "First.cs", "M:First.Run", "duplicate-cluster", 2, "similar methods",
+            new Dictionary<string, double>(), [new FindingEvidence("First.cs", 2, "Member", "member source", "Run")], [first, second]);
+
+        var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
+            new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([finding])),
+        ]));
+        var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
+        var markdown = await File.ReadAllTextAsync(Path.Combine(runDirectory, "all-findings", "duplicate-code-candidates.md"));
+        var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
+
+        Assert.Contains("[M:First.Run (First.cs:2)](../../../First.cs#L2)", markdown, StringComparison.Ordinal);
+        Assert.Contains("[M:Second.Run (Second.cs:5)](../../../Second.cs#L5)", markdown, StringComparison.Ordinal);
+        Assert.Contains("(changed-files/duplicate-code-candidates.md)", index, StringComparison.Ordinal);
+        Assert.Contains("(all-findings/duplicate-code-candidates.md)", index, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(runDirectory, "all-findings", "duplicate-code-candidates.md")));
+    }
+
+    [Fact]
+    public async Task WriteAsync_UsesTheSuppliedCentralHostAndBaselineDestination()
+    {
+        using var temp = TestTempDirectory.Create();
+        var analysis = new ReportAnalysis("central-analysis", "Central", "active");
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        var executablePath = Path.Combine(temp.DirectoryPath, "host", "AiNetReview.exe");
+        var configurationPath = Path.Combine(temp.DirectoryPath, "central audit", "target", "baseline-config", "ainetreview.json");
+        var outputDirectory = Path.Combine(temp.DirectoryPath, "central audit", "target");
+        var context = new BaselineCommandContext(executablePath, configurationPath, outputDirectory);
+
+        var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
+            new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, ReviewAnalysisResult.Empty),
+        ]), baselineCommandContext: context);
+        var index = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "index.md"));
+
+        Assert.Contains($"& '{executablePath}' --cmd baseline --project-path '{config.ProjectRoot}' --config '{configurationPath}' --output-directory '{outputDirectory}'", index, StringComparison.Ordinal);
+        Assert.Contains($"This writes `baseline.json` to `{outputDirectory.Replace('\\', '/')}`.", index, StringComparison.Ordinal);
+        Assert.Contains("No analysis report files were created.", index, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task WriteAsync_SeparatesChangedViewAndLinksRelatedFindingsAcrossAnalyses()
     {
         using var temp = TestTempDirectory.Create();

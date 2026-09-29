@@ -69,6 +69,33 @@ public sealed class HostProcessIntegrationTests
     }
 
     [Fact]
+    public async Task ProcessInvocation_CentralBaselineUsesTheSuppliedTargetConfigAndOutputDirectory()
+    {
+        using var host = IsolatedHost.Create();
+        var projectRoot = await CreateProjectAsync(host.HostDirectory, "namespace Sample; public sealed class SampleType { }", "target project");
+        var centralOutput = Path.Combine(host.HostDirectory, "central audit", "target");
+        var configDirectory = Path.Combine(centralOutput, "baseline-config");
+        Directory.CreateDirectory(configDirectory);
+        var configPath = Path.Combine(configDirectory, "ainetreview.json");
+        await File.WriteAllTextAsync(configPath,
+            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"ignored-target-output\",\"analyses\":{\"method-control-flow-outliers\":{}}}");
+        var workingDirectory = host.CreateWorkingDirectory();
+
+        using var process = host.Start(workingDirectory,
+            "--cmd", "baseline", "--project-path", projectRoot, "--config", configPath, "--output-directory", centralOutput);
+        var (stdout, stderr) = await ReadProcessOutputAsync(process);
+
+        Assert.Equal(0, process.ExitCode);
+        Assert.Empty(stderr);
+        using var response = JsonDocument.Parse(Assert.Single(stdout.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)));
+        Assert.Equal("completed", response.RootElement.GetProperty("status").GetString());
+        Assert.Equal(Path.GetRelativePath(projectRoot, Path.Combine(centralOutput, "baseline.json")).Replace('\\', '/'),
+            response.RootElement.GetProperty("baselinePath").GetString());
+        Assert.True(File.Exists(Path.Combine(centralOutput, "baseline.json")));
+        Assert.False(Directory.Exists(Path.Combine(projectRoot, "ignored-target-output")));
+    }
+
+    [Fact]
     public async Task ProcessInvocation_ChangedSourcePublishesBothViewsAndQuotesBaselineConfigPath()
     {
         using var host = IsolatedHost.Create();
@@ -105,6 +132,9 @@ public sealed class HostProcessIntegrationTests
         var allView = Path.Combine(runDirectory, "all-findings");
 
         Assert.Contains($"--cmd baseline --config '{configPath}'", rootIndex, StringComparison.Ordinal);
+        Assert.Contains("## Analysis reports", rootIndex, StringComparison.Ordinal);
+        Assert.Contains("(changed-files/method-control-flow-outliers.md)", rootIndex, StringComparison.Ordinal);
+        Assert.Contains("(all-findings/method-control-flow-outliers.md)", rootIndex, StringComparison.Ordinal);
         Assert.Contains("Run", await File.ReadAllTextAsync(Path.Combine(changedView, "method-control-flow-outliers.md")), StringComparison.Ordinal);
         Assert.Contains("Run", await File.ReadAllTextAsync(Path.Combine(allView, "method-control-flow-outliers.md")), StringComparison.Ordinal);
     }

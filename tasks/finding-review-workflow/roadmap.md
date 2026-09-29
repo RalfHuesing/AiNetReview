@@ -20,7 +20,7 @@ Verbindlicher Produktvertrag: [Konzept](Konzept.md). Jeder Punkt ist ein abgesch
   - Nicht: Finding-IDs, einen EXE-Editor für Markdown, projektfremde feste Agentenregeln oder automatische Codeänderungen einführen.
   - Abnahme: Berichts- und Hosttests prüfen beide Ansichten mit/ohne Baseline, Leerfälle, korrekte Quell- und Querverweise, editierbare Arbeitsansicht ohne Einfluss auf `all-findings/`, den Baseline-Befehl bei Pfaden mit Leerzeichen und die unveränderte Publikation bei Fehler oder Abbruch. README und betroffene `docs/`-Seiten beschreiben nur die implementierte Bedienung; erforderliche Projekt-Gates laufen vor dem Commit.
 
-- [ ] **4 — Abschluss-Audit**
+- [x] **4 — Abschluss-Audit**
   - Intention: Den vollständigen Produktvertrag und seine Grenzen unabhängig von der Umsetzung gegen Code, Tests und Dokumentation prüfen.
   - Scope: Vom Laufpfad aus den beschriebenen Agenten-Workflow nachvollziehen; Baseline vor einem Audit, fehlende Baseline, erneute Baseline nach Codeänderung, mehrere Findings in derselben Datei, Mehrdatei-Cluster, Queranalysen und die bekannte Grenze indirekter Findings prüfen. CLI-Vertrag, Ausgabeorte, sichere Veröffentlichung, aktuelle Dokumentation und Nicht-Ziele gegen das [Konzept](Konzept.md) abgleichen. Befunde konkret nachweisen und höchstens einen gezielten Korrekturschnitt nach dem Workflow veranlassen.
   - Nicht: Neue Produktwünsche hinzufügen oder einen weiteren offenen Planungsschritt starten.

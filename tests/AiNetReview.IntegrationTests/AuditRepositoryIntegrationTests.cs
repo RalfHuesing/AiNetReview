@@ -1,6 +1,7 @@
 namespace AiNetReview.IntegrationTests;
 
 using System;
+using System.Diagnostics;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -10,6 +11,7 @@ using System.Threading.Tasks;
 using AiNetReview.Bootstrap;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
+using AiNetReview.Core.Reporting;
 using Microsoft.Extensions.DependencyInjection;
 
 public sealed partial class AuditRepositoryIntegrationTests
@@ -66,19 +68,37 @@ public sealed partial class AuditRepositoryIntegrationTests
         await using var services = BuildProductionServices();
         var config = services.GetRequiredService<ReviewConfigValidator>()
             .ValidateForAudit(repositoryPath, standardConfigJson, outputDirectory);
+        var baselineConfigurationPath = Path.Combine(outputDirectory, "baseline-config", "ainetreview.json");
+        await PublishBaselineConfigurationAsync(baselineConfigurationPath, standardConfigJson);
+        var hostExecutablePath = Path.Combine(
+            AppContext.BaseDirectory,
+            OperatingSystem.IsWindows() ? "AiNetReview.exe" : "AiNetReview");
+        Assert.True(File.Exists(hostExecutablePath), $"The referenced AiNetReview host executable was not found at '{hostExecutablePath}'.");
         using var loaded = await services.GetRequiredService<SolutionLoader>().LoadAsync(config);
         var baselinePath = Path.Combine(outputDirectory, "baseline.json");
-        await services.GetRequiredService<AiNetReview.Core.Reporting.BaselineWriter>().WriteAsync(config, loaded);
+        using (var baselineProcess = StartBaselineProcess(hostExecutablePath, repositoryPath, baselineConfigurationPath, outputDirectory, hostRoot))
+        {
+            var stdoutTask = baselineProcess.StandardOutput.ReadToEndAsync();
+            var stderrTask = baselineProcess.StandardError.ReadToEndAsync();
+            await baselineProcess.WaitForExitAsync();
+            Assert.Equal(0, baselineProcess.ExitCode);
+            Assert.Empty(await stderrTask);
+            Assert.Contains("\"status\":\"completed\"", await stdoutTask, StringComparison.Ordinal);
+        }
+
         Assert.True(File.Exists(baselinePath));
         var result = await services.GetRequiredService<ReviewRunner>().RunAsync(config, loaded);
         var published = await services.GetRequiredService<AiNetReview.Core.Reporting.MarkdownReportWriter>()
-            .WriteAsync(config, result);
+            .WriteAsync(config, result, configurationPath: baselineConfigurationPath,
+                baselineCommandContext: new BaselineCommandContext(hostExecutablePath, baselineConfigurationPath, outputDirectory));
 
         var runDirectory = Path.Combine(outputDirectory, published.RunId);
         Assert.True(File.Exists(Path.Combine(runDirectory, "index.md")));
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
         var escapedRepositoryPath = repositoryPath.Replace("\\", "\\\\", StringComparison.Ordinal);
         Assert.Contains($"- Repository: `{escapedRepositoryPath}`", index, StringComparison.Ordinal);
+        Assert.Contains($"& '{hostExecutablePath}' --cmd baseline --project-path '{repositoryPath}' --config '{baselineConfigurationPath}' --output-directory '{outputDirectory}'", index, StringComparison.Ordinal);
+        Assert.Contains($"This writes `baseline.json` to `{outputDirectory.Replace('\\', '/')}`.", index, StringComparison.Ordinal);
         AssertMarkdownLinksResolve(runDirectory, repositoryPath);
         Assert.Equal(Path.Combine(outputDirectory, published.RunId, "index.md"),
             Path.GetFullPath(Path.Combine(repositoryPath, published.IndexPath.Replace('/', Path.DirectorySeparatorChar))));
@@ -117,6 +137,45 @@ public sealed partial class AuditRepositoryIntegrationTests
         services.AddAiNetReviewAnalyses();
         services.AddLogging();
         return services.BuildServiceProvider();
+    }
+
+    private static async Task PublishBaselineConfigurationAsync(string path, string contents)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var temporaryPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await File.WriteAllTextAsync(temporaryPath, contents);
+            File.Move(temporaryPath, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+        }
+    }
+
+    private static Process StartBaselineProcess(string executablePath, string projectRoot, string configPath, string outputDirectory, string workingDirectory)
+    {
+        var startInfo = new ProcessStartInfo(executablePath)
+        {
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("--cmd");
+        startInfo.ArgumentList.Add("baseline");
+        startInfo.ArgumentList.Add("--project-path");
+        startInfo.ArgumentList.Add(projectRoot);
+        startInfo.ArgumentList.Add("--config");
+        startInfo.ArgumentList.Add(configPath);
+        startInfo.ArgumentList.Add("--output-directory");
+        startInfo.ArgumentList.Add(outputDirectory);
+        return Process.Start(startInfo) ?? throw new InvalidOperationException("The AiNetReview baseline host process could not be started.");
     }
 
     private static void AssertProfileProperties(JsonElement profile)
