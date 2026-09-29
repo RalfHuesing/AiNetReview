@@ -60,7 +60,7 @@ public sealed class MethodControlFlowOutliersIntegrationTests
         using var error = new StringWriter();
 
         var exitCode = await new ReviewCommand().InvokeAsync(
-            ["review", "--config", configPath], provider, output, error);
+            ["review", Path.GetDirectoryName(configPath)!], provider, output, error);
 
         Assert.Equal(0, exitCode);
         Assert.Empty(error.ToString());

@@ -25,7 +25,7 @@
     - `docs/interfaces/cli.md` beschreibt die exakten Aufrufformen `review` und `baseline`.
     - Generierte `index.md` enthält den neuen Baseline-Befehl ohne `--cmd`.
 
-- [ ] **Punkt 3 — Tests anpassen und neue Testfälle ergänzen**
+- [x] **Punkt 3 — Tests anpassen und neue Testfälle ergänzen**
   - Intention: Bestehende Tests auf die neue Subcommand-Syntax umstellen und das Abweisen alter bzw. ungültiger Aufrufformen automatisiert absichern.
   - Scope:
     - FastTests und IntegrationTests aktualisieren, die bisher `ainetreview [project-path]`, `--cmd baseline` oder `--config` aufrufen.

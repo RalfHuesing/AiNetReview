@@ -65,7 +65,7 @@ public sealed class InfrastructureLoadTests(ITestOutputHelper output)
         await RestoreAsync(solutionPath, projectRoot);
 
         using var host = IsolatedHost.Create();
-        using var process = host.Start(host.CreateWorkingDirectory(), "review", "--config", configPath);
+        using var process = host.Start(host.CreateWorkingDirectory(), "review", Path.GetDirectoryName(configPath)!);
         var stdoutTask = process.StandardOutput.ReadToEndAsync();
         var stderrTask = process.StandardError.ReadToEndAsync();
         var timer = Stopwatch.StartNew();

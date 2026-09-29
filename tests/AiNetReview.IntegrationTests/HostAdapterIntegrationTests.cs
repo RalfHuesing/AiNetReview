@@ -147,7 +147,7 @@ public sealed class HostAdapterIntegrationTests
         using var cancelledError = new StringWriter();
         await using var cancelledProvider = BuildProductionServices();
         var cancelledExitCode = await new ReviewCommand().InvokeAsync(
-            ["review", "--config", configPath],
+            ["review", Path.GetDirectoryName(configPath)!],
             cancelledProvider,
             cancelledOutput,
             cancelledError,
@@ -214,7 +214,7 @@ public sealed class HostAdapterIntegrationTests
         using var error = new StringWriter();
 
         var exitCode = await new ReviewCommand().InvokeAsync(
-            ["review", "--config", "C:\\project\\ainetreview.json", "--extra"],
+            ["review", "C:\\project", "--extra"],
             provider,
             output,
             error);
@@ -237,7 +237,7 @@ public sealed class HostAdapterIntegrationTests
         await cancellation.CancelAsync();
 
         var exitCode = await new ReviewCommand().InvokeAsync(
-            ["review", "--config", "C:\\project\\ainetreview.json"],
+            ["review", "C:\\project"],
             provider,
             output,
             error,
@@ -277,7 +277,7 @@ public sealed class HostAdapterIntegrationTests
         using var error = new StringWriter();
 
         var exitCode = await new ReviewCommand().InvokeAsync(
-            ["review", "--config", configPath],
+            ["review", Path.GetDirectoryName(configPath)!],
             provider,
             output,
             error);
@@ -323,7 +323,7 @@ public sealed class HostAdapterIntegrationTests
         await using var locked = new FileStream(markupPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
 
         var exitCode = await new ReviewCommand().InvokeAsync(
-            ["review", "--config", configPath],
+            ["review", Path.GetDirectoryName(configPath)!],
             provider,
             output,
             error);
@@ -374,7 +374,7 @@ public sealed class HostAdapterIntegrationTests
         using var error = new StringWriter();
 
         var exitCode = await new ReviewCommand().InvokeAsync(
-            ["review", "--config", configPath], provider, output, error);
+            ["review", Path.GetDirectoryName(configPath)!], provider, output, error);
         Assert.True(exitCode == 0, $"Fixture scan '{scenario}' failed: {error}");
         Assert.Empty(error.ToString());
         using var response = JsonDocument.Parse(output.ToString());
@@ -396,7 +396,7 @@ public sealed class HostAdapterIntegrationTests
         using var output = new StringWriter();
         using var error = new StringWriter();
 
-        var exitCode = await new ReviewCommand().InvokeAsync(["review", "--config", configPath], provider, output, error);
+        var exitCode = await new ReviewCommand().InvokeAsync(["review", Path.GetDirectoryName(configPath)!], provider, output, error);
         Assert.True(exitCode == 0, $"Production dead-code audit failed: {error}");
         Assert.Empty(error.ToString());
         using var response = JsonDocument.Parse(output.ToString());
@@ -447,7 +447,7 @@ public sealed class HostAdapterIntegrationTests
         using var output = new StringWriter();
         using var error = new StringWriter();
         var exitCode = await new ReviewCommand().InvokeAsync(
-            ["review", "--config", configPath], provider, output, error, cancellationToken);
+            ["review", Path.GetDirectoryName(configPath)!], provider, output, error, cancellationToken);
         return (exitCode, output.ToString(), error.ToString());
     }
 

@@ -15,12 +15,12 @@ using Microsoft.Extensions.Logging;
 public sealed class HostProcessIntegrationTests
 {
     [Fact]
-    public async Task ProcessInvocation_WithoutArgumentsBootstrapsConfigurationAndWritesOnlySuccessJsonToStdout()
+    public async Task ProcessInvocation_ReviewBootstrapsConfigurationAndWritesOnlySuccessJsonToStdout()
     {
         using var host = IsolatedHost.Create();
         var projectRoot = await CreateProjectAsync(host.HostDirectory, "namespace Sample; public sealed class SampleType { public void Run() { } }");
 
-        using var process = host.Start(projectRoot);
+        using var process = host.Start(projectRoot, "review");
         var (stdout, stderr) = await ReadProcessOutputAsync(process);
 
         Assert.Equal(0, process.ExitCode);
@@ -55,7 +55,7 @@ public sealed class HostProcessIntegrationTests
         using var host = IsolatedHost.Create();
         var projectRoot = await CreateProjectAsync(host.HostDirectory, "namespace Sample; public sealed class SampleType { }");
 
-        using var process = host.Start(projectRoot, "--cmd", "baseline");
+        using var process = host.Start(projectRoot, "baseline");
         var (stdout, stderr) = await ReadProcessOutputAsync(process);
 
         Assert.Equal(0, process.ExitCode);
@@ -69,40 +69,31 @@ public sealed class HostProcessIntegrationTests
     }
 
     [Fact]
-    public async Task ProcessInvocation_CentralBaselineUsesTheSuppliedTargetConfigAndOutputDirectory()
+    public async Task ProcessInvocation_RejectsLegacyCommandLineOptions()
     {
         using var host = IsolatedHost.Create();
-        var projectRoot = await CreateProjectAsync(host.HostDirectory, "namespace Sample; public sealed class SampleType { }", "target project");
-        var centralOutput = Path.Combine(host.HostDirectory, "central audit", "target");
-        var configDirectory = Path.Combine(centralOutput, "baseline-config");
-        Directory.CreateDirectory(configDirectory);
-        var configPath = Path.Combine(configDirectory, "ainetreview.json");
-        await File.WriteAllTextAsync(configPath,
-            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"ignored-target-output\",\"analyses\":{\"method-control-flow-outliers\":{}}}");
         var workingDirectory = host.CreateWorkingDirectory();
 
-        using var process = host.Start(workingDirectory,
-            "--cmd", "baseline", "--project-path", projectRoot, "--config", configPath, "--output-directory", centralOutput);
-        var (stdout, stderr) = await ReadProcessOutputAsync(process);
+        foreach (var args in new[] { new[] { "--cmd", "baseline" }, new[] { "baseline", "--config", "ainetreview.json" } })
+        {
+            using var process = host.Start(workingDirectory, args);
+            var (stdout, stderr) = await ReadProcessOutputAsync(process);
 
-        Assert.Equal(0, process.ExitCode);
-        Assert.Empty(stderr);
-        using var response = JsonDocument.Parse(Assert.Single(stdout.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)));
-        Assert.Equal("completed", response.RootElement.GetProperty("status").GetString());
-        Assert.Equal(Path.GetRelativePath(projectRoot, Path.Combine(centralOutput, "baseline.json")).Replace('\\', '/'),
-            response.RootElement.GetProperty("baselinePath").GetString());
-        Assert.True(File.Exists(Path.Combine(centralOutput, "baseline.json")));
-        Assert.False(Directory.Exists(Path.Combine(projectRoot, "ignored-target-output")));
+            Assert.Equal(2, process.ExitCode);
+            Assert.Empty(stdout);
+            using var error = JsonDocument.Parse(stderr);
+            Assert.Equal("INVALID_INPUT", error.RootElement.GetProperty("code").GetString());
+        }
     }
 
     [Fact]
-    public async Task ProcessInvocation_ChangedSourcePublishesBothViewsAndQuotesBaselineConfigPath()
+    public async Task ProcessInvocation_ChangedSourcePublishesBothViewsAndExecutesGeneratedBaselineCommand()
     {
         using var host = IsolatedHost.Create();
         var projectRoot = await CreateProjectAsync(host.HostDirectory, "namespace Sample; public sealed class SampleType { }", "target project");
         var configPath = await CreateConfigAsync(projectRoot);
 
-        using (var baselineProcess = host.Start(projectRoot, "--cmd", "baseline", "--config", configPath))
+        using (var baselineProcess = host.Start(projectRoot, "baseline", Path.GetDirectoryName(configPath)!))
         {
             var (baselineOutput, baselineError) = await ReadProcessOutputAsync(baselineProcess);
             Assert.Equal(0, baselineProcess.ExitCode);
@@ -120,7 +111,7 @@ public sealed class HostProcessIntegrationTests
             + string.Concat(Enumerable.Range(0, 8).Select(index => $"if (value == {index}) return {index}; "))
             + "return value; } }");
 
-        using var reviewProcess = host.Start(projectRoot, "review", "--config", configPath);
+        using var reviewProcess = host.Start(projectRoot, "review", Path.GetDirectoryName(configPath)!);
         var (reviewOutput, reviewError) = await ReadProcessOutputAsync(reviewProcess);
         Assert.True(reviewProcess.ExitCode == 0, reviewError);
         Assert.Empty(reviewError);
@@ -131,7 +122,29 @@ public sealed class HostProcessIntegrationTests
         var changedView = Path.Combine(runDirectory, "changed-files");
         var allView = Path.Combine(runDirectory, "all-findings");
 
-        Assert.Contains($"--cmd baseline --config '{configPath}'", rootIndex, StringComparison.Ordinal);
+        Assert.Contains($" baseline '{projectRoot}'", rootIndex, StringComparison.Ordinal);
+        var baselineCommand = Assert.Single(rootIndex.Split('\n').Select(static line => line.Trim())
+            .Where(static line => line.StartsWith("& '", StringComparison.Ordinal)));
+        var executableSeparator = baselineCommand.IndexOf("' baseline '", StringComparison.Ordinal);
+        Assert.True(executableSeparator > 2, baselineCommand);
+        var generatedExecutablePath = baselineCommand[3..executableSeparator];
+        var generatedProjectRoot = baselineCommand[(executableSeparator + "' baseline '".Length)..^1];
+        Assert.Equal(projectRoot, generatedProjectRoot);
+        var generatedStartInfo = new ProcessStartInfo(generatedExecutablePath)
+        {
+            WorkingDirectory = projectRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        generatedStartInfo.ArgumentList.Add("baseline");
+        generatedStartInfo.ArgumentList.Add(generatedProjectRoot);
+        using var generatedBaselineProcess = Process.Start(generatedStartInfo)
+            ?? throw new InvalidOperationException("The generated baseline command could not be started.");
+        var (generatedBaselineOutput, generatedBaselineError) = await ReadProcessOutputAsync(generatedBaselineProcess);
+        Assert.Equal(0, generatedBaselineProcess.ExitCode);
+        Assert.Empty(generatedBaselineError);
+        Assert.Contains("\"status\":\"completed\"", generatedBaselineOutput, StringComparison.Ordinal);
         Assert.Contains("## Analysis reports", rootIndex, StringComparison.Ordinal);
         Assert.Contains("(changed-files/method-control-flow-outliers.md)", rootIndex, StringComparison.Ordinal);
         Assert.Contains("(all-findings/method-control-flow-outliers.md)", rootIndex, StringComparison.Ordinal);
@@ -168,8 +181,7 @@ public sealed class HostProcessIntegrationTests
             CreateNoWindow = true,
         };
         startInfo.ArgumentList.Add("review");
-        startInfo.ArgumentList.Add("--config");
-        startInfo.ArgumentList.Add(configPath);
+        startInfo.ArgumentList.Add(repositoryRoot);
 
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("AiNetReview Debug host process could not be started.");
@@ -198,7 +210,7 @@ public sealed class HostProcessIntegrationTests
         Assert.Contains("- Solution: `AiNetReview.slnx`", indexReport, StringComparison.Ordinal);
         Assert.Contains("[Open the changed files view](changed-files/index.md)", indexReport, StringComparison.Ordinal);
         Assert.Contains("[Open the complete findings view](all-findings/index.md)", indexReport, StringComparison.Ordinal);
-        Assert.Contains($"& '{executablePath}' --cmd baseline --config '{configPath}'", indexReport, StringComparison.Ordinal);
+        Assert.Contains($"& '{executablePath}' baseline '{repositoryRoot}'", indexReport, StringComparison.Ordinal);
         var analysisReportPath = Path.Combine(outputDirectory, runId!, "all-findings", "method-control-flow-outliers.md");
         if (detectedCount > 0)
         {
@@ -239,7 +251,7 @@ public sealed class HostProcessIntegrationTests
         var logPath = Assert.Single(Directory.GetFiles(logDirectory, "ainetreview-*.log"));
         var logContents = await File.ReadAllTextAsync(logPath);
         Assert.Contains("Host started", logContents, StringComparison.Ordinal);
-        Assert.Contains("\"Command\":\"unknown\"", logContents, StringComparison.Ordinal);
+        Assert.Contains("\"Command\":\"invalid-command\"", logContents, StringComparison.Ordinal);
         Assert.False(Directory.Exists(Path.Combine(workingDirectory, "logs")));
         Assert.DoesNotContain("Host started", stdout, StringComparison.Ordinal);
         Assert.DoesNotContain("Host started", stderr, StringComparison.Ordinal);
@@ -284,7 +296,7 @@ public sealed class HostProcessIntegrationTests
         var configPath = await CreateConfigAsync(projectRoot);
 
         var workingDirectory = host.CreateWorkingDirectory();
-        using var process = host.Start(workingDirectory, "review", "--config", configPath);
+        using var process = host.Start(workingDirectory, "review", Path.GetDirectoryName(configPath)!);
         var (stdout, stderr) = await ReadProcessOutputAsync(process);
 
         Assert.Equal(0, process.ExitCode);
@@ -327,7 +339,7 @@ public sealed class HostProcessIntegrationTests
             "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"method-control-flow-outliers\":{},\"dead-code-candidates\":{}}}");
         var workingDirectory = host.CreateWorkingDirectory();
 
-        using var firstProcess = host.Start(workingDirectory, "--cmd", "baseline", "--config", configPath);
+        using var firstProcess = host.Start(workingDirectory, "baseline", Path.GetDirectoryName(configPath)!);
         var (firstStdout, firstStderr) = await ReadProcessOutputAsync(firstProcess);
 
         Assert.Equal(0, firstProcess.ExitCode);
@@ -349,7 +361,7 @@ public sealed class HostProcessIntegrationTests
 
         await File.WriteAllTextAsync(additionalSource, "namespace Sample; public sealed class AdditionalType { public int Value => 2; } ");
         File.Delete(markup);
-        using var secondProcess = host.Start(workingDirectory, "--cmd", "baseline", "--config", configPath);
+        using var secondProcess = host.Start(workingDirectory, "baseline", Path.GetDirectoryName(configPath)!);
         var (secondStdout, secondStderr) = await ReadProcessOutputAsync(secondProcess);
 
         Assert.Equal(0, secondProcess.ExitCode);
@@ -391,7 +403,7 @@ public sealed class HostProcessIntegrationTests
         Assert.Empty(Directory.GetFiles(outputDirectory, ".baseline-*.tmp"));
 
         await File.WriteAllTextAsync(Path.Combine(projectDirectory, "Class1.cs"), "namespace Sample; public sealed class Broken { public void Compile( { }");
-        using var failedProcess = host.Start(workingDirectory, "--cmd", "baseline", "--config", configPath);
+        using var failedProcess = host.Start(workingDirectory, "baseline", Path.GetDirectoryName(configPath)!);
         var (failedStdout, failedStderr) = await ReadProcessOutputAsync(failedProcess);
 
         Assert.Equal(3, failedProcess.ExitCode);
@@ -407,7 +419,7 @@ public sealed class HostProcessIntegrationTests
         var projectRoot = await CreateProjectAsync(host.HostDirectory, "public sealed class Sample { public void Broken( { } }");
         var configPath = await CreateConfigAsync(projectRoot);
 
-        using var process = host.Start(host.CreateWorkingDirectory(), "review", "--config", configPath);
+        using var process = host.Start(host.CreateWorkingDirectory(), "review", Path.GetDirectoryName(configPath)!);
         var (stdout, stderr) = await ReadProcessOutputAsync(process);
 
         Assert.Equal(3, process.ExitCode);
@@ -431,7 +443,7 @@ public sealed class HostProcessIntegrationTests
         await File.WriteAllTextAsync(configPath,
             "{\"schemaVersion\":1,\"solution\":\"" + solution + "\",\"outputDirectory\":\"" + output + "\",\"analyses\":{\"method-control-flow-outliers\":{}}}");
 
-        using var process = host.Start(host.CreateWorkingDirectory(), "review", "--config", configPath);
+        using var process = host.Start(host.CreateWorkingDirectory(), "review", Path.GetDirectoryName(configPath)!);
         var (stdout, stderr) = await ReadProcessOutputAsync(process);
 
         Assert.Equal(2, process.ExitCode);
