@@ -1,61 +1,36 @@
 ---
-status: draft
+status: ready
 ---
 
-# Test evidence for nontrivial production functions
+# Missing test evidence candidates
 
 ## Intention
 
-Autonomous changes need deterministic tests as feedback. The review should identify nontrivial C# functions for which the loaded solution offers no statically attributable executable test, so a reviewer or agent can decide where a useful test is missing. A finding is an investigation prompt, not a claim that the function is untested at runtime or that a particular test is good.
+Tests provide deterministic feedback for autonomous changes. This analysis identifies structurally nontrivial production C# functions for which the loaded solution contains no statically resolved call path from a recognized test method. A finding asks a reviewer to investigate useful tests; it never claims that runtime coverage is zero or that an existing test checks the right behavior.
 
 ## Scope
 
 ### Must
 
-- Add one report-only review analysis for production C# functions. Use the existing solution snapshot, source classifier, analysis registry, configuration, baseline selection, and Markdown reporting contracts.
-- Examine executable ordinary methods, constructors, and property accessors, including private members. Exclude test projects and generated documents or symbols with the shared classifier. Do not count local functions and lambdas as separate subjects; attribute their control flow to the containing function only when it belongs to that function's execution.
-- Select structurally nontrivial functions when either the decision count reaches a configurable minimum (proposed default: 3) or decision nesting reaches a configurable minimum (proposed default: 2). Reuse the existing control-flow definitions where they fit, including switch arms and grouped labels. Report both raw values and the effective thresholds as finding data. Method length alone is not a gate.
-- Identify executable test methods in recognized test projects by test-framework semantics. Attribute a function to a test when a semantically resolved call or method reference occurs directly in that test method or in a test helper reached from it. Count distinct originating test methods, not assertions or files. A mere test-class name, `typeof`, `nameof`, comment, or reference from an unexecuted helper is not test evidence. Do not claim that a static call path proves execution of any branch.
-- Report functions with zero such test origins, with source location, stable symbol identity, structural measurements, and a review question about which behavior and failure paths warrant tests. If only a production entry point called by a test reaches the function, make that limitation clear: the function may be covered indirectly even though no test origin is attributable under this rule.
-- Keep the analysis informational. Findings do not fail builds, trigger refactoring, or require tests mechanically. Do not add source-comment suppressions, `// disabled`, `@covers`, or equivalent evidence markers. The normal per-analysis `enabled` configuration remains available.
-- Handle unresolved or unsupported bindings explicitly: a missing proof of test association must not silently become a confident zero-test claim. State the uncertainty in the finding or skip the affected subject with a documented reason; the implementation contract must settle which before `ready`.
+- Add one enabled-by-default, report-only review analysis with the stable ID `missing-test-evidence-candidates` and behavior version `1`. Use the existing solution snapshot, shared production/test and generated-source classifier, analysis registry, configuration validation, baseline, and Markdown report contracts. Emit one finding per eligible function with no attributed test path.
+- Eligible functions are explicit executable ordinary methods, constructors, property and indexer getters/setters, event add/remove accessors, and user-defined operators/conversions in production C# projects, regardless of accessibility. Include expression bodies and the implementation part of partial methods. Exclude declarations without a body and generated documents or symbols. Local functions and lambdas are neither separate candidates nor part of a containing function's complexity measurement.
+- Measure a function body with the existing control-flow definitions: `decisionCount` counts each `if`, switch section or expression arm, conditional expression, loop, and `catch`; grouped switch labels count as one section. `maxDecisionNesting` is the deepest level of these decisions, with an `else if` chain at one level. A function is nontrivial when `decisionCount >= minDecisionCount` **or** `maxDecisionNesting >= minDecisionNesting`. Defaults are `3` and `2`; both options accept JSON integers from `1` through `Int32.MaxValue`. Length, name, and type size are not selection gates.
+- Recognize test roots only in projects classified as tests. Roots are source methods carrying xUnit `Fact`/`Theory` (including derived attributes and xUnit v3 `IFactAttribute` implementations), NUnit `Test`, `TestCase`, or `TestCaseSource`, or MSTest `TestMethod`/`DataTestMethod` inside a `TestClass`, including derived attributes. One parameterized method is one root regardless of its data rows. Do not use class names, method names, `typeof`, `nameof`, comments, or mere membership in a test project as test evidence. Exclude a root when static framework metadata marks the entire method or fixture skipped or explicit for an ordinary unfiltered test run (`Skip`, `Ignore`, or `Explicit`); do not attempt to evaluate dynamic conditions or data sources.
+- Build a possible-call graph from the loaded C# solution and traverse it from every recognized test root without an arbitrary depth limit. An edge exists for a semantically resolved invocation, object creation, getter/setter or event accessor use, or user-defined operator/conversion call. Traverse through test helpers and production functions, including private functions and source-generated intermediate code. Calls syntactically inside a reached function's lambda or local function are possible edges of that function; this is deliberately conservative because the callback may never run. A method-group reference alone is not an edge. For virtual/interface calls, follow the statically bound target only; do not invent runtime dispatch to implementations. A function with at least one path is treated as test-associated regardless of the number of roots or branches.
+- Report a nontrivial function with no resolved path as `no static test path`, not `no tests`. Mark the finding `attribution uncertain` when a reachable unresolved binding, method group, or virtual/interface dispatch could target that function. If an unresolved binding cannot be narrowed to affected functions, mark every otherwise reportable function uncertain. Reflection, dependency injection, external tests, dynamic dispatch, runtime branch execution, and custom test discovery can also hide associations; explain these general limits in the report. Failure to obtain a required compilation or semantic model fails the analysis rather than publishing partial results.
+- Give each finding a stable symbol identity and declaration location, using the existing DocId-with-qualified-name-fallback convention. Store raw decision values and effective thresholds in finding metrics, and show those values plus the uncertainty label in the compact Markdown signal. Ask the reviewer which behavior, boundary, and failure paths deserve tests. The analysis must not assert a minimum number of tests, prescribe happy/error-path counts, fail a build, generate tests, or refactor code.
+- Preserve the complete `all-findings` view. Because absence of a test path depends on the whole C# snapshot, apply a conservative rule only to this analysis in `changed-files`: with no baseline, show every finding; with a baseline, show every current finding from this analysis if any C# snapshot path was added, changed, or deleted, and none if no C# snapshot path changed. Explain this analysis-specific selection rule in the report index. Other analyses retain their existing file-based selection.
+- Expose only `enabled`, `minDecisionCount`, and `minDecisionNesting` as configuration controls. Do not add source-comment suppressions, `// disabled`, `@covers`, exemption lists, or per-function overrides. Update the repository example configuration and current-state documentation when implemented.
 
 ### Not
 
-- Runtime coverage instrumentation, executing the target's tests, evaluating assertion quality, or proving that happy, error, and boundary cases are covered.
-- A fixed requirement for two or more tests per function, a test-count score, or automatic test generation. The report can show the number of attributable tests for candidate reasoning without judging test adequacy.
-- One-to-one adoption of AiNetLinter's class-level `StaticTestSentinel`, naming, `typeof`, or comment-based coverage and exemptions.
-- New build-breaking analyzer diagnostics or changes to the existing control-flow-outlier analysis.
+- Runtime instrumentation or execution of the target tests; proof of coverage, assertion quality, test success, or which paths run.
+- A finding for functions with one or more static test paths solely because their decision count exceeds their test count. One possible path is enough to remove a function from this analysis; test sufficiency remains a reviewer decision.
+- AiNetLinter's class-level `StaticTestSentinel` behavior, naming/`typeof`/comment matches, or its exemptions.
+- Build-breaking diagnostics, changes to existing analysis thresholds, and automatic source or test edits.
 
 ## Verification
 
-- Focused analysis tests should cover nontrivial selection and thresholds; direct test calls, test-helper calls, method groups, names/comments without calls, multiple test origins, private functions, generated/test-project exclusions, and unresolved bindings.
-- Host-level tests should verify configuration validation and generated defaults, report-only output and source identity, empty results, repeat runs after source/test changes, and no publication after analysis failure or cancellation.
-- Run the affected FastTests and IntegrationTests and the required project gates. Update current-state documentation only with behavior verified after implementation.
-
-## Working memory (draft only)
-
-- Existing AiNetReview `method-control-flow-outliers` measures `decisionCount` and `maxDecisionNesting` for ordinary methods; the source classifier recognizes test projects and generated C#; `SolutionReferenceIndex` records production/test references and symbol-local binding uncertainty. It does not itself identify executable test origins. See `docs/review/findings.md` and `docs/development/adding-review-analyses.md`.
-- AiNetLinter's `StaticTestSentinel` is class-level and accepts naming, `typeof`, and `@covers`; its MCP test context also distinguishes direct member invocations from weaker evidence. This task deliberately uses stronger function-level evidence and no comment-based exemptions.
-- Decision pending: should the first analysis report only zero attributable test origins, or also functions with some tests but many decision paths? Recommendation: zero only. Static metrics cannot establish which paths a test exercises, so a minimum test count would create an arbitrary adequacy claim. A reviewer can inspect reported complexity and add multiple tests where justified.
-- Decision pending: when one function has unresolved test-side bindings, should the report include an explicitly uncertain candidate or omit it? Recommendation: include it with clear uncertainty so the reviewer can investigate without treating absence as proof.
-
-## Original request
-
-Im Schwester Projekt AiNetLinter haben wir etwas wie test abdeckung.
-
-das soll nicht 1:1 hier her übernommen werden aber so grob vom konzept her.
-wir willen hier keine // disabled dinge haben.
-
-grundsätzlich sollte diese analyse ermitteln welche funktionen nicht trivial sind und KEINE tests haben.
-wie genau wir das messen können und welche konfigurierbaren metriken wir brauchen müsstest du entscheiden und dir überlegen.
-
-tests sind essenziell für vollautonome agentische entwicklung da sie ein deterministisches ergebnis liefern.
-
-ob der test sinnvoll ist können wir - vermute ich - per roslyn nciht feststellen.
-das wäre auch nicht der task.
-
-vielleicht sollte es mehrere tests geben?
-nicht nur happy path tests?
-
-wir reporten das ja nur und der agent muss entscheiden was unsinn ist und was man davon umsetzen sollte.
+- Analysis tests cover each candidate kind, both selection thresholds and their boundary values, skipped/generated/test-project exclusions, test roots across the supported frameworks, direct and transitive paths, private methods, cycles, lambdas, method groups, virtual/interface dispatch, and uncertain bindings. Test names and comments without calls must not suppress a finding.
+- Configuration and host tests cover defaults and invalid values, deterministic finding identity and compact signals, empty results, repeated runs after test and production edits, analysis failure/cancellation without publication, and the special `changed-files` behavior for added, changed, and deleted C# files with and without a baseline.
+- Run the affected FastTests, IntegrationTests, build gate, documentation review, and `git diff --check` before completion. Update `docs/` and the repository README to describe verified current behavior.
