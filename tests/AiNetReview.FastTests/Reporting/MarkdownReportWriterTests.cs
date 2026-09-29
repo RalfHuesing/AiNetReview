@@ -125,7 +125,8 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("Review guidance", index, StringComparison.Ordinal);
         Assert.Contains("First remove only clear false positives", index, StringComparison.Ordinal);
         Assert.Contains("Set a new baseline", index, StringComparison.Ordinal);
-        Assert.Contains("--cmd baseline --config", index, StringComparison.Ordinal);
+        Assert.Contains($" baseline '{config.ProjectRoot}'", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("--cmd", index, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -171,8 +172,10 @@ public sealed class MarkdownReportWriterTests
         ]), baselineCommandContext: context);
         var index = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "index.md"));
 
-        Assert.Contains($"& '{executablePath}' --cmd baseline --project-path '{config.ProjectRoot}' --config '{configurationPath}' --output-directory '{outputDirectory}'", index, StringComparison.Ordinal);
-        Assert.Contains($"This writes `baseline.json` to `{outputDirectory.Replace('\\', '/')}`.", index, StringComparison.Ordinal);
+        Assert.Contains($"& '{executablePath}' baseline '{config.ProjectRoot}'", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("--cmd", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("--config", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("--output-directory", index, StringComparison.Ordinal);
         Assert.Contains("No analysis report files were created.", index, StringComparison.Ordinal);
     }
 
@@ -218,7 +221,7 @@ public sealed class MarkdownReportWriterTests
         Assert.Equal(completeBeforeEdit, await File.ReadAllTextAsync(completeReportPath));
 
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
-        Assert.Contains("target project\\ainetreview.json'", index, StringComparison.Ordinal);
+        Assert.Contains($" baseline '{config.ProjectRoot}'", index, StringComparison.Ordinal);
     }
 
     private static ReviewConfig CreateConfig(string root, params ReportAnalysis[] analyses) => CreateConfig(root, true, analyses);

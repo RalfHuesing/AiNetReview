@@ -183,31 +183,12 @@ public sealed class MarkdownReportWriter
         var executable = baselineCommandContext?.ExecutablePath
             ?? Environment.ProcessPath
             ?? throw new InvalidOperationException("The current process executable path is unavailable.");
-        var baselineConfigPath = baselineCommandContext?.ConfigurationPath
-            ?? (configurationPath is null ? Path.Combine(config.ProjectRoot, "ainetreview.json") : Path.GetFullPath(configurationPath));
         builder.Append("## Changed files report\n\n[Open the changed files view](changed-files/index.md)\n\n")
             .Append("## All findings report\n\n[Open the complete findings view](all-findings/index.md)\n\n")
             .Append("## Set a new baseline\n\n")
             .Append("Run this PowerShell command from any directory to set the comparison point to the current source files:\n\n")
-            .Append("```powershell\n& ").Append(QuotePowerShell(Path.GetFullPath(executable))).Append(" --cmd baseline ");
-        if (baselineCommandContext is not null)
-        {
-            builder.Append("--project-path ").Append(QuotePowerShell(Path.GetFullPath(config.ProjectRoot))).Append(' ');
-        }
-
-        builder.Append("--config ").Append(QuotePowerShell(Path.GetFullPath(baselineConfigPath)));
-        if (baselineCommandContext is not null)
-        {
-            builder.Append(" --output-directory ").Append(QuotePowerShell(Path.GetFullPath(baselineCommandContext.OutputDirectory)));
-        }
-
-        builder.Append("\n```\n\n");
-        if (baselineCommandContext is not null)
-        {
-            builder.Append("This writes `baseline.json` to `")
-                .Append(Path.GetFullPath(baselineCommandContext.OutputDirectory).Replace('\\', '/'))
-                .Append("`. ");
-        }
+            .Append("```powershell\n& ").Append(QuotePowerShell(Path.GetFullPath(executable))).Append(" baseline ")
+            .Append(QuotePowerShell(Path.GetFullPath(config.ProjectRoot))).Append("\n```\n\n");
 
         builder.Append("The command replaces the baseline for all source files and does not require a report.\n\n")
             .Append("## Review guidance\n\n")

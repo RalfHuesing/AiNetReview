@@ -14,7 +14,7 @@
     - Parser akzeptiert `review [path]` und `baseline [path]`.
     - Aufruf ohne Subcommand oder mit `--cmd` / `--config` wird mit Exit-Code 2 abgewiesen.
 
-- [ ] **Punkt 2 — Baseline-Befehl in index.md und CLI-Dokumentation anpassen**
+- [x] **Punkt 2 — Baseline-Befehl in index.md und CLI-Dokumentation anpassen**
   - Intention: Den in `index.md` generierten Handlungshinweis für Review-Agenten und die Produktdokumentation an die neue Syntax anpassen.
   - Scope:
     - `src/AiNetReview.Core/Reporting/MarkdownReportWriter.cs`: Generierter Baseline-Befehl lautet `<exePath> baseline "<projectRoot>"`.
