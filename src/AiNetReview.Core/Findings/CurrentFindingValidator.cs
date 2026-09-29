@@ -60,7 +60,7 @@ public sealed class CurrentFindingValidator
             cancellationToken.ThrowIfCancellationRequested();
             if (finding is null)
             {
-                throw Invalid("A analysis returned a null finding.");
+                throw Invalid("An analysis returned a null finding.");
             }
 
             RequireText(finding.ProjectPath, "projectPath");
