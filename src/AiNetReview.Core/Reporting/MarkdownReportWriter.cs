@@ -180,15 +180,25 @@ public sealed class MarkdownReportWriter
 
         builder.Append(reportLinks.Count == 0 ? "No analysis report files were created.\n\n" : string.Join('\n', reportLinks) + "\n\n");
 
-        var executable = baselineCommandContext?.ExecutablePath
-            ?? Environment.ProcessPath
-            ?? throw new InvalidOperationException("The current process executable path is unavailable.");
         builder.Append("## Changed files report\n\n[Open the changed files view](changed-files/index.md)\n\n")
             .Append("## All findings report\n\n[Open the complete findings view](all-findings/index.md)\n\n")
-            .Append("## Set a new baseline\n\n")
-            .Append("Run this PowerShell command from any directory to set the comparison point to the current source files:\n\n")
-            .Append("```powershell\n& ").Append(QuotePowerShell(Path.GetFullPath(executable))).Append(" baseline ")
-            .Append(QuotePowerShell(Path.GetFullPath(config.ProjectRoot))).Append("\n```\n\n");
+            .Append("## Set a new baseline\n\n");
+
+        if (baselineCommandContext is null)
+        {
+            var executable = Environment.ProcessPath
+                ?? throw new InvalidOperationException("The current process executable path is unavailable.");
+            builder.Append("Run this PowerShell command from any directory to set the comparison point to the current source files:\n\n")
+                .Append("```powershell\n& ").Append(QuotePowerShell(Path.GetFullPath(executable))).Append(" baseline ")
+                .Append(QuotePowerShell(Path.GetFullPath(config.ProjectRoot))).Append("\n```\n\n");
+        }
+        else
+        {
+            builder.Append("Run this PowerShell command to update the centrally stored baseline for this manual audit target without writing into the target repository:\n\n")
+                .Append("```powershell\n& ").Append(QuotePowerShell(baselineCommandContext.ScriptPath))
+                .Append(" -Target ").Append(QuotePowerShell(baselineCommandContext.TargetName))
+                .Append(" -BaselineOnly\n```\n\n");
+        }
 
         builder.Append("The command replaces the baseline for all source files and does not require a report.\n\n")
             .Append("## Review guidance\n\n")

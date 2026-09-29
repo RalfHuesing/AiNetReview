@@ -16,6 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed partial class AuditRepositoryIntegrationTests
 {
     private const string TargetEnvironmentVariable = "AINETREVIEW_AUDIT_TARGET";
+    private const string BaselineOnlyEnvironmentVariable = "AINETREVIEW_AUDIT_BASELINE_ONLY";
 
     [Fact]
     [Trait("Category", "Audit")]
@@ -67,25 +68,36 @@ public sealed partial class AuditRepositoryIntegrationTests
         await using var services = BuildProductionServices();
         var config = services.GetRequiredService<ReviewConfigValidator>()
             .ValidateForAudit(repositoryPath, standardConfigJson, outputDirectory);
-        var hostExecutablePath = Path.Combine(
-            AppContext.BaseDirectory,
-            OperatingSystem.IsWindows() ? "AiNetReview.exe" : "AiNetReview");
-        Assert.True(File.Exists(hostExecutablePath), $"The referenced AiNetReview host executable was not found at '{hostExecutablePath}'.");
+        var auditScriptPath = Path.Combine(hostRoot, "scripts", "test-audit.ps1");
+        Assert.True(File.Exists(auditScriptPath), $"The manual audit script was not found at '{auditScriptPath}'.");
         using var loaded = await services.GetRequiredService<SolutionLoader>().LoadAsync(config);
         var baselinePath = Path.Combine(outputDirectory, "baseline.json");
+        var targetConfigPath = Path.Combine(repositoryPath, "ainetreview.json");
+        var targetBaselinePath = Path.Combine(repositoryPath, "audit-reporting", "baseline.json");
+        var targetConfigBefore = File.Exists(targetConfigPath) ? await File.ReadAllBytesAsync(targetConfigPath) : null;
+        var targetBaselineBefore = File.Exists(targetBaselinePath) ? await File.ReadAllBytesAsync(targetBaselinePath) : null;
         await new BaselineWriter().WriteAsync(config, loaded);
 
         Assert.True(File.Exists(baselinePath));
+        if (Environment.GetEnvironmentVariable(BaselineOnlyEnvironmentVariable) == "1")
+        {
+            AssertFileStateUnchanged(targetConfigPath, targetConfigBefore);
+            AssertFileStateUnchanged(targetBaselinePath, targetBaselineBefore);
+            return;
+        }
+
         var result = await services.GetRequiredService<ReviewRunner>().RunAsync(config, loaded);
+        var baselineCommandContext = new BaselineCommandContext(auditScriptPath, targetName);
         var published = await services.GetRequiredService<AiNetReview.Core.Reporting.MarkdownReportWriter>()
-            .WriteAsync(config, result);
+            .WriteAsync(config, result, baselineCommandContext: baselineCommandContext);
 
         var runDirectory = Path.Combine(outputDirectory, published.RunId);
         Assert.True(File.Exists(Path.Combine(runDirectory, "index.md")));
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
-        var escapedRepositoryPath = repositoryPath.Replace("\\", "\\\\", StringComparison.Ordinal);
+        var escapedRepositoryPath = repositoryPath.Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("-", "\\-", StringComparison.Ordinal);
         Assert.Contains($"- Repository: `{escapedRepositoryPath}`", index, StringComparison.Ordinal);
-        Assert.Contains($"& '{hostExecutablePath}' baseline '{repositoryPath}'", index, StringComparison.Ordinal);
+        Assert.Contains($"& '{auditScriptPath}' -Target '{targetName}' -BaselineOnly", index, StringComparison.Ordinal);
         AssertMarkdownLinksResolve(runDirectory, repositoryPath);
         Assert.Equal(Path.Combine(outputDirectory, published.RunId, "index.md"),
             Path.GetFullPath(Path.Combine(repositoryPath, published.IndexPath.Replace('/', Path.DirectorySeparatorChar))));
@@ -179,6 +191,17 @@ public sealed partial class AuditRepositoryIntegrationTests
         var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         return canonicalPath.Equals(canonicalRoot, comparison)
             || canonicalPath.StartsWith(canonicalRoot + Path.DirectorySeparatorChar, comparison);
+    }
+
+    private static void AssertFileStateUnchanged(string path, byte[]? previousContents)
+    {
+        if (previousContents is null)
+        {
+            Assert.False(File.Exists(path), $"The manual audit created a file in the target repository: '{path}'.");
+            return;
+        }
+
+        Assert.Equal(previousContents, File.ReadAllBytes(path));
     }
 
     private static void AssertMarkdownLinksResolve(string runDirectory, string repositoryPath)

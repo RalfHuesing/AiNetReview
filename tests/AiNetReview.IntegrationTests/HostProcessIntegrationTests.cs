@@ -394,6 +394,7 @@ public sealed class HostProcessIntegrationTests
             using var centralLoaded = await provider.GetRequiredService<AiNetReview.Core.Analysis.SolutionLoader>().LoadAsync(centralConfig);
             await provider.GetRequiredService<BaselineWriter>().WriteAsync(centralConfig, centralLoaded);
             Assert.True(File.Exists(Path.Combine(centralOutput, "baseline.json")));
+            Assert.Equal(previousContents, await File.ReadAllTextAsync(baselinePath));
 
             var writer = new BaselineWriter(_ => ValueTask.FromException(new IOException("fixture publication failure")));
             await Assert.ThrowsAsync<IOException>(() => writer.WriteAsync(config, loaded));

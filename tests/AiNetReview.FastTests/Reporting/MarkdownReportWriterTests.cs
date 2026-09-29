@@ -157,25 +157,21 @@ public sealed class MarkdownReportWriterTests
     }
 
     [Fact]
-    public async Task WriteAsync_UsesTheSuppliedCentralHostAndBaselineDestination()
+    public async Task WriteAsync_UsesTheCentralAuditBaselineScriptWhenSupplied()
     {
         using var temp = TestTempDirectory.Create();
         var analysis = new ReportAnalysis("central-analysis", "Central", "active");
         var config = CreateConfig(temp.DirectoryPath, analysis);
-        var executablePath = Path.Combine(temp.DirectoryPath, "host", "AiNetReview.exe");
-        var configurationPath = Path.Combine(temp.DirectoryPath, "central audit", "target", "baseline-config", "ainetreview.json");
-        var outputDirectory = Path.Combine(temp.DirectoryPath, "central audit", "target");
-        var context = new BaselineCommandContext(executablePath, configurationPath, outputDirectory);
+        var scriptPath = Path.Combine(temp.DirectoryPath, "scripts", "test-audit.ps1");
+        var context = new BaselineCommandContext(scriptPath, "sample-target");
 
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
             new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, ReviewAnalysisResult.Empty),
         ]), baselineCommandContext: context);
         var index = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "index.md"));
 
-        Assert.Contains($"& '{executablePath}' baseline '{config.ProjectRoot}'", index, StringComparison.Ordinal);
-        Assert.DoesNotContain("--cmd", index, StringComparison.Ordinal);
-        Assert.DoesNotContain("--config", index, StringComparison.Ordinal);
-        Assert.DoesNotContain("--output-directory", index, StringComparison.Ordinal);
+        Assert.Contains($"& '{scriptPath}' -Target 'sample-target' -BaselineOnly", index, StringComparison.Ordinal);
+        Assert.DoesNotContain($" baseline '{config.ProjectRoot}'", index, StringComparison.Ordinal);
         Assert.Contains("No analysis report files were created.", index, StringComparison.Ordinal);
     }
 
