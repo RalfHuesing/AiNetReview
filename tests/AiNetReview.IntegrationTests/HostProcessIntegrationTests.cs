@@ -219,7 +219,8 @@ public sealed class HostProcessIntegrationTests
             var analysisReport = await File.ReadAllTextAsync(analysisReportPath);
             Assert.Contains("# Method Control-Flow Outliers", analysisReport, StringComparison.Ordinal);
             Assert.Contains("## Findings", analysisReport, StringComparison.Ordinal);
-            Assert.DoesNotContain("Metrics", analysisReport, StringComparison.Ordinal);
+            Assert.Contains("CodeLineMetrics.cs", analysisReport, StringComparison.Ordinal);
+            Assert.DoesNotContain("decisionCount", analysisReport, StringComparison.Ordinal);
         }
         else
         {
