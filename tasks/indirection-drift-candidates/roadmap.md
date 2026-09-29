@@ -14,7 +14,7 @@ The [ready concept](Konzept.md) is the binding contract for every point. Complet
   - Not: Do not register the analysis in production or change Markdown rendering here. Do not add a score, configurable threshold, or baseline read to the analysis.
   - Acceptance: Direct analysis and runner tests validate the complete finding data against the loaded snapshot, including one finding per qualifying root and no finding for rejected paths. Run affected tests and the required build gate before committing.
 
-- [ ] **3 — Expose the analysis in the product**
+- [x] **3 — Expose the analysis in the product**
   - Intention: Make the new candidates usable in normal audits without changing existing analyses.
   - Scope: Add explicit production registration; update repository-root `ainetreview.json` and generated-config tests. Add the dedicated “Forwarding path” Markdown rendering that preserves evidence order and prints the three explanatory metrics. Add reporter and host integration tests for nonempty/empty output, configuration, failure/cancellation publication, and unchanged formats of existing analyses. Update affected current-state `docs/` pages and indexes in the same commit.
   - Not: No new CLI command, baseline format, runtime call resolution, build gate, or automatic code rewrite.

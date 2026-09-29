@@ -8,6 +8,7 @@ using AiNetReview.Core.ReviewAnalyses.DeadCodeCandidates;
 using AiNetReview.Core.ReviewAnalyses.DuplicateCodeCandidates;
 using AiNetReview.Core.ReviewAnalyses.MethodControlFlowOutliers;
 using AiNetReview.Core.ReviewAnalyses.NonAsciiIdentifiers;
+using AiNetReview.Core.ReviewAnalyses.IndirectionDriftCandidates;
 
 public sealed class DefaultReviewConfigGeneratorTests
 {
@@ -28,6 +29,7 @@ public sealed class DefaultReviewConfigGeneratorTests
             new DeadCodeCandidatesAnalysis(),
             new MethodControlFlowOutliersAnalysis(),
             new NonAsciiIdentifiersAnalysis(),
+            new IndirectionDriftCandidatesAnalysis(),
         ]);
         var generator = new DefaultReviewConfigGenerator(registry);
 

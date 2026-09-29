@@ -10,11 +10,86 @@ using AiNetReview.Core.Analysis;
 using AiNetReview.Bootstrap;
 using AiNetReview.Cli;
 using AiNetReview.Core.ReviewAnalyses;
+using AiNetReview.Core.ReviewAnalyses.IndirectionDriftCandidates;
 using AiNetReview.IntegrationTests.FixtureAnalyses;
 using Microsoft.Extensions.DependencyInjection;
 
 public sealed class HostAdapterIntegrationTests
 {
+    [Fact]
+    public async Task ReviewCommand_ProductionIndirectionAnalysisPublishesOrderedPathsAndNoPartialRuns()
+    {
+        using var tempDirectory = TestTempDirectory.Create("ainet-host-indirection-");
+        var projectRoot = tempDirectory.GetPath("adapter-project");
+        var projectDirectory = Path.Combine(projectRoot, "Sample");
+        Directory.CreateDirectory(projectDirectory);
+        var projectFile = Path.Combine(projectDirectory, "Sample.csproj");
+        var apiPath = Path.Combine(projectDirectory, "ZApi.cs");
+        var servicePath = Path.Combine(projectDirectory, "BService.cs");
+        var repositoryPath = Path.Combine(projectDirectory, "ARepository.cs");
+        const string projectContent = "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>";
+        const string apiSource = "public static class ZApi { public static int Run(int value) { return BService.Run(value); } }";
+        const string forwardingServiceSource = "public static class BService { public static int Run(int value) { return ARepository.Run(value); } }";
+        const string endpointSource = "public static class ARepository { public static int Run(int value) { return value; } }";
+        await File.WriteAllTextAsync(projectFile, projectContent);
+        await File.WriteAllTextAsync(apiPath, apiSource);
+        await File.WriteAllTextAsync(servicePath, forwardingServiceSource);
+        await File.WriteAllTextAsync(repositoryPath, endpointSource);
+        await RestoreProjectAsync(projectFile, projectDirectory);
+        await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
+            "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
+        var configPath = Path.Combine(projectRoot, "ainetreview.json");
+        await File.WriteAllTextAsync(configPath,
+            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"indirection-drift-candidates\":{\"enabled\":true}}}");
+
+        var first = await RunProductionIndirectionAsync(configPath);
+        Assert.Equal(1, first.Detected);
+        var runDirectory = Path.Combine(projectRoot, "reports", first.RunId);
+        var allReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "all-findings", "indirection-drift-candidates.md"));
+        var changedReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "changed-files", "indirection-drift-candidates.md"));
+        Assert.Equal(allReport, changedReport);
+        Assert.Contains("Forwarding path: 2 forwarding edges across 3 types and 3 files", allReport, StringComparison.Ordinal);
+        Assert.True(allReport.IndexOf("`Sample/ZApi.cs`", StringComparison.Ordinal)
+            < allReport.IndexOf("`Sample/BService.cs`", StringComparison.Ordinal));
+        Assert.True(allReport.IndexOf("`Sample/BService.cs`", StringComparison.Ordinal)
+            < allReport.IndexOf("`Sample/ARepository.cs`", StringComparison.Ordinal));
+        Assert.Contains("What responsibility does each forwarding layer add", allReport, StringComparison.Ordinal);
+
+        await File.WriteAllTextAsync(servicePath, "public static class BService { public static int Run(int value) { return value; } }");
+        var empty = await RunProductionIndirectionAsync(configPath);
+        Assert.Equal(0, empty.Detected);
+        var emptyRunDirectory = Path.Combine(projectRoot, "reports", empty.RunId);
+        Assert.False(File.Exists(Path.Combine(emptyRunDirectory, "all-findings", "indirection-drift-candidates.md")));
+        Assert.False(File.Exists(Path.Combine(emptyRunDirectory, "changed-files", "indirection-drift-candidates.md")));
+
+        var publishedRuns = Directory.GetDirectories(Path.Combine(projectRoot, "reports")).Length;
+        await File.WriteAllTextAsync(repositoryPath, "public static class ARepository { public static int Run(int value) { return value; ");
+        var failed = await InvokeProductionIndirectionAsync(configPath);
+        Assert.Equal(3, failed.ExitCode);
+        using (var failureResponse = JsonDocument.Parse(failed.Error))
+        {
+            Assert.Equal("ANALYSIS_FAILED", failureResponse.RootElement.GetProperty("code").GetString());
+        }
+        Assert.Equal(publishedRuns, Directory.GetDirectories(Path.Combine(projectRoot, "reports")).Length);
+
+        await File.WriteAllTextAsync(repositoryPath, endpointSource);
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var cancelled = await InvokeProductionIndirectionAsync(configPath, cancellation.Token);
+        Assert.Equal(130, cancelled.ExitCode);
+        using (var cancelledResponse = JsonDocument.Parse(cancelled.Error))
+        {
+            Assert.Equal("CANCELLED", cancelledResponse.RootElement.GetProperty("code").GetString());
+        }
+        Assert.Equal(publishedRuns, Directory.GetDirectories(Path.Combine(projectRoot, "reports")).Length);
+
+        var services = new ServiceCollection();
+        services.AddAiNetReviewServices();
+        services.AddAiNetReviewAnalyses();
+        await using var provider = services.BuildServiceProvider();
+        Assert.IsType<IndirectionDriftCandidatesAnalysis>(provider.GetRequiredService<ReviewAnalysisRegistry>().GetRequired("indirection-drift-candidates"));
+    }
+
     [Fact]
     public async Task ReviewCommand_ProductionDuplicateCodeAnalysisPublishesCurrentCrossProjectClusters()
     {
@@ -290,7 +365,7 @@ public sealed class HostAdapterIntegrationTests
         var report = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "all-findings", "fixture-finding.md"));
         Assert.Contains("Fixture scenario 'base' requires review of FixtureCaseA.", report, StringComparison.Ordinal);
         Assert.Equal(
-            new[] { "dead-code-candidates", "duplicate-code-candidates", "fixture-finding", "method-control-flow-outliers", "non-ascii-identifiers" },
+            new[] { "dead-code-candidates", "duplicate-code-candidates", "fixture-finding", "indirection-drift-candidates", "method-control-flow-outliers", "non-ascii-identifiers" },
             provider.GetRequiredService<ReviewAnalysisRegistry>().Analyses.Select(static analysis => analysis.Descriptor.AnalysisId));
     }
 
@@ -403,6 +478,29 @@ public sealed class HostAdapterIntegrationTests
         return (
             response.RootElement.GetProperty("runId").GetString()!,
             response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
+    }
+
+    private static async Task<(string RunId, int Detected)> RunProductionIndirectionAsync(string configPath)
+    {
+        var result = await InvokeProductionIndirectionAsync(configPath);
+        Assert.True(result.ExitCode == 0, $"Production indirection audit failed: {result.Error}");
+        Assert.Empty(result.Error);
+        using var response = JsonDocument.Parse(result.Output);
+        return (
+            response.RootElement.GetProperty("runId").GetString()!,
+            response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
+    }
+
+    private static async Task<(int ExitCode, string Output, string Error)> InvokeProductionIndirectionAsync(
+        string configPath,
+        CancellationToken cancellationToken = default)
+    {
+        await using var provider = BuildProductionServices();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var exitCode = await new ReviewCommand().InvokeAsync(
+            ["review", Path.GetDirectoryName(configPath)!], provider, output, error, cancellationToken);
+        return (exitCode, output.ToString(), error.ToString());
     }
 
     private static async Task WriteDuplicateConfigAsync(string configPath, string minimumSimilarity)

@@ -306,7 +306,16 @@ public sealed class MarkdownReportWriter
             var finding = reviewFinding.Finding;
             var isCluster = finding.RelatedSymbols.Count > 1;
 
-            if (isCluster)
+            if (reviewFinding.AnalysisId == "indirection-drift-candidates")
+            {
+                builder.Append("- Forwarding path: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
+                foreach (var member in finding.Evidence)
+                {
+                    builder.Append("  - `").Append(member.SourcePath).Append("`: `")
+                        .Append(member.Label).Append("`\n");
+                }
+            }
+            else if (isCluster)
             {
                 builder.Append("- Cluster: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append('\n');
                 foreach (var symbol in finding.RelatedSymbols)
@@ -409,6 +418,13 @@ public sealed class MarkdownReportWriter
             var similarity = Metric(finding, "similarityScore");
             var minimumSimilarity = Metric(finding, "minimumSimilarityThreshold");
             return $"{FormatNumber(Metric(finding, "memberCount"))} methods; {FormatPercent(similarity)} similarity (minimum {FormatPercent(minimumSimilarity)})";
+        }
+
+        if (analysisId == "indirection-drift-candidates")
+        {
+            return FormatNumber(Metric(finding, "forwardingEdgeCount")) + " forwarding edges across "
+                + FormatNumber(Metric(finding, "distinctTypeCount")) + " types and "
+                + FormatNumber(Metric(finding, "distinctFileCount")) + " files";
         }
 
         if (analysisId == "non-ascii-identifiers")

@@ -12,6 +12,7 @@ using AiNetReview.Core.Findings;
 using AiNetReview.Core.Reporting;
 using AiNetReview.Core.ReviewAnalyses;
 using AiNetReview.Core.ReviewAnalyses.NonAsciiIdentifiers;
+using AiNetReview.Core.ReviewAnalyses.IndirectionDriftCandidates;
 
 public sealed class MarkdownReportWriterTests
 {
@@ -183,6 +184,54 @@ public sealed class MarkdownReportWriterTests
         Assert.True(File.Exists(Path.Combine(runDirectory, "all-findings", "duplicate-code-candidates.md")));
         var allFindingsIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "all-findings", "index.md"));
         Assert.Contains("Notice for AI agents:**", allFindingsIndex, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task WriteAsync_RendersForwardingPathInEvidenceOrderWithStructuralMetrics()
+    {
+        using var temp = TestTempDirectory.Create();
+        var analysis = new IndirectionDriftCandidatesAnalysis();
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        var finding = new FindingDraft(
+            "Sample/Sample.csproj",
+            "ZApi.cs",
+            "M:ZApi.Run(System.Int32)",
+            "transparent-forwarding-path",
+            1,
+            "Current statically declared path.",
+            new Dictionary<string, double>
+            {
+                ["forwardingEdgeCount"] = 2,
+                ["distinctTypeCount"] = 3,
+                ["distinctFileCount"] = 3,
+            },
+            [
+                new FindingEvidence("ZApi.cs", 1, "M:ZApi.Run(System.Int32)", "Forwards to service.", "return BService.Run(value);"),
+                new FindingEvidence("BService.cs", 1, "M:BService.Run(System.Int32)", "Forwards to repository.", "return ARepository.Run(value);"),
+                new FindingEvidence("ARepository.cs", 1, "M:ARepository.Run(System.Int32)", "Ends the path.", "return value;"),
+            ],
+            [
+                new FindingSymbol("Sample/Sample.csproj", "ARepository.cs", "M:ARepository.Run(System.Int32)", 1),
+                new FindingSymbol("Sample/Sample.csproj", "BService.cs", "M:BService.Run(System.Int32)", 1),
+                new FindingSymbol("Sample/Sample.csproj", "ZApi.cs", "M:ZApi.Run(System.Int32)", 1),
+            ]);
+
+        var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
+            new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([finding])),
+        ]));
+        var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
+        var allFindings = await File.ReadAllTextAsync(Path.Combine(runDirectory, "all-findings", "indirection-drift-candidates.md"));
+        var changedFiles = await File.ReadAllTextAsync(Path.Combine(runDirectory, "changed-files", "indirection-drift-candidates.md"));
+
+        Assert.Equal(allFindings, changedFiles);
+        Assert.Contains("- Forwarding path: 2 forwarding edges across 3 types and 3 files", allFindings, StringComparison.Ordinal);
+        Assert.True(allFindings.IndexOf("`ZApi.cs`: `M:ZApi.Run(System.Int32)`", StringComparison.Ordinal)
+            < allFindings.IndexOf("`BService.cs`: `M:BService.Run(System.Int32)`", StringComparison.Ordinal));
+        Assert.True(allFindings.IndexOf("`BService.cs`: `M:BService.Run(System.Int32)`", StringComparison.Ordinal)
+            < allFindings.IndexOf("`ARepository.cs`: `M:ARepository.Run(System.Int32)`", StringComparison.Ordinal));
+        Assert.DoesNotContain("Cluster:", allFindings, StringComparison.Ordinal);
+        Assert.DoesNotContain("return BService.Run(value)", allFindings, StringComparison.Ordinal);
+        Assert.DoesNotContain("#L1", allFindings, StringComparison.Ordinal);
     }
 
     [Fact]

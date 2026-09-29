@@ -39,6 +39,11 @@ public sealed class ZeroConfigIntegrationTests
         Assert.Contains("\"schemaVersion\": 1", generatedConfig, StringComparison.Ordinal);
         Assert.Contains("\"solution\": \"Sample.slnx\"", generatedConfig, StringComparison.Ordinal);
         Assert.Contains("\"outputDirectory\": \"audit-reporting\"", generatedConfig, StringComparison.Ordinal);
+        using (var generatedDocument = JsonDocument.Parse(generatedConfig))
+        {
+            Assert.Equal(JsonValueKind.True, generatedDocument.RootElement.GetProperty("analyses")
+                .GetProperty("indirection-drift-candidates").GetProperty("enabled").ValueKind);
+        }
 
         var reviewSubcommand = await InvokeAsync(["review", projectRoot], services);
         AssertSuccessfulReview(projectRoot, reviewSubcommand);

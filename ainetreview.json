@@ -15,6 +15,9 @@
       "minTokens": 30,
       "minimumSimilarity": "exact"
     },
+    "indirection-drift-candidates": {
+      "enabled": true
+    },
     "non-ascii-identifiers": {
       "enabled": true
     }
