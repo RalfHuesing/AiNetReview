@@ -10,9 +10,13 @@ Schritt 3 wurde noch nicht gestartet. Bei `HEAD 1c96537` war der Arbeitsbaum vor
 - Der Diagnoseversuch mit einer vorübergehenden Konsolenausgabe in `ReviewCommand` wurde vollständig zurückgenommen. Es bleibt keine Codeänderung aus dieser Prüfung.
 - Die lokalen Audit-Profile und Ziel-Solutions für AiNetReview und AiNetLinter sind vorhanden. Das bestehende AiNetLinter-Profil hat jedoch `enabled: false`; beide vorhandenen Profile listen `code-size-candidates` noch nicht auf. C4 muss deshalb einen tatsächlich ausgeführten Audit mit passenden Defaults nachweisen und darf einen übersprungenen Profil-Lauf nicht als Stichprobe zählen.
 
+## Geprüfter Deaktivierungsversuch
+
+Auf Nutzerwunsch wurden die zwei zuvor auffälligen Integrationstests probeweise mit sichtbarem xUnit-`Skip` deaktiviert. Der vollständige normale Lauf blieb rot: 89 bestanden, 2 übersprungen, 1 fehlgeschlagen. `MarkdownReportWriterPublicationTests.WriteAsync_PublishesUniqueConcurrentRunsAndPreservesEarlierRuns` scheiterte bei `MarkdownReportWriter.WriteAsync`, Zeile 94, mit `System.IO.IOException: Access to the path ... is denied` beim Verschieben des temporären Reportverzeichnisses. Das spricht für einen breiteren Fehlerbereich der Reportveröffentlichung; die genaue Ursache ist noch nicht belegt. Die zwei probeweisen Skips wurden vollständig zurückgenommen. Es ist kein Integrationstest dauerhaft deaktiviert.
+
 ## Nächster Punkt
 
-[A1 der übergeordneten Roadmap](roadmap.md): Die Kontrollflussmessung mit betroffenen Tests umsetzen. Den vorbestehenden Integrationsfehler bis A4 als bekannten Gate-Befund mitführen; keine wiederholten vollständigen Testläufe ohne neue Hypothese.
+[A1 der übergeordneten Roadmap](roadmap.md): Die Kontrollflussmessung mit betroffenen Tests umsetzen. Den breiteren vorbestehenden Reportpublikationsfehler bis A4 als bekannten Gate-Befund mitführen; keine wiederholten vollständigen Testläufe ohne neue Hypothese.
 
 ## Blocker und Restbefunde
 
