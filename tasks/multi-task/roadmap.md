@@ -44,7 +44,7 @@ Start nur nach geschlossenem Core-Aggregat und Prüfung von `ControlFlowMetrics.
 Start nur nach geschlossenem Core-Aggregat und Prüfung von `ControlFlowMetrics.Measure` und `CodeLineMetrics` im Code. Eine dokumentierte B-Blockade ändert diese Voraussetzung nicht.
 
 - [ ] **Größen-Task abgeschlossen** — Aggregat aller folgenden Punkte; nur bei erfüllter Fach-Roadmap samt realer Stichprobe schließen.
-  - [ ] **C1 — Membergrößen messen** — [Größen-Roadmap, Punkt 1](../analyse-groessen/roadmap.md) vollständig ausführen und abnehmen.
+  - [x] **C1 — Membergrößen messen** — [Größen-Roadmap, Punkt 1](../analyse-groessen/roadmap.md) vollständig ausführen und abnehmen.
   - [ ] **C2 — Klassen und Dateien messen** — [Größen-Roadmap, Punkt 2](../analyse-groessen/roadmap.md) vollständig ausführen und abnehmen.
   - [ ] **C2-Audit — Aggregation und Dateimaße prüfen**
     - Intention: Fehler bei `partial`-Teilen, verschachtelten Typen und Dateigrenzen vor der Registrierung entdecken.

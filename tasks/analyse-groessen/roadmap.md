@@ -2,7 +2,7 @@
 
 Verbindlicher Vertrag: [Konzept.md](Konzept.md). Die Punkte werden in Reihenfolge bearbeitet. Vor Punkt 1 muss [`core-code-metriken`](../core-code-metriken/roadmap.md) abgeschlossen und seine beiden Mess-APIs im Code verifiziert sein. Bei einer Abweichung wird zuerst diese Abhängigkeit geklärt; in diesem Task entsteht keine Ersatzmessung. Jeder Umsetzungspunkt umfasst seine fokussierten Tests, Prüfung betroffener `docs/`-Seiten, relevante Projekt-Gates, `git diff --check`, das Abhaken seiner Checkbox und einen atomaren Commit. Kein Schritt 3 beginnt durch diese Roadmap automatisch.
 
-- [ ] **1. Member-Größenkandidaten messen und auswählen**
+- [x] **1. Member-Größenkandidaten messen und auswählen**
   - Intention: Lange verzweigte und extrem lange ausführbare Member nach genau einem nachvollziehbaren Vertrag auswählen.
   - Scope: Internen, noch nicht produktiv registrierten `code-size-candidates`-Einstieg mit Descriptor und Optionsvalidierung anlegen. Die im Konzept benannten Member deklarieren, mit `CodeLineMetrics.CountExecutableDeclaration` und `ControlFlowMetrics.Measure` aus der abgeschlossenen Core-Vorarbeit messen, je Produktionsprojekt gruppieren und beide Member-Auswahlpfade einschließlich Gleichständen anwenden. Findings mit stabiler Member-Identität und Snapshot-Evidenz erzeugen. Messung, Auswahl und Finding-Aufbau als getrennte Verantwortlichkeiten halten.
   - Nicht: Core-Zählregeln kopieren, die bestehende Kontrollflussanalyse ändern, Klassen oder Dateien melden, die neue Analyse bereits in der Produktionsregistrierung aktivieren.
