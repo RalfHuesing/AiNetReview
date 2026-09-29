@@ -73,6 +73,20 @@ public sealed class ControlFlowMetricsTests
     }
 
     [Fact]
+    public void Measure_VisitsDecisionsInsideSwitchExpressionArmsAtSuccessiveLevels()
+    {
+        var body = GetMethodBody("var result = value switch { 0 => a ? b : c, _ => false };");
+        var conditional = body.DescendantNodes().OfType<ConditionalExpressionSyntax>().Single();
+
+        var measured = ControlFlowMetrics.Measure(body);
+
+        Assert.Equal(3, measured.DecisionCount);
+        Assert.Equal(2, measured.DecisionConstructCount);
+        Assert.Equal(2, measured.MaxDecisionNesting);
+        Assert.Same(conditional, measured.DeepestDecision);
+    }
+
+    [Fact]
     public void Measure_VisitsSwitchGoverningExpressionAtCurrentDepthAndSectionsAsLevels()
     {
         var body = GetMethodBody("switch (a ? 1 : 2) { case 1: if (a) { } break; default: break; }");
