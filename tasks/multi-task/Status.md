@@ -16,7 +16,7 @@ Auf Nutzerwunsch wurden die zwei zuvor auffälligen Integrationstests probeweise
 
 ## Nächster Punkt
 
-[A1-Audit der übergeordneten Roadmap](roadmap.md): Die verhaltensgleiche Extraktion unabhängig gegen Konzept, Diff und Regressionstests prüfen. Danach folgt A2.
+[A2 — Codezeilenmessung ergänzen](roadmap.md) ist die nächste ausführbare Checkbox.
 
 ## A1 — Kontrollflussmessung extrahiert
 
@@ -37,4 +37,12 @@ Die IntegrationTests sind vor der fachlichen Umsetzung nicht verlässlich grün.
 - Korrektur: `ControlFlowMetricsTests.Measure_VisitsDecisionsInsideSwitchExpressionArmsAtSuccessiveLevels` prüft nun für eine bedingte Expression in einem Switch-Expression-Arm `DecisionCount=3`, `DecisionConstructCount=2`, `MaxDecisionNesting=2` und den konkreten Knoten als `DeepestDecision`. Kein Produktionscode geändert.
 - Korrektur-Gates: fokussierter neuer FastTest 1/1 und gesamte `ControlFlowMetricsTests`-Klasse 20/20 bestanden; gezielter `MethodControlFlowOutliersIntegrationTests`-Lauf 1/1 bestanden; `scripts/build.ps1` mit 0 Warnungen und 0 Fehlern bestanden; `git diff --check` bestanden. `docs/review/findings.md`, `docs/README.md` und `docs/development/adding-review-analyses.md` geprüft; der Test-only-Fix ändert keinen dokumentierten Ist-Vertrag.
 - Der bereits vor A1 wechselnd fehlschlagende Report-Publikationspfad ist kein belegter A1-Regressionsbefund. Der volle A1-Integrationslauf blieb mit 91/92 rot; der betroffene Test bestand isoliert. Ohne neue Hypothese wurde die komplette Suite nicht erneut gestartet. Das vollständige Integrations-Gate bleibt für A4 offen.
-- Audit-Checkbox bleibt bis zum unabhängigen Nachaudit offen; Runde 1 von höchstens 3 ist mit Finding abgeschlossen. Diese Korrekturrunde ist ausgeführt; der vollständige IntegrationTests-Lauf bleibt für A4 offen. Nächster Schritt: unabhängiger Nachaudit, anschließend A2.
+- Runde 1 von höchstens 3 endete mit einem Testabdeckungs-Finding und einem Korrektur-Commit. Der vollständige IntegrationTests-Lauf bleibt für A4 offen.
+
+## A1-Nachaudit, Runde 2
+
+- Geprüfte Commits: `10f1ada7cb085ed92aaee555c877ca11e7835a22`, `5c6faa9420b79b48d8dd98318b3a6556b0725121` und `bf70072cfac2175ee2e987a90c027e95e85966dc`. Der neue FastTest prüft die innere `?:`-Entscheidung im Switch-Expression-Arm mit Zählwerten, Tiefe und Knotenidentität der tiefsten Entscheidung. Das Finding aus Runde 1 ist damit belegt behoben.
+- Stichprobe: Der verschobene `DecisionVisitor` ist gegenüber dem Vorzustand unverändert; der Verbraucher ersetzt ausschließlich die Messwertquelle. Kandidatenfilter, Perzentile, Auswahl, Evidenz-Token, Descriptor-Text und Behavior-Version 1 bleiben unverändert. Die FastTests decken die übrigen Entscheidungsformen, `else if`, Gleichstand, Expression-Bodies, Ausschlüsse und Fehlargumente ab; Analyse- und Integrationstests blieben aktiv.
+- Unabhängig erneut ausgeführt: `ControlFlowMetricsTests` und `MethodControlFlowOutliersAnalysisTests` zusammen 33/33 bestanden. Die gezielte Integration, der warnungsfreie Build und `git diff --check` sind für A1 und die Korrektur in den vorherigen Abschnitten belegt. Kein offener Pflichtbefund zur A1-Extraktion; A1-Audit abgenommen. Verbraucht: zwei Audit-Runden und eine Korrekturrunde von höchstens drei Core-Audit–Fix-Runden.
+- Der vor A1 beobachtete flüchtige Report-Publikationsfehler und das offene vollständige IntegrationTests-Gate bleiben für A4 sichtbar; ohne neue Hypothese wurde die vollständige Suite nicht wiederholt.
+

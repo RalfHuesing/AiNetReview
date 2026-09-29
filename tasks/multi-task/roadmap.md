@@ -12,7 +12,7 @@ Bei einer dokumentierten harten Blockade bleibt die betreffende Checkbox offen. 
 
 - [ ] **Core-Task abgeschlossen** — Aggregat aller folgenden Core-Punkte; erst nach abgeschlossener [Core-Roadmap](../core-code-metriken/roadmap.md), verifizierten APIs, Schlussaudit und dokumentierten Commits schließen.
   - [x] **A1 — Kontrollflussmessung extrahieren** — [Core-Roadmap, Punkt 1](../core-code-metriken/roadmap.md) vollständig ausführen und abnehmen.
-  - [ ] **A1-Audit — bestehendes Analyseverhalten prüfen**
+  - [x] **A1-Audit — bestehendes Analyseverhalten prüfen**
     - Intention: Die verhaltensgleiche Extraktion prüfen, bevor weitere Verbraucher auf der API aufbauen.
     - Scope: Unabhängig `ControlFlowMetrics`-Vertrag, Regressionstests, Kandidaten, Evidenz, Descriptor und Behavior-Version gegen [Core-Konzept](../core-code-metriken/Konzept.md) und den A1-Diff prüfen; konkrete Findings mit Fundstellen in `Status.md` festhalten und nötige Korrekturen sequenziell nachprüfen.
     - Nicht: Neue Entscheidungsregeln oder Folgetask-Code einführen.
