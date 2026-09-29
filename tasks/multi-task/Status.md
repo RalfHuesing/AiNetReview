@@ -1,12 +1,13 @@
 # Laufstand: Drei Review-Tasks
 
-## Aktueller Stand — B1 abgeschlossen (29.09.2026)
+## Aktueller Stand — B2a abgeschlossen (30.09.2026)
 
-- Ausgangsstand: `HEAD b39b3e60a6a97351bd8b5e6c79c2249ddb672468`, Arbeitsbaum sauber. Core-Roadmap Punkt 4, Core-Aggregat und beide benötigten APIs waren abgeschlossen und wurden erneut gegen Code geprüft: `ControlFlowMetrics.Measure` akzeptiert ausführbare Block-/Expression-Bodies und liefert die vier Messwerte; `TestFrameworkClassifier.IsActiveTestRoot` verwendet `ReviewSourceClassifier.IsTestProject` sowie semantische Framework-Metadaten. Kein Vertragsunterschied zum Core-Konzept.
-- B1 implementiert deterministische Auswahl ausführbarer Produktionsfunktionen: Methoden, Konstruktoren, Property-/Indexer-Getter und Setter, Event-Add-/Remove-Accessors, Operatoren und Konversionen. Expression-Bodies und Implementierungsteile partieller Methoden sind enthalten; bodylose Deklarationen, lokale Funktionen/Lambdas, Testprojekte und generierte Dokumente/Symbole sind ausgeschlossen. Jeder Funktionsrumpf wird einmal über `ControlFlowMetrics.Measure` gemessen. Die Hauptschwelle verwendet `decisionCount >= minDecisionCount OR maxDecisionNesting >= minDecisionNesting`; die indirekte Eignung wird getrennt per OR-Gate markiert und kann die Hauptschwelle nicht umgehen.
-- Verifikation: fokussierte `MissingTestEvidenceCandidateSelectorTests` **3/3 bestanden**; `pwsh -File ./scripts/build.ps1` **0 Warnungen, 0 Fehler**; `git diff --check` bestanden. `docs/` nach vorhandenen Current-State-Aussagen geprüft; die Testabdeckungsanalyse ist noch nicht registriert oder publiziert, daher ist keine Ist-Stand-Dokumentation zu ändern. Keine Testpfad-, Registrierungs- oder Berichtslogik begonnen.
-- B1-Commit: `feat(test-analysis): select missing-test evidence candidates` (atomarer B1-Slice; Hash wird durch den Git-Commitverlauf belegt).
-- Nächster Punkt: **B2a — Semantischen Graphen aufbauen**.
+- Ausgangsstand: `HEAD 1fc84802198ed9402f82a232251bfb0fe5ecbfc1`, Arbeitsbaum sauber. Core-Roadmap, Core-Aggregat und die APIs `ControlFlowMetrics.Measure` sowie `TestFrameworkClassifier.IsActiveTestRoot` sind abgeschlossen und entsprechen den gelesenen Fachverträgen.
+- B2a baut einen deterministischen semantischen Graphen aus allen geladenen C#-Projekten und source-generated Dokumenten. Nicht-generierte Testmethoden werden ausschließlich über `TestFrameworkClassifier.IsActiveTestRoot` zu Roots. Graphkanten decken Invocations, Konstruktoren, Property-Getter/-Setter, Event-Add/-Remove sowie benutzerdefinierte Operatoren und Konversionen ab. Aufrufe innerhalb von Lambdas und lokalen Funktionen werden der äußeren Methode zugerechnet. Private Methoden, Cross-Project-Methoden und generierte Zwischenmethoden bleiben im Graph.
+- Method groups, unaufgelöste Bindings und virtuelle/Interface-Aufrufe werden als Unsicherheitseingaben festgehalten; der Graph fügt keine Laufzeitziele hinzu. Nicht verfügbare erforderliche Compilation- und SemanticModel-Werte lösen `AnalysisFailedException` aus.
+- Verifikation: fokussierte `MissingTestEvidenceSemanticGraphBuilderTests` **6/6 bestanden**; vollständige FastTests **225/225 bestanden**; `pwsh -File ./scripts/build.ps1` **0 Warnungen, 0 Fehler**; `git diff --check` bestanden. `docs/architecture/dependencies.md`, `docs/development/adding-review-analyses.md` und `docs/README.md` geprüft; B2a ist ein noch nicht integrierter Analysebaustein, daher war keine aktuelle Produktdokumentation zu ändern.
+- B2a-Commit: `feat(test-analysis): build semantic test-path graph` (atomarer B2a-Slice; Hash wird durch den Git-Commitverlauf belegt).
+- Nächster Punkt: **B2b — Testpfade klassifizieren**. B2, der Testabdeckungs-Task und dessen Audit bleiben offen.
 
 ## Historische Vorabprüfung vom 29.09.2026
 
@@ -21,10 +22,6 @@ Schritt 3 wurde noch nicht gestartet. Bei `HEAD 1c96537` war der Arbeitsbaum vor
 ## Geprüfter Deaktivierungsversuch
 
 Auf Nutzerwunsch wurden die zwei zuvor auffälligen Integrationstests probeweise mit sichtbarem xUnit-`Skip` deaktiviert. Der vollständige normale Lauf blieb rot: 89 bestanden, 2 übersprungen, 1 fehlgeschlagen. `MarkdownReportWriterPublicationTests.WriteAsync_PublishesUniqueConcurrentRunsAndPreservesEarlierRuns` scheiterte bei `MarkdownReportWriter.WriteAsync`, Zeile 94, mit `System.IO.IOException: Access to the path ... is denied` beim Verschieben des temporären Reportverzeichnisses. Das spricht für einen breiteren Fehlerbereich der Reportveröffentlichung; die genaue Ursache ist noch nicht belegt. Die zwei probeweisen Skips wurden vollständig zurückgenommen. Es ist kein Integrationstest dauerhaft deaktiviert.
-
-## Nächster Punkt
-
-[B1 — Kandidaten bestimmen](roadmap.md) ist die nächste ausführbare Checkbox. Core-Roadmap Punkt 4, A4 und das Core-Aggregat sind nach dem Nachaudit geschlossen.
 
 ## A4 — Core-Schlussaudit, Runde 3 (29.09.2026)
 

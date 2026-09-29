@@ -1,0 +1,282 @@
+namespace AiNetReview.FastTests.ReviewAnalyses;
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using AiNetReview.Core.Analysis;
+using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Text;
+
+public sealed class MissingTestEvidenceSemanticGraphBuilderTests
+{
+    [Fact]
+    public async Task BuildAsync_CollectsSemanticCallsAccessorsOperatorsConversionsAndContainedCallbacks()
+    {
+        using var fixture = CreateFixture(
+            productionSources:
+            [
+                ("Worker.cs", """
+                    using System;
+                    public partial class Worker
+                    {
+                        private static void PrivatePath() { }
+                        public Worker(int value) { if (value > 0) { } }
+                        public int Value { get { if (true) { } return 1; } set { if (value > 0) { } } }
+                        public event Action Changed { add { if (value is not null) { } } remove { if (value is not null) { } } }
+                        public static Worker operator +(Worker left, Worker right) => left;
+                        public static implicit operator int(Worker value) => value is null ? 0 : 1;
+                        public void Callback() { }
+                    }
+                    """),
+                ("Worker.g.cs", """
+                    public partial class Worker
+                    {
+                        public static void Entry() { PrivatePath(); }
+                    }
+                    """),
+            ],
+            testSource: """
+                using System;
+                using Xunit;
+                public sealed class Tests
+                {
+                    [Fact]
+                    public void ActiveRoot()
+                    {
+                        var worker = new Worker(1);
+                        _ = worker.Value;
+                        worker.Value = 2;
+                        worker.Changed += Handler;
+                        worker.Changed -= Handler;
+                        _ = worker + worker;
+                        int converted = worker;
+                        worker.Callback();
+                        Action callback = worker.Callback;
+                        Action lambda = () => worker.Callback();
+                        var callbackName = nameof(Worker.Callback);
+                        void Local() { worker.Callback(); }
+                        Local();
+                        Worker.Entry();
+                    }
+
+                    [Fact(Skip = "excluded")]
+                    public void SkippedRoot() { _ = new Worker(0); }
+
+                    private static void Handler() { }
+                }
+                """);
+
+        var graph = await MissingTestEvidenceSemanticGraphBuilder.BuildAsync(fixture.Workspace.CurrentSolution, CancellationToken.None);
+        var root = Assert.Single(graph.Roots);
+        Assert.Equal("ActiveRoot", root.Method.Name);
+        Assert.DoesNotContain(graph.Roots, static node => node.Method.Name == "SkippedRoot");
+
+        Assert.Contains(graph.Edges, static edge => edge.Kind == MissingTestEvidenceGraphEdgeKind.ObjectCreation && edge.To.MethodKind == MethodKind.Constructor);
+        Assert.Contains(graph.Edges, static edge => edge.Kind == MissingTestEvidenceGraphEdgeKind.PropertyGet && edge.To.MethodKind == MethodKind.PropertyGet);
+        Assert.Contains(graph.Edges, static edge => edge.Kind == MissingTestEvidenceGraphEdgeKind.PropertySet && edge.To.MethodKind == MethodKind.PropertySet);
+        Assert.Contains(graph.Edges, static edge => edge.Kind == MissingTestEvidenceGraphEdgeKind.EventAdd && edge.To.MethodKind == MethodKind.EventAdd);
+        Assert.Contains(graph.Edges, static edge => edge.Kind == MissingTestEvidenceGraphEdgeKind.EventRemove && edge.To.MethodKind == MethodKind.EventRemove);
+        Assert.Contains(graph.Edges, static edge => edge.Kind == MissingTestEvidenceGraphEdgeKind.UserOperator && edge.To.MethodKind == MethodKind.UserDefinedOperator);
+        Assert.Contains(graph.Edges, static edge => edge.Kind == MissingTestEvidenceGraphEdgeKind.UserConversion && edge.To.MethodKind == MethodKind.Conversion);
+
+        var callbackCalls = graph.Edges.Where(static edge => edge.To.Name == "Callback").ToArray();
+        Assert.True(callbackCalls.Length >= 3, "Calls in the direct body, lambda, and local function are possible edges of the containing test method.");
+        Assert.Single(graph.UncertaintyInputs.Where(static input => input.Kind == MissingTestEvidenceUncertaintyKind.MethodGroup && input.AffectedMethod?.Name == "Callback"));
+
+        var generatedEntry = Assert.Single(graph.Nodes.Where(static node => node.Method.Name == "Entry"));
+        Assert.True(generatedEntry.IsGenerated);
+        Assert.Contains(graph.Edges, edge => edge.From.Name == "Entry" && edge.To.Name == "PrivatePath");
+        Assert.Contains(graph.Edges, static edge => edge.To.Name == "PrivatePath" && edge.SourceFilePath?.EndsWith("Worker.g.cs", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public async Task BuildAsync_RecordsUnresolvedAndDispatchUncertaintyWithoutRuntimeEdges()
+    {
+        using var fixture = CreateFixture(
+            productionSources:
+            [
+                ("IWorker.cs", """
+                    public interface IWorker { void Execute(); }
+                    public sealed class Worker : IWorker { public void Execute() { } }
+                    """),
+            ],
+            testSource: """
+                using Xunit;
+                public sealed class Tests
+                {
+                    [Fact]
+                    public void ActiveRoot(IWorker worker)
+                    {
+                        worker.Execute();
+                        worker.Missing();
+                    }
+                }
+                """);
+
+        var graph = await MissingTestEvidenceSemanticGraphBuilder.BuildAsync(fixture.Workspace.CurrentSolution, CancellationToken.None);
+        Assert.Contains(graph.UncertaintyInputs, static input => input.Kind == MissingTestEvidenceUncertaintyKind.VirtualOrInterfaceDispatch && input.IsGlobal);
+        Assert.Contains(graph.UncertaintyInputs, static input => input.Kind == MissingTestEvidenceUncertaintyKind.UnresolvedBinding && input.IsGlobal);
+        Assert.DoesNotContain(graph.Edges, static edge => edge.To.Name == "Execute");
+    }
+
+    [Fact]
+    public async Task BuildAsync_KeepsGeneratedIntermediatesAndCrossProjectPrivateTargetsInGraph()
+    {
+        using var fixture = CreateFixture(
+            productionSources:
+            [
+                ("Entry.cs", "public partial class Worker { private static void Hidden() { } }"),
+                ("Entry.g.cs", "public partial class Worker { public static void Entry() { Hidden(); } }"),
+            ],
+            testSource: "using Xunit; public sealed class Tests { [Fact] public void Root() { Worker.Entry(); } }");
+
+        var graph = await MissingTestEvidenceSemanticGraphBuilder.BuildAsync(fixture.Workspace.CurrentSolution, CancellationToken.None);
+        Assert.Equal("Root", Assert.Single(graph.Roots).Method.Name);
+        Assert.Contains(graph.Nodes, static node => node.ProjectName == "Example.Core" && node.Method.Name == "Hidden" && !node.IsGenerated);
+        Assert.Contains(graph.Nodes, static node => node.ProjectName == "Example.Core" && node.Method.Name == "Entry" && node.IsGenerated);
+        Assert.Contains(graph.Edges, static edge => edge.From.Name == "Entry" && edge.To.Name == "Hidden");
+        Assert.Contains(graph.Edges, static edge => edge.From.Name == "Root" && edge.To.Name == "Entry");
+    }
+
+    [Fact]
+    public async Task BuildAsync_DoesNotTreatNamesCommentsOrUncalledHelpersAsEdges()
+    {
+        using var fixture = CreateFixture(
+            productionSources: [("Worker.cs", "public sealed class Worker { public static void Entry() { } }")],
+            testSource: """
+                using Xunit;
+                public sealed class Tests
+                {
+                    [Fact]
+                    public void Root()
+                    {
+                        var name = nameof(Helper);
+                        var type = typeof(Worker);
+                        // Helper(); Worker.Entry();
+                    }
+
+                    private static void Helper() { Worker.Entry(); }
+                }
+                """);
+
+        var graph = await MissingTestEvidenceSemanticGraphBuilder.BuildAsync(fixture.Workspace.CurrentSolution, CancellationToken.None);
+        var root = Assert.Single(graph.Roots);
+        Assert.DoesNotContain(graph.Edges, edge => SymbolEqualityComparer.Default.Equals(edge.From, root.Method));
+        Assert.DoesNotContain(graph.UncertaintyInputs, input => SymbolEqualityComparer.Default.Equals(input.Source, root.Method));
+    }
+
+    [Fact]
+    public async Task BuildAsync_RejectsSolutionsWithoutRequiredCSharpCompilation()
+    {
+        using var workspace = new AdhocWorkspace();
+        workspace.AddProject("MarkupOnly", "Visual Basic");
+
+        var exception = await Assert.ThrowsAsync<AnalysisFailedException>(
+            () => MissingTestEvidenceSemanticGraphBuilder.BuildAsync(workspace.CurrentSolution, CancellationToken.None));
+
+        Assert.Contains("no C# projects", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RequiredCompilationAndSemanticModelGuardsFailInsteadOfReturningPartialGraphInputs()
+    {
+        var compilationFailure = Assert.Throws<AnalysisFailedException>(
+            () => MissingTestEvidenceSemanticGraphBuilder.RequireCompilation(null, "Unavailable"));
+        Assert.Contains("Compilation could not be created", compilationFailure.Message, StringComparison.Ordinal);
+
+        var semanticModelFailure = Assert.Throws<AnalysisFailedException>(
+            () => MissingTestEvidenceSemanticGraphBuilder.RequireSemanticModel(null, "Unavailable.cs"));
+        Assert.Contains("Semantic model could not be created", semanticModelFailure.Message, StringComparison.Ordinal);
+    }
+
+    private static Fixture CreateFixture(
+        IReadOnlyList<(string Name, string Source)> productionSources,
+        string testSource)
+    {
+#pragma warning disable CA2000 // Fixture takes ownership and disposes the workspace returned by this helper.
+        var workspace = new AdhocWorkspace();
+#pragma warning restore CA2000
+        var productionId = ProjectId.CreateNewId();
+        var testId = ProjectId.CreateNewId();
+        var productionPath = Path.Combine(Path.GetTempPath(), "AiNetReview-MissingTestEvidenceGraph", "Example.Core.csproj");
+        var testPath = Path.Combine(Path.GetTempPath(), "AiNetReview-MissingTestEvidenceGraph", "Example.Tests.csproj");
+        var platformReferences = PlatformReferences().ToArray();
+
+        workspace.AddProject(ProjectInfo.Create(
+            productionId,
+            VersionStamp.Create(),
+            "Example.Core",
+            "Example.Core",
+            LanguageNames.CSharp,
+            filePath: productionPath,
+            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+            metadataReferences: platformReferences));
+        foreach (var (name, source) in productionSources)
+        {
+            AddDocument(workspace, productionId, name, source, Path.Combine(Path.GetDirectoryName(productionPath)!, name));
+        }
+
+        workspace.AddProject(ProjectInfo.Create(
+            testId,
+            VersionStamp.Create(),
+            "Example.Tests",
+            "Example.Tests",
+            LanguageNames.CSharp,
+            filePath: testPath,
+            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+            metadataReferences: platformReferences.Append(TestFrameworkReference.Reference),
+            projectReferences: [new ProjectReference(productionId)]));
+        AddDocument(workspace, testId, "Tests.cs", testSource, Path.Combine(Path.GetDirectoryName(testPath)!, "Tests.cs"));
+
+        return new Fixture(workspace);
+    }
+
+    private static void AddDocument(AdhocWorkspace workspace, ProjectId projectId, string name, string source, string path) =>
+        workspace.AddDocument(DocumentInfo.Create(
+            DocumentId.CreateNewId(projectId),
+            name,
+            filePath: path,
+            loader: TextLoader.From(TextAndVersion.Create(SourceText.From(source), VersionStamp.Create()))));
+
+    private static IEnumerable<MetadataReference> PlatformReferences() =>
+        ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))!
+        .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+        .Where(static path => !Path.GetFileName(path).StartsWith("xunit", StringComparison.OrdinalIgnoreCase))
+        .Select(static path => MetadataReference.CreateFromFile(path));
+
+    private sealed class Fixture(AdhocWorkspace workspace) : IDisposable
+    {
+        public AdhocWorkspace Workspace { get; } = workspace;
+
+        public void Dispose() => Workspace.Dispose();
+    }
+
+    private static class TestFrameworkReference
+    {
+        private const string Source = "using System; namespace Xunit { [AttributeUsage(AttributeTargets.Method)] public sealed class FactAttribute : Attribute { public string? Skip { get; set; } } }";
+
+        public static MetadataReference Reference { get; } = CreateReference();
+
+        private static MetadataReference CreateReference()
+        {
+            var compilation = CSharpCompilation.Create(
+                "xunit.graph.contracts",
+                [CSharpSyntaxTree.ParseText(Source)],
+                PlatformReferences(),
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            using var assembly = new MemoryStream();
+            var result = compilation.Emit(assembly);
+            if (!result.Success)
+            {
+                throw new InvalidOperationException(string.Join(Environment.NewLine, result.Diagnostics));
+            }
+
+            return MetadataReference.CreateFromImage(assembly.ToArray(), filePath: "xunit.graph.contracts.dll");
+        }
+    }
+}
