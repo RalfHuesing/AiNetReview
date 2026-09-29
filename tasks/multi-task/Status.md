@@ -16,7 +16,15 @@ Auf Nutzerwunsch wurden die zwei zuvor auffälligen Integrationstests probeweise
 
 ## Nächster Punkt
 
-[A4 — Core-Schlussaudit](roadmap.md) ist die nächste ausführbare Checkbox.
+[A4 — Core-Schlussaudit](roadmap.md) bleibt offen. Ein separater Implementierer muss zuerst den unten belegten reproduzierbaren Integrationstest-Befund rot-vor-grün korrigieren und die Ursache der Report-Publikationsausnahme gezielt untersuchen; danach ist ein unabhängiger Nachaudit nötig. B1 und C1 sind wegen des offenen Core-Aggregats nicht erreichbar.
+
+## A4 — Core-Schlussaudit, Runde 3 (29.09.2026)
+
+- Ausgangsstand: `3628ead21caf453fb5306a0e312af952307bface`, sauberer Arbeitsbaum. Geprüft wurden die Core-Commits `10f1ada7`, `feb1a6d3`, `b88b2621`, `6526b5d4` und der A1-Testkorrekturcommit `bf70072c`. `ControlFlowMetrics` übernimmt den früheren `DecisionVisitor` ohne Zähl- oder Besuchsänderung; der Verbraucher ersetzt nur die Messwertquelle. Kandidatentypen, Filter, Perzentile, Mindestwerte, Evidenz-Token, Descriptor und Behavior-Version 1 sind unverändert. `CodeLineMetrics` und `TestFrameworkClassifier` entsprechen in Code und FastTests den drei Core-API-Verträgen; Core hat keine neuen Framework- oder AiNetLinter-Abhängigkeiten und keine Folgeanalyse registriert. Der Abgleich mit `docs/review/findings.md`, `docs/architecture/dependencies.md`, `docs/development/adding-review-analyses.md` und `docs/README.md` ergab keine falsche Ist-Stand-Aussage.
+- Gates: normales `scripts/test-fast.ps1` **216/216 bestanden**; `scripts/build.ps1` **0 Warnungen, 0 Fehler**; `git diff --check` bestanden. Normales `scripts/test-integration.ps1` **90/92 bestanden, 2 fehlgeschlagen**, daher keine Core-Abnahme.
+- Reproduzierbarer Befund: `HostProcessIntegrationTests.ProcessInvocation_WithRepositoryConfigurationPublishesAnIgnoredTimestampedRun` scheitert bei `tests/AiNetReview.IntegrationTests/HostProcessIntegrationTests.cs:222` mit `Assert.DoesNotContain("Metrics", analysisReport)`. Der Selbst-Audit enthält jetzt den gültigen Finding-Quellpfad `Core/Analysis/CodeLineMetrics.cs`, dessen Name die gesuchte Zeichenfolge enthält. Der gezielte isolierte Lauf desselben Tests ist erneut rot (0/1). Die pauschale Assertion prüft mehr als den beabsichtigten Ausschluss einer Metriksektion; ein Implementierer muss den Reportvertrag präzise absichern und den Test rot-vor-grün korrigieren.
+- Weiterer roter Gate-Befund: `MarkdownReportWriterPublicationTests.WriteAsync_CentralAuditReportsReferenceSourcesOutsideTheirOutputDirectory` wirft `System.IO.IOException: Access to the path ... is denied` bei `Directory.Move(temporaryPath, finalPath)` in `src/AiNetReview.Core/Reporting/MarkdownReportWriter.cs:94`. Die Ausnahme liegt im bereits vor A1 wechselnd betroffenen Publikationspfad; die konkrete Ursache des verweigerten Windows-Renames ist noch nicht belegt. Kein bloßer Gesamt-Rerun ohne neue Hypothese.
+- A4 und Core-Aggregat bleiben offen, ebenso B1 und C1. A1 verbrauchte bereits zwei Audits und eine Korrektur; dieses A4-Audit ist die dritte und letzte reguläre Core-Audit-Runde. Eine nötige Korrektur und deren unabhängige Abnahme erfordern eine ausdrückliche Klärung des Rundenbudgets durch den Orchestrator/Nutzer oder enden als dokumentierter Blocker. Kein Produktionscode in diesem Audit geändert.
 
 ## A3 — Semantische Test-Roots
 
