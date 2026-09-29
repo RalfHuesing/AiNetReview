@@ -150,8 +150,12 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("`First.cs`: `M:First.Run`", markdown, StringComparison.Ordinal);
         Assert.Contains("`Second.cs`: `M:Second.Run`", markdown, StringComparison.Ordinal);
         Assert.Contains("(changed-files/duplicate-code-candidates.md)", index, StringComparison.Ordinal);
-        Assert.Contains("(all-findings/duplicate-code-candidates.md)", index, StringComparison.Ordinal);
+        Assert.Contains("(all-findings/index.md)", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("(all-findings/duplicate-code-candidates.md)", index, StringComparison.Ordinal);
+        Assert.Contains("Agent instruction:** Do not inspect", index, StringComparison.Ordinal);
         Assert.True(File.Exists(Path.Combine(runDirectory, "all-findings", "duplicate-code-candidates.md")));
+        var allFindingsIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "all-findings", "index.md"));
+        Assert.Contains("Notice for AI agents:**", allFindingsIndex, StringComparison.Ordinal);
     }
 
     [Fact]

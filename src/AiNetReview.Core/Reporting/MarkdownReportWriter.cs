@@ -155,34 +155,32 @@ public sealed class MarkdownReportWriter
                 : "No findings were found.\n\n");
         }
 
-        builder.Append("## Report views\n\n")
+        builder.Append("## Analysis reports (changed files)\n\n")
             .Append("- [`changed-files/`](changed-files/index.md) contains findings that involve at least one source file that is new or changed since the optional baseline (")
-            .Append(changedCount.ToString(CultureInfo.InvariantCulture)).Append(" findings). Without a baseline, all current source files are treated as new. This file based filter can miss indirect effects in unchanged files.\n")
-            .Append("- [`all-findings/`](all-findings/index.md) always contains every current finding (")
-            .Append(allCount.ToString(CultureInfo.InvariantCulture)).Append(" findings). Keep this complete view intact while editing the working view.\n\n");
+            .Append(changedCount.ToString(CultureInfo.InvariantCulture)).Append(" findings). Without a baseline, all current source files are treated as new. This file based filter can miss indirect effects in unchanged files.\n\n");
 
-        builder.Append("## Analysis reports\n\n");
         var reportLinks = new List<string>();
         foreach (var analysis in analyses)
         {
-            if (findings.Any(finding => finding.AnalysisId == analysis.AnalysisId && finding.IsChanged))
+            var count = findings.Count(finding => finding.AnalysisId == analysis.AnalysisId && finding.IsChanged);
+            if (count > 0)
             {
-                reportLinks.Add("- [" + EscapeLinkText(analysis.Analysis.Descriptor.Title) + " — changed files](changed-files/"
-                    + EncodePathSegment(analysis.AnalysisId) + ".md)");
-            }
-
-            if (findings.Any(finding => finding.AnalysisId == analysis.AnalysisId))
-            {
-                reportLinks.Add("- [" + EscapeLinkText(analysis.Analysis.Descriptor.Title) + " — all findings](all-findings/"
+                reportLinks.Add("- [" + EscapeLinkText(analysis.Analysis.Descriptor.Title) + " ("
+                    + count.ToString(CultureInfo.InvariantCulture) + ")](changed-files/"
                     + EncodePathSegment(analysis.AnalysisId) + ".md)");
             }
         }
 
         builder.Append(reportLinks.Count == 0 ? "No analysis report files were created.\n\n" : string.Join('\n', reportLinks) + "\n\n");
+        builder.Append("[Open the changed files view](changed-files/index.md)\n\n");
 
-        builder.Append("## Changed files report\n\n[Open the changed files view](changed-files/index.md)\n\n")
-            .Append("## All findings report\n\n[Open the complete findings view](all-findings/index.md)\n\n")
-            .Append("## Set a new baseline\n\n");
+        builder.Append("## All findings (reference only)\n\n")
+            .Append("> **Agent instruction:** Do not inspect, summarize, or display findings from this view unless the user explicitly requests an audit of the entire repository.\n\n")
+            .Append("- [`all-findings/`](all-findings/index.md) always contains every current finding (")
+            .Append(allCount.ToString(CultureInfo.InvariantCulture)).Append(" findings). Keep this complete view intact while editing the working view.\n\n")
+            .Append("[Open the complete findings view](all-findings/index.md)\n\n");
+
+        builder.Append("## Set a new baseline\n\n");
 
         if (baselineCommandContext is null)
         {
@@ -202,7 +200,9 @@ public sealed class MarkdownReportWriter
 
         builder.Append("The command replaces the baseline for all source files and does not require a report.\n\n")
             .Append("## Review guidance\n\n")
-            .Append("These findings are review signals, not proven defects or automatic change requests. Read the target repository's applicable instructions and relevant design documents. Consider the behavior of the application as a whole, including contracts, callers, tests, and related findings across analyses. First remove only clear false positives from `changed-files/` and leave uncertain cases for review. Then work through the remaining findings one decision at a time while keeping the wider context in view. Avoid local workarounds and refactoring driven only by a metric. Explain consequential changes and tradeoffs to the user. Keep report files and links consistent when editing them.\n");
+            .Append("These findings are review signals, not proven defects or automatic change requests. Read the target repository's applicable instructions and relevant design documents. Consider the behavior of the application as a whole, including contracts, callers, tests, and related findings across analyses. ")
+            .Append("AI agents and reviewers must treat `changed-files/` as the primary working set and must not inspect or report findings from `all-findings/` unless the user explicitly requests a full repository audit. ")
+            .Append("First remove only clear false positives from `changed-files/` and leave uncertain cases for review. Then work through the remaining findings one decision at a time while keeping the wider context in view. Avoid local workarounds and refactoring driven only by a metric. Explain consequential changes and tradeoffs to the user. Keep report files and links consistent when editing them.\n");
         return builder.ToString();
     }
 
@@ -217,6 +217,11 @@ public sealed class MarkdownReportWriter
     {
         var builder = new StringBuilder();
         builder.Append("# ").Append(title).Append("\n\n");
+        if (!changedOnly)
+        {
+            builder.Append("> **Notice for AI agents:** This view contains the entire repository baseline for reference. Do not review or report these findings unless the user explicitly requested a full repository audit. Use [`changed-files/`](../changed-files/index.md) for active review.\n\n");
+        }
+
         var visible = analyses.Where(analysis => findings.Any(finding => finding.AnalysisId == analysis.AnalysisId
                 && (!changedOnly || finding.IsChanged)))
             .ToArray();

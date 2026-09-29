@@ -147,7 +147,8 @@ public sealed class HostProcessIntegrationTests
         Assert.Contains("\"status\":\"completed\"", generatedBaselineOutput, StringComparison.Ordinal);
         Assert.Contains("## Analysis reports", rootIndex, StringComparison.Ordinal);
         Assert.Contains("(changed-files/method-control-flow-outliers.md)", rootIndex, StringComparison.Ordinal);
-        Assert.Contains("(all-findings/method-control-flow-outliers.md)", rootIndex, StringComparison.Ordinal);
+        Assert.Contains("(all-findings/index.md)", rootIndex, StringComparison.Ordinal);
+        Assert.DoesNotContain("(all-findings/method-control-flow-outliers.md)", rootIndex, StringComparison.Ordinal);
         Assert.Contains("Run", await File.ReadAllTextAsync(Path.Combine(changedView, "method-control-flow-outliers.md")), StringComparison.Ordinal);
         Assert.Contains("Run", await File.ReadAllTextAsync(Path.Combine(allView, "method-control-flow-outliers.md")), StringComparison.Ordinal);
     }
