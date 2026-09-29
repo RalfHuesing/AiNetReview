@@ -67,6 +67,20 @@ public sealed class MissingTestEvidenceCandidateSelectorTests
     }
 
     [Fact]
+    public async Task SelectAsync_IncludesExpressionBodiedIndexerGetter()
+    {
+        using var workspace = new AdhocWorkspace();
+        AddProjectWithDocument(workspace, "Example", "public sealed class Example { public int this[int index] => index > 0 ? index : 0; }");
+
+        var candidates = await SelectAsync(workspace.CurrentSolution, minDecisionCount: 1, minDecisionNesting: 1);
+
+        var getter = Assert.Single(candidates);
+        Assert.Equal("get_Item", getter.Method.Name);
+        Assert.Equal(MethodKind.PropertyGet, getter.Method.MethodKind);
+        Assert.Equal(1, getter.Measurement.DecisionCount);
+    }
+
+    [Fact]
     public async Task SelectAsync_UsesSharedMetricsForBothOrGatesAndIndirectAndCombination()
     {
         const string source = """

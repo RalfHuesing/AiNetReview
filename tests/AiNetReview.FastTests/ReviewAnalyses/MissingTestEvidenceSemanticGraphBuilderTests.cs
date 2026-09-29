@@ -135,6 +135,45 @@ public sealed class MissingTestEvidenceSemanticGraphBuilderTests
     }
 
     [Fact]
+    public async Task BuildAsync_IncludesExpressionBodiedPropertyAndIndexerGettersAndTheirCalls()
+    {
+        using var fixture = CreateFixture(
+            productionSources:
+            [
+                ("Worker.cs", "public sealed class Worker { public int Compute(int value) => value > 0 ? value : 0; public int Value => Compute(1); public int this[int index] => Compute(index); }"),
+            ],
+            testSource: "using Xunit; public sealed class Tests { [Fact] public void Root(Worker worker) { _ = worker.Value; _ = worker[1]; } }");
+
+        var graph = await MissingTestEvidenceSemanticGraphBuilder.BuildAsync(fixture.Workspace.CurrentSolution, CancellationToken.None);
+        var getterNodes = graph.Nodes.Where(static node => node.Method.MethodKind == MethodKind.PropertyGet).ToArray();
+
+        Assert.Contains(getterNodes, static node => node.Method.Name == "get_Value");
+        Assert.Contains(getterNodes, static node => node.Method.Name == "get_Item");
+        Assert.Contains(graph.Edges, static edge => edge.From.Name == "Root" && edge.To.Name == "get_Value");
+        Assert.Contains(graph.Edges, static edge => edge.From.Name == "Root" && edge.To.Name == "get_Item");
+        Assert.Contains(graph.Edges, static edge => edge.From.Name == "get_Value" && edge.To.Name == "Compute");
+        Assert.Contains(graph.Edges, static edge => edge.From.Name == "get_Item" && edge.To.Name == "Compute");
+    }
+
+    [Fact]
+    public async Task BuildAsync_RecordsDispatchUncertaintyForPropertyAndEventAccessors()
+    {
+        using var fixture = CreateFixture(
+            productionSources:
+            [
+                ("IWorker.cs", "using System; public interface IWorker { int Value { get; } event Action Changed; }"),
+            ],
+            testSource: "using System; using Xunit; public sealed class Tests { [Fact] public void Root(IWorker worker) { _ = worker.Value; worker.Changed += Handler; worker.Changed -= Handler; } private static void Handler() { } }");
+
+        var graph = await MissingTestEvidenceSemanticGraphBuilder.BuildAsync(fixture.Workspace.CurrentSolution, CancellationToken.None);
+        var dispatch = graph.UncertaintyInputs.Where(static input => input.Kind == MissingTestEvidenceUncertaintyKind.VirtualOrInterfaceDispatch).ToArray();
+
+        Assert.Contains(dispatch, static input => input.Source.Name == "Root" && input.AffectedMethod?.MethodKind == MethodKind.PropertyGet);
+        Assert.Contains(dispatch, static input => input.Source.Name == "Root" && input.AffectedMethod?.MethodKind == MethodKind.EventAdd);
+        Assert.Contains(dispatch, static input => input.Source.Name == "Root" && input.AffectedMethod?.MethodKind == MethodKind.EventRemove);
+    }
+
+    [Fact]
     public async Task BuildAsync_KeepsGeneratedIntermediatesAndCrossProjectPrivateTargetsInGraph()
     {
         using var fixture = CreateFixture(

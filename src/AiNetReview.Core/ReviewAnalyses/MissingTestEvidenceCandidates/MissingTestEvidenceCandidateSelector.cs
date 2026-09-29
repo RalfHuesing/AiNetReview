@@ -125,20 +125,23 @@ internal static class MissingTestEvidenceCandidateSelector
 
         foreach (var declaration in root.DescendantNodes().OfType<IndexerDeclarationSyntax>())
         {
-            if (declaration.AccessorList is not { } accessorList)
+            if (declaration.AccessorList is { } accessorList)
             {
-                continue;
-            }
-
-            foreach (var accessor in accessorList.Accessors.Where(static accessor => accessor.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.GetAccessorDeclaration)
-                || accessor.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.SetAccessorDeclaration)
-                || accessor.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.InitAccessorDeclaration)))
-            {
-                if (GetBody(accessor) is { } body
-                    && semanticModel.GetDeclaredSymbol(accessor, cancellationToken) is IMethodSymbol method)
+                foreach (var accessor in accessorList.Accessors.Where(static accessor => accessor.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.GetAccessorDeclaration)
+                    || accessor.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.SetAccessorDeclaration)
+                    || accessor.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.InitAccessorDeclaration)))
                 {
-                    yield return (accessor, body, method);
+                    if (GetBody(accessor) is { } body
+                        && semanticModel.GetDeclaredSymbol(accessor, cancellationToken) is IMethodSymbol method)
+                    {
+                        yield return (accessor, body, method);
+                    }
                 }
+            }
+            else if (declaration.ExpressionBody is { } expressionBody
+                && semanticModel.GetDeclaredSymbol(declaration, cancellationToken) is IPropertySymbol { GetMethod: { } method })
+            {
+                yield return (declaration, expressionBody.Expression, method);
             }
         }
 

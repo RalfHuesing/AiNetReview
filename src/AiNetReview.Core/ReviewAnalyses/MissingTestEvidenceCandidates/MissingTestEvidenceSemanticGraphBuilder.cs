@@ -201,6 +201,24 @@ internal static class MissingTestEvidenceSemanticGraphBuilder
             }
         }
 
+        foreach (var declaration in root.DescendantNodes().OfType<PropertyDeclarationSyntax>())
+        {
+            if (declaration.ExpressionBody is { } expressionBody
+                && semanticModel.GetDeclaredSymbol(declaration, cancellationToken) is IPropertySymbol { GetMethod: { } method })
+            {
+                yield return new GraphFunction(declaration, expressionBody.Expression, method, semanticModel, null!);
+            }
+        }
+
+        foreach (var declaration in root.DescendantNodes().OfType<IndexerDeclarationSyntax>())
+        {
+            if (declaration.ExpressionBody is { } expressionBody
+                && semanticModel.GetDeclaredSymbol(declaration, cancellationToken) is IPropertySymbol { GetMethod: { } method })
+            {
+                yield return new GraphFunction(declaration, expressionBody.Expression, method, semanticModel, null!);
+            }
+        }
+
         foreach (var declaration in root.DescendantNodes().OfType<OperatorDeclarationSyntax>())
         {
             if (GetBody(declaration) is { } body
@@ -358,12 +376,12 @@ internal static class MissingTestEvidenceSemanticGraphBuilder
                 var (read, write) = GetPropertyAccess(operation);
                 if (read)
                 {
-                    owner.AddEdge(source, operation.Property.GetMethod, MissingTestEvidenceGraphEdgeKind.PropertyGet, operation.Syntax);
+                    AddCall(operation.Property.GetMethod, MissingTestEvidenceGraphEdgeKind.PropertyGet, operation.Syntax);
                 }
 
                 if (write)
                 {
-                    owner.AddEdge(source, operation.Property.SetMethod, MissingTestEvidenceGraphEdgeKind.PropertySet, operation.Syntax);
+                    AddCall(operation.Property.SetMethod, MissingTestEvidenceGraphEdgeKind.PropertySet, operation.Syntax);
                 }
 
                 base.VisitPropertyReference(operation);
@@ -374,8 +392,7 @@ internal static class MissingTestEvidenceSemanticGraphBuilder
                 cancellationToken.ThrowIfCancellationRequested();
                 var eventSymbol = (operation.EventReference as IEventReferenceOperation)?.Event;
                 var accessor = operation.Adds ? eventSymbol?.AddMethod : eventSymbol?.RemoveMethod;
-                owner.AddEdge(
-                    source,
+                AddCall(
                     accessor,
                     operation.Adds ? MissingTestEvidenceGraphEdgeKind.EventAdd : MissingTestEvidenceGraphEdgeKind.EventRemove,
                     operation.Syntax);
