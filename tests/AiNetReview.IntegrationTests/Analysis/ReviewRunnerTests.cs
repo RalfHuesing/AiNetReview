@@ -10,10 +10,59 @@ using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Findings;
 using AiNetReview.Core.ReviewAnalyses;
+using AiNetReview.Core.ReviewAnalyses.IndirectionDriftCandidates;
 using AiNetReview.IntegrationTests.FixtureAnalyses;
 
 public sealed class ReviewRunnerTests
 {
+    [Fact]
+    public async Task RunAsync_IndirectionPathUsesEverySourceForBaselineSelectionAndExactSymbolLinks()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateForwardingProjectAsync(temp);
+        var analysis = new IndirectionDriftCandidatesAnalysis();
+        var endpoint = new FindingDraft(
+            "Sample/Sample.csproj", "Sample/Endpoint.cs", "M:Sample.Endpoint.Run", "fixture", 1,
+            "Matching endpoint symbol.", new Dictionary<string, double>(),
+            [new FindingEvidence("Sample/Endpoint.cs", 1, "Endpoint", "Exact related symbol", "Endpoint")]);
+        var coLocated = new FindingDraft(
+            "Sample/Sample.csproj", "Sample/Endpoint.cs", "M:Sample.Other.Run", "fixture", 1,
+            "Different method in the same file.", new Dictionary<string, double>(),
+            [new FindingEvidence("Sample/Endpoint.cs", 1, "Other method", "Same file only", "Other")]);
+        var analyses = new IReviewAnalysis[]
+        {
+            analysis,
+            new TestFindingAnalysis("exact-symbol-analysis", [endpoint]),
+            new TestFindingAnalysis("co-located-symbol-analysis", [coLocated]),
+        };
+        var config = CreateConfig(root, analyses);
+        using var loaded = await new SolutionLoader().LoadAsync(config);
+        var runner = new ReviewRunner();
+        var baseline = loaded.SourceFiles.ToDictionary(static file => file.Path, static file => file.Sha256, StringComparer.Ordinal);
+
+        var complete = await runner.RunAsync(config, loaded, baselineFiles: baseline);
+        var finding = Assert.Single(complete.Findings.Where(static item => item.AnalysisId == "indirection-drift-candidates"));
+        Assert.Empty(finding.ChangedSourcePaths);
+        Assert.Equal(
+            new[] { "Sample/Api.cs", "Sample/Service.cs", "Sample/Endpoint.cs" },
+            Assert.Single(complete.Analyses.Where(static item => item.AnalysisId == "indirection-drift-candidates")).Result.Findings.Single().Evidence.Select(static item => item.SourcePath));
+        Assert.Equal(new[] { "exact-symbol-analysis" }, finding.RelatedFindings.Select(static related => related.AnalysisId));
+        var exactRelation = Assert.Single(finding.RelatedFindings);
+        Assert.Equal("M:Sample.Endpoint.Run", exactRelation.SymbolId);
+        Assert.DoesNotContain(finding.RelatedFindings, static related => related.AnalysisId == "co-located-symbol-analysis");
+
+        foreach (var sourcePath in new[] { "Sample/Api.cs", "Sample/Service.cs", "Sample/Endpoint.cs" })
+        {
+            var changedBaseline = new Dictionary<string, string>(baseline, StringComparer.Ordinal)
+            {
+                [sourcePath] = new string('0', 64),
+            };
+            var selectedRun = await runner.RunAsync(config, loaded, baselineFiles: changedBaseline);
+            var selectedPath = Assert.Single(selectedRun.Findings.Where(static item => item.AnalysisId == "indirection-drift-candidates"));
+            Assert.Equal(new[] { sourcePath }, selectedPath.ChangedSourcePaths);
+        }
+    }
+
     [Fact]
     public async Task RunAsync_ReturnsCurrentReviewAnalysisResultsWithoutRetainingState()
     {
@@ -330,6 +379,25 @@ public sealed class ReviewRunnerTests
         }
 
         await File.WriteAllTextAsync(Path.Combine(root, "Sample.slnx"), $"<Solution>{solutionProjects}</Solution>");
+        return root;
+    }
+
+    private static async Task<string> CreateForwardingProjectAsync(TestTempDirectory temp)
+    {
+        var root = temp.GetPath("forwarding-runner-project");
+        var projectDirectory = Path.Combine(root, "Sample");
+        Directory.CreateDirectory(projectDirectory);
+        var projectFile = Path.Combine(projectDirectory, "Sample.csproj");
+        await File.WriteAllTextAsync(projectFile,
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
+        await File.WriteAllTextAsync(Path.Combine(projectDirectory, "Api.cs"),
+            "namespace Sample; public static class Api { public static void Run() => Service.Run(); }");
+        await File.WriteAllTextAsync(Path.Combine(projectDirectory, "Service.cs"),
+            "namespace Sample; public static class Service { public static void Run() => Endpoint.Run(); }");
+        await File.WriteAllTextAsync(Path.Combine(projectDirectory, "Endpoint.cs"),
+            "namespace Sample; public static class Endpoint { public static void Run() { } } public static class Other { public static void Run() { } }");
+        await RestoreAsync(projectFile, projectDirectory);
+        await File.WriteAllTextAsync(Path.Combine(root, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         return root;
     }
 

@@ -235,7 +235,8 @@ internal static class TransparentForwardingClassifier
             return null;
         }
 
-        return new ForwardingTarget(targetDefinition, targetDocId, targetDeclaration.SourcePath, targetDeclaration.Syntax);
+        var invocationLine = invocation.SyntaxTree.GetLineSpan(invocation.Span).StartLinePosition.Line + 1;
+        return new ForwardingTarget(targetDefinition, targetDocId, targetDeclaration.SourcePath, targetDeclaration.Syntax, invocationLine);
     }
 
     private static InvocationExpressionSyntax? GetOnlyInvocation(MethodDeclarationSyntax method, bool returnsVoid)
@@ -396,4 +397,5 @@ internal sealed record ForwardingTarget(
     IMethodSymbol Symbol,
     string DocId,
     string SourcePath,
-    MethodDeclarationSyntax Declaration);
+    MethodDeclarationSyntax Declaration,
+    int InvocationLine);
