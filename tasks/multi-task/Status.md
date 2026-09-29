@@ -16,7 +16,18 @@ Auf Nutzerwunsch wurden die zwei zuvor auffälligen Integrationstests probeweise
 
 ## Nächster Punkt
 
-[A3 — Test-Roots klassifizieren](roadmap.md) ist die nächste ausführbare Checkbox.
+[A4 — Core-Schlussaudit](roadmap.md) ist die nächste ausführbare Checkbox.
+
+## A3 — Semantische Test-Roots
+
+- Ausgangsstand vor Edits: `HEAD 432f82fdd6691f8a6795d301a26c9b52c5b93fa6`, Arbeitsbaum sauber.
+- Implementiert `TestFrameworkClassifier.IsActiveTestRoot(Project, IMethodSymbol)` unter `AiNetReview.Core.Analysis`. Die Projektgrenze ruft ausschließlich `ReviewSourceClassifier.IsTestProject` auf. Frameworkattribute werden semantisch über Metadatennamen, Basistypen und xUnit-v3-Interfaces aufgelöst; Quellattribute mit gleichen Namen zählen nicht.
+- Ausschlüsse: xUnit konstantes `Skip` und `Explicit=true`, dynamische `SkipWhen`/`SkipUnless` bleiben aktiv; NUnit Ignore/Explicit für Methode und Fixture sowie nichtleeres Fixture-Ignore/Explicit; MSTest Ignore für Methode und Fixture. Einzelne NUnit-TestCase-Ausschlüsse verwerfen das gemeinsame Root nicht. Weitere Testattribute behalten ein Root bei, wenn mindestens eines aktiv ist.
+- Contracttests verwenden ein separat kompiliertes, metadatenreferenziertes Fixture für xUnit v2/v3, NUnit und MSTest. Abgedeckt sind abgeleitete und Interfaceattribute, parametrisierte Methoden, mehrere Attribute, globale und fallbezogene Ausschlüsse, dynamische Skips, Lookalikes im Zielquelltext, Helfer und Produktionsprojekte.
+- Dokumentationsabgleich: `docs/README.md`, `docs/development/adding-review-analyses.md` und `docs/architecture/dependencies.md` geprüft. Sie dokumentieren keinen aktiven Test-Root-Vertrag; die bestehende Projektklassifikation bleibt korrekt, daher keine Änderung unter `docs/`.
+- Verifikation: `TestFrameworkClassifierTests` 4/4 und vollständige FastTests 216/216 bestanden; `scripts/build.ps1` mit 0 Warnungen und 0 Fehlern bestanden; `git diff --check` bestanden. Keine IntegrationTests verwenden diesen noch nicht integrierten Core-Einstieg.
+- Keine Framework-Pakete oder AiNetLinter-Abhängigkeit in Core hinzugefügt; keine Callgraph- oder Folgetask-Analyse begonnen.
+- Nächster Schritt: A4 Core-Schlussaudit. Der vorbestehende flüchtige IntegrationTests-Befund bleibt offen und verhindert weiterhin die Core-Abnahme bis zum normalen Integration-Gate.
 
 ## A2 — Tokenbasierte Codezeilenmessung
 

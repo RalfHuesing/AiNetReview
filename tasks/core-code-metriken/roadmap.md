@@ -14,7 +14,7 @@ The contract is [Konzept.md](Konzept.md). Complete the points in order. Each imp
   - Not: Size thresholds, candidate selection, `BranchTrivialityDetector`, file-byte measurements, or changes to review findings.
   - Acceptance: FastTests cover token/trivia boundaries, signatures and braces, multiline literals, invalid inputs, expression bodies, bodyless and partial declarations, local functions/lambdas, and nested types on shared and separate lines as specified in the concept. Run affected FastTests, the build gate, the documentation check, and `git diff --check` before committing.
 
-- [ ] **3. Add semantic active-test-root classification**
+- [x] **3. Add semantic active-test-root classification**
   - Intention: Identify possible roots for the later test-path analysis without relying on source-text names or test-project membership alone.
   - Scope: Implement `TestFrameworkClassifier.IsActiveTestRoot` with the existing project classifier, metadata-resolved xUnit/NUnit/MSTest attributes, derived attributes and xUnit v3 interface implementations, and the statically decidable whole-method/fixture exclusions in the concept. Keep generated-source filtering with the future caller.
   - Not: Call-graph traversal, test-data execution, dynamic skip evaluation, new Core framework dependencies, or registration of `missing-test-evidence-candidates`.
