@@ -155,5 +155,5 @@ Vor der fachlichen Umsetzung waren die IntegrationTests wegen wechselnder Report
 - AiNetLinter wurde nur lesend geprüft. `MetricsTreeScanner` misst Dateigrößen aus physischen Dateien beziehungsweise `SourceText` und bietet keine gleichartige snapshotbasierte Memberanalyse; daraus wurden keine Auswahlregeln übernommen.
 - Dokumentationsabgleich: `docs/README.md`, `docs/development/adding-review-analyses.md`, `docs/review/findings.md`, Konfiguration und CLI-Doku geprüft. Keine Current-State-Seite beschreibt eine nicht registrierte Analyse; daher keine `docs/`-Änderung.
 - Gates: `CodeSizeCandidatesAnalysisTests` und `MethodControlFlowOutliersAnalysisTests` zusammen 25/25 bestanden; `dotnet build AiNetReview.slnx --no-restore` mit 0 Warnungen und 0 Fehlern bestanden; `git diff --check` bestanden.
-- C1-Commit: wird nach dem Commit eingetragen.
+- C1-Commit: `33c0338b7b2247cb509bb141e454157198c9bb52` (`feat(review): add member size candidate analysis`).
 - Nächster ausführbarer Punkt: C2 — Klassen- und Dateikandidaten ergänzen.
