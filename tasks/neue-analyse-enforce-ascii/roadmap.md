@@ -10,7 +10,7 @@
   - Nicht: Keine Änderungen an der Analyse-Kernlogik.
   - Abnahme: Alle Konfigurations-, Validator- und Reporting-Tests in `AiNetReview.FastTests` laufen erfolgreich durch; Root-`ainetreview.json` ist valide.
 
-- [ ] **Punkt 3 — Dokumentation aktualisieren**
+- [x] **Punkt 3 — Dokumentation aktualisieren**
   - Intention: Dokumentation der neuen Analyse in `docs/` (`docs/review/findings.md`, `docs/configuration/file-format.md`, `docs/architecture/overview.md`, `docs/README.md`, `docs/interfaces/cli.md`) gemäß Regel 02.
   - Nicht: Keine Code-Änderungen.
   - Abnahme: Dokumentation spiegelt alle vier registrierten Produktionsanalysen exakt wider.
