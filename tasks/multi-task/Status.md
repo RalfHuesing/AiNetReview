@@ -16,7 +16,16 @@ Auf Nutzerwunsch wurden die zwei zuvor auffälligen Integrationstests probeweise
 
 ## Nächster Punkt
 
-[A1 der übergeordneten Roadmap](roadmap.md): Die Kontrollflussmessung mit betroffenen Tests umsetzen. Den breiteren vorbestehenden Reportpublikationsfehler bis A4 als bekannten Gate-Befund mitführen; keine wiederholten vollständigen Testläufe ohne neue Hypothese.
+[A1-Audit der übergeordneten Roadmap](roadmap.md): Die verhaltensgleiche Extraktion unabhängig gegen Konzept, Diff und Regressionstests prüfen. Danach folgt A2.
+
+## A1 — Kontrollflussmessung extrahiert
+
+- Ausgangsstand vor Edits: `HEAD 5868d1ead48d99f50bf4ed73eb14a1cb165eae38`, Arbeitsbaum sauber.
+- Implementiert `ControlFlowMetrics.Measure` mit unverändertem Entscheidungs-Walker, Validierung von Block-/Expression-Knoten und unveränderlichem Ergebnis; `MethodControlFlowOutliersAnalysis` nutzt die API. Kandidaten, Messwerte, tiefste Evidenz, Descriptor und Behavior-Version bleiben erhalten.
+- Dokumentationsabgleich: `docs/review/findings.md`, `docs/README.md` und `docs/development/adding-review-analyses.md` geprüft. Die vorhandene Beschreibung stimmt mit dem extrahierten Verhalten überein; keine Current-State-Doku musste geändert werden.
+- Verifikation: fokussierte FastTests 32/32 bestanden; gezielter `MethodControlFlowOutliersIntegrationTests`-Test bestanden; Build-Gate mit 0 Warnungen und 0 Fehlern bestanden; `git diff --check` bestanden.
+- Vollständiger IntegrationTests-Lauf: 91/92 bestanden. `HostAdapterIntegrationTests.ReviewCommand_ProductionDuplicateCodeAnalysisPublishesCurrentCrossProjectClusters` meldete `REPORT_FAILED` beim Publizieren des Reports. Der gezielte isolierte Wiederholungslauf dieses Tests bestand. Kein A1-relevanter Fehler reproduziert; der flüchtige Reportpublikationsbefund bleibt bis A4 sichtbar und die vollständige Suite wird ohne neue Hypothese nicht wiederholt.
+- A1-Commit: wird nach Staging des verifizierten Task-Slices ergänzt.
 
 ## Blocker und Restbefunde
 

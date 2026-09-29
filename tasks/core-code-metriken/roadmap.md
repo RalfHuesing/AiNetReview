@@ -2,7 +2,7 @@
 
 The contract is [Konzept.md](Konzept.md). Complete the points in order. Each implementation point includes focused contract tests, affected project gates, a check of relevant current-state documentation, its checkbox update, and an atomic commit. Do not change observable production behavior without an automated test. Do not start the follow-on review analyses in this roadmap.
 
-- [ ] **1. Extract control-flow measurement and preserve the existing analysis**
+- [x] **1. Extract control-flow measurement and preserve the existing analysis**
   - Intention: Give later analyses the exact current decision measurement without changing `method-control-flow-outliers`.
   - Scope: Move the existing `DecisionVisitor` behavior into the stateless `ControlFlowMetrics.Measure` contract in the concept. Return the four defined measurements, validate the body argument, and switch the existing analysis to the new entry point while retaining its current candidate enumeration, descriptor, thresholds, evidence, ordering, and behavior version.
   - Not: New counted syntax, a different decision model, or additional candidate kinds in the existing analysis.

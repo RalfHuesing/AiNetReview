@@ -154,6 +154,9 @@ public sealed class MethodControlFlowOutliersAnalysisTests
         Assert.Equal(13, finding.Metrics["decisionCount"]);
         Assert.Equal(9, finding.Metrics["decisionConstructCount"]);
         Assert.Equal(1, finding.Metrics["maxDecisionNesting"]);
+        Assert.Contains("Measure", finding.SubjectId, StringComparison.Ordinal);
+        Assert.Equal("Deepest counted decision", finding.Evidence[1].Label);
+        Assert.Contains("if (condition)", finding.Evidence[1].Snippet, StringComparison.Ordinal);
         Assert.Equal(1, finding.Metrics["groupMethodCount"]);
         Assert.Equal(13, finding.Metrics["decisionCutoff"]);
         Assert.Equal(4, finding.Metrics["nestingCutoff"]);
@@ -351,6 +354,8 @@ public sealed class MethodControlFlowOutliersAnalysisTests
     public void Descriptor_RejectsPercentilesOutsideIntegerRange()
     {
         var descriptor = new MethodControlFlowOutliersAnalysis().Descriptor;
+        Assert.Equal("method-control-flow-outliers", descriptor.AnalysisId);
+        Assert.Equal(1, descriptor.BehaviorVersion);
         Assert.Throws<ArgumentException>(() => descriptor.ResolveOptions([new("percentile", System.Text.Json.JsonSerializer.SerializeToElement(49))]));
         Assert.Throws<ArgumentException>(() => descriptor.ResolveOptions([new("percentile", System.Text.Json.JsonSerializer.SerializeToElement(100))]));
         Assert.Throws<ArgumentException>(() => descriptor.ResolveOptions([new("percentile", System.Text.Json.JsonSerializer.SerializeToElement(90.5))]));
