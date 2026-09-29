@@ -92,7 +92,7 @@ public sealed class InfrastructureLoadTests(ITestOutputHelper output)
         output.WriteLine($"Environment: Windows {Environment.OSVersion.Version}; {processorCount} logical CPUs; {FormatGiB(totalMemoryBytes)} GiB available RAM.");
         output.WriteLine($"Load: {physicalCodeLines:N0} non-comment C# code lines; {documentCount} documents; {ProjectCount} projects.");
         output.WriteLine($"Production EXE: {timer.Elapsed.TotalSeconds:F2} s; peak private bytes: {FormatGiB(peakPrivateBytes)} GiB; exit {process.ExitCode}.");
-        output.WriteLine("Command: AiNetReview.exe review --config <generated-project>/ainetreview.json");
+        output.WriteLine("Command: AiNetReview.exe review <generated-project>");
         Assert.True(timer.Elapsed <= TimeSpan.FromMinutes(10), $"Load took {timer.Elapsed}; limit is 10 minutes.");
         Assert.True(peakPrivateBytes <= 6L * 1024 * 1024 * 1024,
             $"Peak private bytes were {FormatGiB(peakPrivateBytes)} GiB; limit is 6 GiB.");
