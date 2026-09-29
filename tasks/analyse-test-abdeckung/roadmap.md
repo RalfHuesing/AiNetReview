@@ -35,7 +35,7 @@ The contract is [Konzept.md](Konzept.md). [Shared code measurements and test roo
   - Not: Baseline schema changes, dynamic analysis loading, or a new CLI mode.
   - Acceptance: Host/config/report tests verify that generated defaults and the repository example use the exact configuration entry in the concept; they also cover valid and invalid config, category labels and the selected indirect path, no baseline, unchanged baseline, added/changed/deleted C# paths, non-C#-only changes, full `all-findings`, empty results, repeated runs, and no publication on analysis failure/cancellation. Run FastTests, IntegrationTests, build, documentation diff review, and `git diff --check` before committing.
 
-- [ ] **5. Final audit**
+- [x] **5. Final audit**
   - Intention: Confirm the completed work matches the ready concept and works as a whole.
   - Scope: Review the implementation, test evidence, configuration, both report views, docs, and git diff against every Must/Not clause in [Konzept.md](Konzept.md). Run the required project gates and record concrete gaps for one correction pass if needed.
   - Not: New feature scope or speculative refactoring.

@@ -25,7 +25,7 @@ Bei einer dokumentierten harten Blockade bleibt die betreffende Checkbox offen. 
 
 Start nur nach geschlossenem Core-Aggregat und Prüfung von `ControlFlowMetrics.Measure` und `TestFrameworkClassifier.IsActiveTestRoot` im Code.
 
-- [ ] **Testabdeckungs-Task abgeschlossen** — Aggregat aller folgenden Punkte; bei lokaler harter Blockade offen lassen und nach Dokumentation mit C fortfahren.
+- [x] **Testabdeckungs-Task abgeschlossen** — Aggregat aller folgenden Punkte; bei lokaler harter Blockade offen lassen und nach Dokumentation mit C fortfahren.
   - [x] **B1 — Kandidaten bestimmen** — [Testabdeckungs-Roadmap, Punkt 1](../analyse-test-abdeckung/roadmap.md) vollständig ausführen und abnehmen.
   - [x] **B2 — Semantische Testpfade bestimmen** — Aggregat aus [Testabdeckungs-Roadmap, Punkt 2a und 2b](../analyse-test-abdeckung/roadmap.md); erst nach beiden Slices und der kombinierten Abnahme schließen.
     - [x] **B2a — Semantischen Graphen aufbauen** — [Testabdeckungs-Roadmap, Punkt 2a](../analyse-test-abdeckung/roadmap.md) vollständig ausführen und abnehmen.
@@ -37,7 +37,7 @@ Start nur nach geschlossenem Core-Aggregat und Prüfung von `ControlFlowMetrics.
     - Abnahme: Kein offener Pflichtbefund zu B1/B2; geprüfte Commits, akzeptierte Restbefunde und verbrauchte Runden sind dokumentiert.
   - [x] **B3 — Findings und Optionen ergänzen** — [Testabdeckungs-Roadmap, Punkt 3](../analyse-test-abdeckung/roadmap.md) vollständig ausführen und abnehmen.
   - [x] **B4 — Host und Berichte integrieren** — [Testabdeckungs-Roadmap, Punkt 4](../analyse-test-abdeckung/roadmap.md) vollständig ausführen und abnehmen.
-  - [ ] **B5 — Testabdeckungs-Schlussaudit** — [Testabdeckungs-Roadmap, Punkt 5](../analyse-test-abdeckung/roadmap.md) mit einem unabhängigen Audit-Agenten ausführen; alle Verträge, Berichtsansichten und Gates prüfen. Die Runden aus B2-Audit zählen zum Task-Limit. Audit-Ergebnis und etwaige Korrekturen dokumentieren und committen.
+  - [x] **B5 — Testabdeckungs-Schlussaudit** — [Testabdeckungs-Roadmap, Punkt 5](../analyse-test-abdeckung/roadmap.md) mit einem unabhängigen Audit-Agenten ausführen; alle Verträge, Berichtsansichten und Gates prüfen. Die Runden aus B2-Audit zählen zum Task-Limit. Audit-Ergebnis und etwaige Korrekturen dokumentieren und committen.
 
 ## C. Größenanalyse
 
