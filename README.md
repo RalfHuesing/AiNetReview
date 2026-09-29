@@ -17,17 +17,17 @@ The reports are prompts for an audit, not defect claims. See [Current findings](
 GitHub [releases](https://github.com/RalfHuesing/AiNetReview/releases) provide Windows x64 archives when a version is published. To run from source, install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) and build `AiNetReview.slnx`.
 
 1. Place `ainetreview.json` in the root of the project you want to review. Start from the [repository example](ainetreview.json), then set `solution` to a `.sln` or `.slnx` path relative to that root. Adjust the enabled analyses and `outputDirectory` as needed.
-2. Build and test the target solution first. From an extracted release archive, run AiNetReview with an absolute path to its configuration:
+2. Build and test the target solution first. From an extracted release archive, pass the project root to the review command:
 
    ```powershell
-   .\AiNetReview.exe review --config C:\path\to\project\ainetreview.json
+   .\AiNetReview.exe review C:\path\to\project
    ```
 
 3. Open the `index.md` named by the command's JSON response. The index links to `changed-files/`, which contains findings involving new or changed source files, and `all-findings/`, which contains every current finding. Each run gets its own report directory, so earlier reports remain available.
 
 The command requires a loadable C# solution without compiler errors. A completed review exits with code `0` even when it reports findings. See the [configuration reference](docs/configuration/file-format.md) and [CLI contract](docs/interfaces/cli.md) for options and failure codes.
 
-To save the current source snapshot as a comparison point without running review analyses, call `AiNetReview.exe --cmd baseline --config C:\path\to\project\ainetreview.json`. This writes or replaces `baseline.json` in the configured output directory. When launched from the project root, `AiNetReview.exe --cmd baseline` uses that root's configuration or creates the default configuration first.
+To save the current source snapshot as a comparison point without running review analyses, call `AiNetReview.exe baseline C:\path\to\project`. This writes or replaces `baseline.json` in the configured output directory. The project path is optional; when omitted, the current working directory is used. Both commands create a default `ainetreview.json` in the project root when it is missing and a solution file is found there.
 
 ## Development and releases
 
