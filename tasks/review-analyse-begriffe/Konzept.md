@@ -1,5 +1,5 @@
 ---
-status: draft
+status: ready
 ---
 
 # Begriffe und Grundvertrag für Review-Analysen
@@ -47,7 +47,7 @@ AiNetReview soll weitere fachliche Auswertungen aufnehmen können, ohne dass der
 | `AddAiNetReviewRules` | `AddAiNetReviewAnalyses` | Registrierung im Host und in Tests. |
 | `FixtureFindingRule`, `ReportRule` und weitere Test-Dummys | `FixtureFindingAnalysis`, `ReportAnalysis` usw. | Testnamen und Testordner ebenfalls umbenennen. |
 | JSON `rules` | JSON `analyses` | Projektkonfiguration und manuelle Audit-Profile. `schemaVersion: 1` bleibt; alle vorhandenen JSON-Dateien werden geändert. Alte `rules`-Dateien sind ungültig. |
-| Berichtspfad `rules/<id>.md` | `analyses/<id>.md` | Neu erzeugte Berichte, Links und Berichtstests; Frage zu lokal bereits erzeugten Altberichten unten. |
+| Berichtspfad `rules/<id>.md` | `analyses/<id>.md` | Neu erzeugte Berichte, Links und Berichtstests. Frühere lokale Altberichte wurden entfernt. |
 | „Rules with open findings“, „all rules are disabled“ | „Analyses with open findings“, „all analyses are disabled“ | Berichtstexte und zugehörige Tests. `Signal` als Spaltenüberschrift bleibt erhalten. |
 | `docs/development/adding-rules.md` | `docs/development/adding-review-analyses.md` | Anleitung samt Link im Dokumentationsindex. |
 
@@ -63,8 +63,8 @@ Die Liste beschreibt die betroffenen Flächen, keine Arbeit in diesem Konzeptsch
 4. **Gespeicherte Konfiguration:** `ainetreview.json`, alle vorhandenen `audit-targets/*.json`-Profile und die in Tests eingebetteten JSON-Beispiele werden direkt auf `analyses` umgestellt. Die Audit-Profile sind derzeit lokal und Git-ignoriert; sie dürfen nicht als vermeintlich irrelevante Dateien übersehen werden. `schemaVersion: 1` bleibt in Projektkonfigurationen und Generator erhalten: Dieses Greenfield-Vorhaben ersetzt den noch nicht zu bewahrenden v1-Vertrag. Der Validator akzeptiert nur `analyses`, nicht `rules`; es gibt keinen Legacy-Leser, Alias, Migrationspfad oder automatisch konvertierende CLI.
 5. **Tests und Fixtures:** alle produktbezogenen Tests unter `tests/AiNetReview.FastTests/**` und `tests/AiNetReview.IntegrationTests/**`, besonders die bisherigen `Rules/`-Tests, `RuleServiceRegistrationTests`, `FixtureRules/`, Konfigurations- und Generator-Tests, `ReviewRunnerTests`, Host-/Zero-Config-/Audit-Tests sowie Markdown-Publikations- und Linktests. Test-Dateinamen, Namespaces, Fixture-Typen, Beispiel-IDs, Erwartungstexte und `rules/`-Pfade werden mitgezogen. Die manuellen Audit-Profile selbst lösen keine reguläre Testsuite aus.
 6. **Aktuelle Produktdokumentation und Einstieg:** `README.md`, `docs/README.md`, `docs/architecture/{overview,dependencies}.md`, `docs/configuration/file-format.md`, `docs/interfaces/cli.md`, `docs/review/findings.md`, `docs/development/{adding-rules,build-and-tests}.md`; Inhaltsverweise und Beispiele werden konsistent.
-7. **Repo-Anweisungen und Aufgabenbestand:** In `.agents/rules/03-product-boundaries.mdc` werden Aussagen über **Produktanalysen** angepasst. `.agents/rules/08-production-rule-configuration.mdc` wird in `08-production-analysis-configuration.mdc` umbenannt und inhaltlich aktualisiert; `.agents/rules/README.md` und alle Verweise auf die Datei werden mitgezogen. `AGENTS.md` und die übrigen Agent-Dateien werden auf Produktbezüge durchsucht. `.agents/rules/` als Ort verbindlicher Agentenregeln bleibt. Produktbezüge in `tasks/ideen/{erste-fachliche-review-signale,wenige-starke-audit-signale,ainetlinter-regeln}.md` sowie `tasks/integrations-vereinfachung/Konzept.md` werden angepasst. Bezeichnungen und Zitate der externen AiNetLinter-Regeln bleiben erhalten.
-8. **Berichte:** Der Generator verwendet `analyses/` und neue Überschriften; Quelllinks und Indexlinks neuer Läufe müssen zusammenpassen. Im Git-ignorierten `audit-reporting/` liegen derzeit 29 ältere lokale Laufverzeichnisse. Ob diese Altberichte als Teil der vollständigen Bereinigung entfernt werden, ist noch zu entscheiden; ihre Inhalte werden nicht migriert.
+7. **Repo-Anweisungen und Aufgabenbestand:** In `.agents/rules/03-product-boundaries.mdc` werden Aussagen über **Produktanalysen** angepasst. `.agents/rules/08-production-rule-configuration.mdc` wird in `08-production-review-analysis-configuration.mdc` umbenannt und inhaltlich aktualisiert; `.agents/rules/README.md` und alle Verweise auf die Datei werden mitgezogen. `AGENTS.md` und die übrigen Agent-Dateien werden auf Produktbezüge durchsucht. `.agents/rules/` als Ort verbindlicher Agentenregeln bleibt. Produktbezüge in `tasks/ideen/{erste-fachliche-review-signale,wenige-starke-audit-signale,checksum-gebundene-ignore-liste,ainetlinter-regeln}.md` sowie `tasks/integrations-vereinfachung/Konzept.md` werden angepasst. Bezeichnungen und Zitate der externen AiNetLinter-Regeln bleiben erhalten.
+8. **Berichte:** Der Generator verwendet `analyses/` und neue Überschriften; Quelllinks und Indexlinks neuer Läufe müssen zusammenpassen. Die früheren lokalen Altberichte unter `audit-reporting/` wurden vom Nutzer entfernt; es gibt keinen Berichtsmigrations- oder Bereinigungsschritt.
 
 Es gibt derzeit keine `Rule`-Bezeichnung in den drei produktiven ID-Werten `method-control-flow-outliers`, `dead-code-candidates` und `duplicate-code-candidates`; ein Umbenennen dieser IDs wäre ein eigener Identitätsbruch ohne terminologischen Nutzen.
 
@@ -90,9 +90,4 @@ Es gibt derzeit keine `Rule`-Bezeichnung in den drei produktiven ID-Werten `meth
 - Konfiguration, öffentliche Texte, neue Berichte, Dokumentation, Agent-Dateien mit Produktbezug und interne Typnamen verwenden die neue Benennung ohne Legacy-Alias.
 - Ein neuer Review-Agent kann aus dem Konzept erkennen, welche Aussage eine Fundstelle erlaubt und welche Entscheidung Kontextprüfung verlangt.
 - Tests prüfen Konfigurationsgenerierung/-validierung mit `analyses` bei `schemaVersion: 1`, Ablehnung von `rules`, Registrierung, alle drei Analysen, Berichtspfade/-links und die beiden Leerfälle (aktive Analyse ohne Fundstellen; keine aktive Analyse).
-- Eine vollständige Repository-Suche nach alten Produktbegriffen erklärt jeden verbleibenden Treffer als echten Agentenregel- oder AiNetLinter-Bezug oder als Alt-Text in der Alt→Neu-Tabelle dieses Konzepts. Lokal bereits erzeugte Berichte werden gemäß der noch offenen Bereinigungsentscheidung behandelt.
-
-## Arbeitsgedächtnis (nur Draft)
-
-- **Arbeitsentscheidung:** Der Produktbegriff „Review-Analyse“ wird durchgängig verwendet, auch in API-/Code-Namen, JSON und Berichtspfaden. `schemaVersion: 1` bleibt und verwendet nur `analyses`; bestehende JSON-Dateien werden ersetzt. Es gibt keine Migration und keine Kompatibilität. „Rule“ bleibt für verbindliche Agentenanweisungen und echte AiNetLinter-Regeln.
-- **Offene Entscheidung:** Sollen die 29 vorhandenen, Git-ignorierten lokalen Altberichte unter `audit-reporting/` bei der späteren Umsetzung entfernt werden? Für ein vollständig bereinigtes lokales Arbeitsverzeichnis wäre das konsequent. Da die Berichte bisher als ältere Läufe erhalten bleiben und nicht versioniert sind, wird ihre Entfernung nicht stillschweigend angenommen.
+- Eine vollständige Repository-Suche nach alten Produktbegriffen erklärt jeden verbleibenden Treffer als echten Agentenregel- oder AiNetLinter-Bezug oder als Alt-Text in der Alt→Neu-Tabelle dieses Konzepts.
