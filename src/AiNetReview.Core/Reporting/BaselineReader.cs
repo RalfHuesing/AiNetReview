@@ -12,6 +12,11 @@ using AiNetReview.Core.Analysis;
 /// <summary>Reads and validates the optional baseline used to select changed source files.</summary>
 public sealed class BaselineReader
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
     public async Task<IReadOnlyDictionary<string, string>?> ReadAsync(
         string outputDirectory,
         CancellationToken cancellationToken = default)
@@ -27,7 +32,7 @@ public sealed class BaselineReader
         SourceBaselineDocument? document;
         try
         {
-            document = await JsonSerializer.DeserializeAsync<SourceBaselineDocument>(stream, cancellationToken: cancellationToken)
+            document = await JsonSerializer.DeserializeAsync<SourceBaselineDocument>(stream, JsonOptions, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (JsonException exception)

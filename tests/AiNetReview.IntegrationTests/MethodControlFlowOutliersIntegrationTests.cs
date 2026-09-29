@@ -73,19 +73,19 @@ public sealed class MethodControlFlowOutliersIntegrationTests
             new[] { "dead-code-candidates", "duplicate-code-candidates", "method-control-flow-outliers" },
             provider.GetRequiredService<ReviewAnalysisRegistry>().Analyses.Select(static analysis => analysis.Descriptor.AnalysisId));
 
-        var analysesDirectory = Path.Combine(projectRoot, "reports", runId!, "analyses");
+        var analysesDirectory = Path.Combine(projectRoot, "reports", runId!, "all-findings");
         var reportPath = Path.Combine(analysesDirectory, "method-control-flow-outliers.md");
         Assert.True(File.Exists(reportPath));
-        Assert.Equal(new[] { "method-control-flow-outliers.md" },
-            Directory.GetFiles(analysesDirectory).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        Assert.Contains("method-control-flow-outliers.md",
+            Directory.GetFiles(analysesDirectory).Select(Path.GetFileName));
 
         var report = await File.ReadAllTextAsync(reportPath);
         Assert.Contains("8 decisions across", report, StringComparison.Ordinal);
         Assert.Contains("(cutoff 8)", report, StringComparison.Ordinal);
         Assert.DoesNotContain("sourceSpanLines", report, StringComparison.Ordinal);
         Assert.Contains("[Sample/Class1.cs:4](../../../Sample/Class1.cs#L4)", report, StringComparison.Ordinal);
-        Assert.Contains("| Source | Signal | Other Locations |", report, StringComparison.Ordinal);
-        Assert.DoesNotContain("HighlyBranched", report, StringComparison.Ordinal);
+        Assert.Contains("| Symbol / cluster | Source | Signal | Related findings |", report, StringComparison.Ordinal);
+        Assert.Contains("HighlyBranched", report, StringComparison.Ordinal);
         Assert.DoesNotContain("public int", report, StringComparison.Ordinal);
     }
 

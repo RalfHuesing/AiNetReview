@@ -73,7 +73,7 @@ public sealed class MarkdownReportWriterPublicationTests
         var result = new ReviewRunResult([new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([finding]))]);
 
         var report = await new MarkdownReportWriter().WriteAsync(config, result);
-        var analysisReportPath = Path.Combine(outputDirectory, report.RunId, "analyses", "publication-analysis.md");
+        var analysisReportPath = Path.Combine(outputDirectory, report.RunId, "all-findings", "publication-analysis.md");
         var analysisReport = await File.ReadAllTextAsync(analysisReportPath);
         var links = Regex.Matches(analysisReport, @"\]\((?<target>[^)]+)#L[0-9]+\)", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1))
             .Cast<Match>()

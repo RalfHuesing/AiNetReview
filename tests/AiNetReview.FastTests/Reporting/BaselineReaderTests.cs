@@ -23,7 +23,10 @@ public sealed class BaselineReaderTests
     {
         using var temp = TestTempDirectory.Create();
         var expected = new SourceBaselineDocument(1, [new SourceFileSnapshot("src/A.cs", new string('a', 64))]);
-        await File.WriteAllTextAsync(Path.Combine(temp.DirectoryPath, "baseline.json"), JsonSerializer.Serialize(expected));
+        await File.WriteAllTextAsync(Path.Combine(temp.DirectoryPath, "baseline.json"), JsonSerializer.Serialize(expected, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        }));
 
         var result = await new BaselineReader().ReadAsync(temp.DirectoryPath);
 

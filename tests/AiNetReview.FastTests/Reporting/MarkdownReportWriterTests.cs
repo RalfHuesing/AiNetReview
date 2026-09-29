@@ -28,7 +28,7 @@ public sealed class MarkdownReportWriterTests
         ]));
 
         var indexBytes = await File.ReadAllBytesAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "index.md"));
-        Assert.Single(Directory.GetFiles(Path.Combine(config.ResolvedOutputDirectory, report.RunId), "*", SearchOption.AllDirectories));
+        Assert.Equal(3, Directory.GetFiles(Path.Combine(config.ResolvedOutputDirectory, report.RunId), "*", SearchOption.AllDirectories).Length);
         Assert.False(indexBytes.AsSpan().StartsWith(Encoding.UTF8.GetPreamble()));
         Assert.DoesNotContain((byte)'\r', indexBytes);
         var index = Encoding.UTF8.GetString(indexBytes);
@@ -41,7 +41,7 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("No findings were found.", index, StringComparison.Ordinal);
         Assert.DoesNotContain("Started", index, StringComparison.Ordinal);
         Assert.DoesNotContain("Detected", index, StringComparison.Ordinal);
-        Assert.Empty(Directory.GetDirectories(Path.Combine(config.ResolvedOutputDirectory, report.RunId)));
+        Assert.Equal(2, Directory.GetDirectories(Path.Combine(config.ResolvedOutputDirectory, report.RunId)).Length);
         Assert.Equal("reports/" + report.RunId + "/index.md", report.IndexPath);
     }
 
@@ -58,7 +58,7 @@ public sealed class MarkdownReportWriterTests
 
         Assert.Contains("No review was performed because all analyses are disabled.", index, StringComparison.Ordinal);
         Assert.DoesNotContain("No findings were found", index, StringComparison.Ordinal);
-        Assert.Single(Directory.GetFiles(runDirectory, "*", SearchOption.AllDirectories));
+        Assert.Equal(3, Directory.GetFiles(runDirectory, "*", SearchOption.AllDirectories).Length);
     }
 
     [Fact]
@@ -80,14 +80,19 @@ public sealed class MarkdownReportWriterTests
         ]));
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
-        var analysisReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "analyses", "has-findings.md"));
+        var analysisReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "all-findings", "has-findings.md"));
+        var changedReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "changed-files", "has-findings.md"));
 
-        Assert.Contains("[Has Findings](analyses/has-findings.md)", index, StringComparison.Ordinal);
+        Assert.Contains("[Open the changed files view](changed-files/index.md)", index, StringComparison.Ordinal);
+        Assert.Contains("[Open the complete findings view](all-findings/index.md)", index, StringComparison.Ordinal);
         Assert.DoesNotContain("Empty Review analysis", index, StringComparison.Ordinal);
-        Assert.Single(Directory.GetFiles(Path.Combine(runDirectory, "analyses")));
-        Assert.Equal(2, analysisReport.Split("| [", StringSplitOptions.None).Length - 1);
-        Assert.Contains("(Sample/Sample.csproj)", analysisReport, StringComparison.Ordinal);
-        Assert.Contains("(Other/Sample.csproj)", analysisReport, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(runDirectory, "all-findings", "index.md")));
+        Assert.True(File.Exists(Path.Combine(runDirectory, "changed-files", "index.md")));
+        Assert.False(File.Exists(Path.Combine(runDirectory, "all-findings", "empty-analysis.md")));
+        Assert.Equal(2, analysisReport.Split("| <a id=", StringSplitOptions.None).Length - 1);
+        Assert.Contains("Sample.cs:2", analysisReport, StringComparison.Ordinal);
+        Assert.Contains("Sample.cs:3", analysisReport, StringComparison.Ordinal);
+        Assert.Equal(analysisReport, changedReport);
     }
 
     [Fact]
@@ -102,9 +107,9 @@ public sealed class MarkdownReportWriterTests
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
             new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([z, a])),
         ]));
-        var markdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "analyses", "fixture-analysis.md"));
+        var markdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "all-findings", "fixture-analysis.md"));
 
-        Assert.Contains("| Source | Signal | Other Locations |", markdown, StringComparison.Ordinal);
+        Assert.Contains("| Symbol / cluster | Source | Signal | Related findings |", markdown, StringComparison.Ordinal);
         Assert.True(markdown.IndexOf("[a file\\#1.cs:3]", StringComparison.Ordinal) < markdown.IndexOf("[z file\\#1.cs:9]", StringComparison.Ordinal));
         Assert.Equal(2, markdown.Split("| [", StringSplitOptions.None).Length - 1);
         Assert.Contains("../../../a%20file%231.cs#L3", markdown, StringComparison.Ordinal);
@@ -117,9 +122,55 @@ public sealed class MarkdownReportWriterTests
         Assert.True(markdown.IndexOf("\"alpha\"", StringComparison.Ordinal) < markdown.IndexOf("\"scenario\"", StringComparison.Ordinal));
         Assert.DoesNotContain("\\{", markdown, StringComparison.Ordinal);
         var index = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "index.md"));
-        Assert.Contains("Working through findings", index, StringComparison.Ordinal);
-        Assert.Contains("explain the decision to the user", index, StringComparison.Ordinal);
-        Assert.Contains("All findings addressed", index, StringComparison.Ordinal);
+        Assert.Contains("Review guidance", index, StringComparison.Ordinal);
+        Assert.Contains("First remove only clear false positives", index, StringComparison.Ordinal);
+        Assert.Contains("Set a new baseline", index, StringComparison.Ordinal);
+        Assert.Contains("--cmd baseline --config", index, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task WriteAsync_SeparatesChangedViewAndLinksRelatedFindingsAcrossAnalyses()
+    {
+        using var temp = TestTempDirectory.Create();
+        var changedAnalysis = new ReportAnalysis("alpha-analysis", "Alpha", "active");
+        var unchangedAnalysis = new ReportAnalysis("beta-analysis", "Beta", "active");
+        var config = CreateConfig(temp.DirectoryPath, changedAnalysis, unchangedAnalysis);
+        var symbol = new FindingSymbol("Sample/Sample.csproj", "Sample.cs", "M:Sample.Run", 3);
+        var changedDraft = new FindingDraft("Sample/Sample.csproj", "Sample.cs", "M:Sample.Run", "complexity", 3, "signal",
+            new Dictionary<string, double>(), [new FindingEvidence("Sample.cs", 3, "Source", "detail", "Run")], [symbol]);
+        var unchangedDraft = new FindingDraft("Sample/Sample.csproj", "Other.cs", "M:Sample.Run", "dead-code", 8, "signal",
+            new Dictionary<string, double>(), [new FindingEvidence("Other.cs", 8, "Source", "detail", "Run")], [symbol]);
+        var changedFinding = new ReviewFinding("alpha-analysis", changedDraft, ["Sample.cs"],
+            [new ReviewFindingReference("beta-analysis", unchangedDraft.ProjectPath, unchangedDraft.SourcePath, unchangedDraft.SubjectId,
+                unchangedDraft.Discriminator, "Sample.cs", "M:Sample.Run", 3)], ["Sample.cs"]);
+        var unchangedFinding = new ReviewFinding("beta-analysis", unchangedDraft, ["Other.cs"], [], []);
+        var result = new ReviewRunResult([
+            new ReviewAnalysisRunResult("alpha-analysis", new ReviewAnalysisResult([changedDraft])),
+            new ReviewAnalysisRunResult("beta-analysis", new ReviewAnalysisResult([unchangedDraft])),
+        ]) { Findings = [changedFinding, unchangedFinding] };
+
+        var report = await new MarkdownReportWriter().WriteAsync(config, result,
+            configurationPath: Path.Combine(temp.DirectoryPath, "target project", "ainetreview.json"));
+        var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
+        var changedIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "changed-files", "index.md"));
+        var completeIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "all-findings", "index.md"));
+        var changedReportPath = Path.Combine(runDirectory, "changed-files", "alpha-analysis.md");
+        var changedReport = await File.ReadAllTextAsync(changedReportPath);
+        var completeReportPath = Path.Combine(runDirectory, "all-findings", "beta-analysis.md");
+
+        Assert.Contains("Alpha (1)", changedIndex, StringComparison.Ordinal);
+        Assert.DoesNotContain("Beta", changedIndex, StringComparison.Ordinal);
+        Assert.Contains("Alpha (1)", completeIndex, StringComparison.Ordinal);
+        Assert.Contains("Beta (1)", completeIndex, StringComparison.Ordinal);
+        Assert.True(File.Exists(completeReportPath));
+        Assert.Contains("M:Sample.Run", changedReport, StringComparison.Ordinal);
+        Assert.Contains("../all-findings/beta-analysis.md#finding-2", changedReport, StringComparison.Ordinal);
+        var completeBeforeEdit = await File.ReadAllTextAsync(completeReportPath);
+        await File.WriteAllTextAsync(changedReportPath, changedReport.Replace("M:Sample.Run", "handled", StringComparison.Ordinal));
+        Assert.Equal(completeBeforeEdit, await File.ReadAllTextAsync(completeReportPath));
+
+        var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
+        Assert.Contains("target project\\ainetreview.json'", index, StringComparison.Ordinal);
     }
 
     private static ReviewConfig CreateConfig(string root, params ReportAnalysis[] analyses) => CreateConfig(root, true, analyses);

@@ -52,7 +52,7 @@ public sealed class HostAdapterIntegrationTests
         Assert.Matches("[0-9]+(?:\\.[0-9]+)?% similarity \\(minimum [0-9]+(?:\\.[0-9]+)?%\\)", exactReport);
         Assert.Contains("ProductA/First.cs:", exactReport, StringComparison.Ordinal);
         Assert.Contains("ProductB/Second.cs:", exactReport, StringComparison.Ordinal);
-        Assert.Contains("| Source | Signal | Other Locations |", exactReport, StringComparison.Ordinal);
+        Assert.Contains("| Symbol / cluster | Source | Signal | Related findings |", exactReport, StringComparison.Ordinal);
         Assert.DoesNotContain("Metrics", exactReport, StringComparison.Ordinal);
         AssertMarkdownLinksResolve(Path.Combine(projectRoot, "reports", exact.RunId));
 
@@ -73,7 +73,7 @@ public sealed class HostAdapterIntegrationTests
         var emptyRunDirectory = Path.Combine(projectRoot, "reports", empty.RunId);
         var emptyIndex = await File.ReadAllTextAsync(Path.Combine(emptyRunDirectory, "index.md"));
         Assert.Contains("No findings were found.", emptyIndex, StringComparison.Ordinal);
-        Assert.False(File.Exists(Path.Combine(emptyRunDirectory, "analyses", "duplicate-code-candidates.md")));
+        Assert.False(File.Exists(Path.Combine(emptyRunDirectory, "all-findings", "duplicate-code-candidates.md")));
         Assert.True(File.Exists(Path.Combine(projectRoot, "reports", exact.RunId, "index.md")));
         Assert.True(File.Exists(Path.Combine(projectRoot, "reports", fuzzy.RunId, "index.md")));
 
@@ -119,15 +119,15 @@ public sealed class HostAdapterIntegrationTests
             "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"dead-code-candidates\":{}}}");
 
         var first = await RunProductionDeadCodeAsync(configPath);
-        var firstReport = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", first.RunId, "analyses", "dead-code-candidates.md"));
+        var firstReport = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", first.RunId, "all-findings", "dead-code-candidates.md"));
         Assert.Equal(1, first.Detected);
         Assert.Contains("Type without known use", firstReport, StringComparison.Ordinal);
-        Assert.Contains("| Source | Signal | Other Locations |", firstReport, StringComparison.Ordinal);
+        Assert.Contains("| Symbol / cluster | Source | Signal | Related findings |", firstReport, StringComparison.Ordinal);
         Assert.Contains("reflection", firstReport, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("external_library", firstReport, StringComparison.Ordinal);
 
         var second = await RunProductionDeadCodeAsync(configPath);
-        var secondReport = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", second.RunId, "analyses", "dead-code-candidates.md"));
+        var secondReport = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", second.RunId, "all-findings", "dead-code-candidates.md"));
         Assert.Equal(1, second.Detected);
         Assert.NotEqual(first.RunId, second.RunId);
         Assert.Contains("Type without known use", secondReport, StringComparison.Ordinal);
@@ -138,7 +138,7 @@ public sealed class HostAdapterIntegrationTests
         var emptyRunDirectory = Path.Combine(projectRoot, "reports", empty.RunId);
         var emptyIndex = await File.ReadAllTextAsync(Path.Combine(emptyRunDirectory, "index.md"));
         Assert.Contains("No findings were found.", emptyIndex, StringComparison.Ordinal);
-        Assert.False(File.Exists(Path.Combine(emptyRunDirectory, "analyses", "dead-code-candidates.md")));
+        Assert.False(File.Exists(Path.Combine(emptyRunDirectory, "all-findings", "dead-code-candidates.md")));
 
         var publishedRunsBeforeCancellation = Directory.GetDirectories(Path.Combine(projectRoot, "reports")).Length;
         using var cancellation = new CancellationTokenSource();
@@ -197,7 +197,8 @@ public sealed class HostAdapterIntegrationTests
         var thirdRunDirectory = Path.Combine(projectRoot, "reports", third.RunId);
         var thirdIndex = await File.ReadAllTextAsync(Path.Combine(thirdRunDirectory, "index.md"));
         Assert.Contains("No findings were found.", thirdIndex, StringComparison.Ordinal);
-        Assert.False(Directory.Exists(Path.Combine(thirdRunDirectory, "analyses")));
+        Assert.Equal(new[] { "index.md" }, Directory.GetFiles(Path.Combine(thirdRunDirectory, "all-findings"), "*.md").Select(Path.GetFileName));
+        Assert.Equal(new[] { "index.md" }, Directory.GetFiles(Path.Combine(thirdRunDirectory, "changed-files"), "*.md").Select(Path.GetFileName));
 
         Assert.True(File.Exists(Path.Combine(projectRoot, "reports", first.RunId, "index.md")));
         Assert.True(File.Exists(Path.Combine(projectRoot, "reports", second.RunId, "index.md")));
@@ -286,7 +287,7 @@ public sealed class HostAdapterIntegrationTests
         using var response = JsonDocument.Parse(output.ToString());
         Assert.Equal(1, response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
         var runId = response.RootElement.GetProperty("runId").GetString();
-        var report = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "analyses", "fixture-finding.md"));
+        var report = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "all-findings", "fixture-finding.md"));
         Assert.Contains("Fixture scenario 'base' requires review of FixtureCaseA.", report, StringComparison.Ordinal);
         Assert.Equal(
             new[] { "dead-code-candidates", "duplicate-code-candidates", "fixture-finding", "method-control-flow-outliers" },
@@ -383,7 +384,7 @@ public sealed class HostAdapterIntegrationTests
     }
 
     private static Task<string> ReadAnalysisReportAsync(string projectRoot, string runId) =>
-        File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId, "analyses", "fixture-finding.md"));
+        File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId, "all-findings", "fixture-finding.md"));
 
     private static async Task<(string RunId, int Detected)> RunProductionDeadCodeAsync(string configPath)
     {
@@ -451,7 +452,7 @@ public sealed class HostAdapterIntegrationTests
     }
 
     private static Task<string> ReadDuplicateCodeReportAsync(string projectRoot, string runId) =>
-        File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId, "analyses", "duplicate-code-candidates.md"));
+        File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId, "all-findings", "duplicate-code-candidates.md"));
 
     private static void AssertMarkdownLinksResolve(string runDirectory)
     {

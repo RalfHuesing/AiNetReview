@@ -23,7 +23,7 @@ GitHub [releases](https://github.com/RalfHuesing/AiNetReview/releases) provide W
    .\AiNetReview.exe review --config C:\path\to\project\ainetreview.json
    ```
 
-3. Open the `index.md` named by the command's JSON response. The `indexPath` value is relative to the target project root. Each run gets its own report directory, so earlier reports remain available.
+3. Open the `index.md` named by the command's JSON response. The index links to `changed-files/`, which contains findings involving new or changed source files, and `all-findings/`, which contains every current finding. Each run gets its own report directory, so earlier reports remain available.
 
 The command requires a loadable C# solution without compiler errors. A completed review exits with code `0` even when it reports findings. See the [configuration reference](docs/configuration/file-format.md) and [CLI contract](docs/interfaces/cli.md) for options and failure codes.
 

@@ -1,6 +1,7 @@
 namespace AiNetReview.Core.Reporting;
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -31,7 +32,8 @@ public sealed class MarkdownReportWriter
     public async Task<PublishedReport> WriteAsync(
         ReviewConfig config,
         ReviewRunResult result,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? configurationPath = null)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(result);
@@ -41,7 +43,7 @@ public sealed class MarkdownReportWriter
             throw new ArgumentException("Run results must contain exactly one result for every configured analysis.", nameof(result));
         }
 
-        var resultById = result.Analyses.ToDictionary(static run => run.AnalysisId, StringComparer.Ordinal);
+        var findings = GetFindings(result);
         Directory.CreateDirectory(config.ResolvedOutputDirectory);
 
         while (true)
@@ -61,21 +63,22 @@ public sealed class MarkdownReportWriter
                 foreach (var configuredAnalysis in analyses)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var analysisResult = resultById[configuredAnalysis.AnalysisId];
-                    if (analysisResult.DetectedCount == 0)
-                    {
-                        continue;
-                    }
-
-                    var analysisPath = Path.Combine(temporaryPath, "analyses", configuredAnalysis.AnalysisId + ".md");
-                    Directory.CreateDirectory(Path.GetDirectoryName(analysisPath)!);
-                    await WriteUtf8Async(analysisPath, FormatAnalysisReport(config, configuredAnalysis, analysisResult, Path.GetDirectoryName(analysisPath)!), cancellationToken)
+                    var allFindings = findings.Where(finding => finding.AnalysisId == configuredAnalysis.AnalysisId).ToArray();
+                    var changedFindings = allFindings.Where(static finding => finding.IsChanged).ToArray();
+                    await WriteViewAnalysisAsync(temporaryPath, "changed-files", config, configuredAnalysis, changedFindings, findings, cancellationToken)
+                        .ConfigureAwait(false);
+                    await WriteViewAnalysisAsync(temporaryPath, "all-findings", config, configuredAnalysis, allFindings, findings, cancellationToken)
                         .ConfigureAwait(false);
                 }
 
+                await WriteViewIndexAsync(temporaryPath, "changed-files", "Changed files", analyses, findings, changedOnly: true, cancellationToken)
+                    .ConfigureAwait(false);
+                await WriteViewIndexAsync(temporaryPath, "all-findings", "All findings", analyses, findings, changedOnly: false, cancellationToken)
+                    .ConfigureAwait(false);
+
                 cancellationToken.ThrowIfCancellationRequested();
                 var indexPath = Path.Combine(temporaryPath, "index.md");
-                await WriteUtf8Async(indexPath, FormatIndex(runId, config, analyses, resultById), cancellationToken)
+                await WriteUtf8Async(indexPath, FormatIndex(runId, config, analyses, findings, configurationPath), cancellationToken)
                     .ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (beforePublication is not null)
@@ -132,7 +135,8 @@ public sealed class MarkdownReportWriter
         string runId,
         ReviewConfig config,
         ConfiguredReviewAnalysis[] analyses,
-        System.Collections.Generic.IReadOnlyDictionary<string, ReviewAnalysisRunResult> results)
+        IReadOnlyList<ReviewFinding> findings,
+        string? configurationPath)
     {
         var builder = new StringBuilder();
         builder.Append("# AiNetReview – ").Append(runId).Append("\n\n")
@@ -140,28 +144,112 @@ public sealed class MarkdownReportWriter
             .Append("- Repository: `").Append(EscapeInline(Path.GetFullPath(config.ProjectRoot))).Append("`\n")
             .Append("- Solution: `").Append(EscapeInline(config.SolutionPath)).Append("`\n\n");
 
-        var analysesWithFindings = analyses.Where(analysis => results[analysis.AnalysisId].DetectedCount > 0).ToArray();
-        if (analysesWithFindings.Length == 0)
+        var changedCount = findings.Count(static finding => finding.IsChanged);
+        var allCount = findings.Count;
+        if (allCount == 0)
         {
             builder.Append(analyses.Length == 0
-                ? "No review was performed because all analyses are disabled.\n"
-                : "No findings were found.\n");
-            return builder.ToString();
+                ? "No review was performed because all analyses are disabled.\n\n"
+                : "No findings were found.\n\n");
         }
 
-        builder.Append("## Analyses with open findings\n\n");
-        foreach (var analysis in analysesWithFindings)
-        {
-            builder.Append("- [").Append(EscapeLinkText(analysis.Analysis.Descriptor.Title)).Append("](analyses/")
-                .Append(EncodePathSegment(analysis.AnalysisId)).Append(".md)\n");
-        }
+        builder.Append("## Report views\n\n")
+            .Append("- [`changed-files/`](changed-files/index.md) contains findings that involve at least one source file that is new or changed since the optional baseline (")
+            .Append(changedCount.ToString(CultureInfo.InvariantCulture)).Append(" findings). Without a baseline, all current source files are treated as new. This file based filter can miss indirect effects in unchanged files.\n")
+            .Append("- [`all-findings/`](all-findings/index.md) always contains every current finding (")
+            .Append(allCount.ToString(CultureInfo.InvariantCulture)).Append(" findings). Keep this complete view intact while editing the working view.\n\n");
 
-        builder.Append("\n## Working through findings\n\n")
-            .Append("Review each finding against the source code. After fixing it or deciding to ignore it, explain the decision to the user and delete the finding's table row. When an analysis has no rows left, delete its report and remove its link here. When all findings are handled, replace these instructions with **All findings addressed**.\n");
+        var executable = Environment.ProcessPath ?? throw new InvalidOperationException("The current process executable path is unavailable.");
+        var baselineConfigPath = configurationPath is null
+            ? Path.Combine(config.ProjectRoot, "ainetreview.json")
+            : Path.GetFullPath(configurationPath);
+        builder.Append("## Changed files report\n\n[Open the changed files view](changed-files/index.md)\n\n")
+            .Append("## All findings report\n\n[Open the complete findings view](all-findings/index.md)\n\n")
+            .Append("## Set a new baseline\n\n")
+            .Append("Run this PowerShell command from any directory to set the comparison point to the current source files:\n\n")
+            .Append("```powershell\n& ").Append(QuotePowerShell(executable)).Append(" --cmd baseline --config ").Append(QuotePowerShell(baselineConfigPath)).Append("\n```\n\n")
+            .Append("The command replaces the baseline for all source files and does not require a report.\n\n")
+            .Append("## Review guidance\n\n")
+            .Append("These findings are review signals, not proven defects or automatic change requests. Read the target repository's applicable instructions and relevant design documents. Consider the behavior of the application as a whole, including contracts, callers, tests, and related findings across analyses. First remove only clear false positives from `changed-files/` and leave uncertain cases for review. Then work through the remaining findings one decision at a time while keeping the wider context in view. Avoid local workarounds and refactoring driven only by a metric. Explain consequential changes and tradeoffs to the user. Keep report files and links consistent when editing them.\n");
         return builder.ToString();
     }
 
-    private static string FormatAnalysisReport(ReviewConfig config, ConfiguredReviewAnalysis configuredAnalysis, ReviewAnalysisRunResult result, string reportDirectory)
+    private static async Task WriteViewIndexAsync(
+        string runDirectory,
+        string viewDirectory,
+        string title,
+        ConfiguredReviewAnalysis[] analyses,
+        IReadOnlyList<ReviewFinding> findings,
+        bool changedOnly,
+        CancellationToken cancellationToken)
+    {
+        var builder = new StringBuilder();
+        builder.Append("# ").Append(title).Append("\n\n");
+        var visible = analyses.Where(analysis => findings.Any(finding => finding.AnalysisId == analysis.AnalysisId
+                && (!changedOnly || finding.IsChanged)))
+            .ToArray();
+        if (visible.Length == 0)
+        {
+            builder.Append("No findings in this view.\n");
+        }
+        else
+        {
+            foreach (var analysis in visible)
+            {
+                var count = findings.Count(finding => finding.AnalysisId == analysis.AnalysisId && (!changedOnly || finding.IsChanged));
+                builder.Append("- [").Append(EscapeLinkText(analysis.Analysis.Descriptor.Title)).Append(" (")
+                    .Append(count.ToString(CultureInfo.InvariantCulture)).Append(")](")
+                    .Append(EncodePathSegment(analysis.AnalysisId)).Append(".md)\n");
+            }
+        }
+
+        var directory = Path.Combine(runDirectory, viewDirectory);
+        Directory.CreateDirectory(directory);
+        await WriteUtf8Async(Path.Combine(directory, "index.md"), builder.ToString(), cancellationToken).ConfigureAwait(false);
+    }
+
+    private static IReadOnlyList<ReviewFinding> GetFindings(ReviewRunResult result)
+    {
+        if (result.Findings.Count > 0 || result.DetectedCount == 0)
+        {
+            return result.Findings;
+        }
+
+        return result.Analyses.SelectMany(analysis => analysis.Result.Findings.Select(finding =>
+        {
+            var paths = finding.Evidence.Select(static evidence => evidence.SourcePath).Append(finding.SourcePath).Distinct(StringComparer.Ordinal).ToArray();
+            return new ReviewFinding(analysis.AnalysisId, finding, paths, Array.Empty<ReviewFindingReference>(), paths);
+        })).ToArray();
+    }
+
+    private static async Task WriteViewAnalysisAsync(
+        string runDirectory,
+        string viewDirectory,
+        ReviewConfig config,
+        ConfiguredReviewAnalysis configuredAnalysis,
+        IReadOnlyList<ReviewFinding> findings,
+        IReadOnlyList<ReviewFinding> allFindings,
+        CancellationToken cancellationToken)
+    {
+        if (findings.Count == 0)
+        {
+            return;
+        }
+
+        var reportDirectory = Path.Combine(runDirectory, viewDirectory);
+        Directory.CreateDirectory(reportDirectory);
+        var analysisPath = Path.Combine(reportDirectory, configuredAnalysis.AnalysisId + ".md");
+        await WriteUtf8Async(analysisPath, FormatAnalysisReport(config, configuredAnalysis, findings, allFindings, reportDirectory, viewDirectory), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static string FormatAnalysisReport(
+        ReviewConfig config,
+        ConfiguredReviewAnalysis configuredAnalysis,
+        IReadOnlyList<ReviewFinding> findings,
+        IReadOnlyList<ReviewFinding> allFindings,
+        string reportDirectory,
+        string viewDirectory)
     {
         var descriptor = configuredAnalysis.Analysis.Descriptor;
         var builder = new StringBuilder();
@@ -174,34 +262,82 @@ public sealed class MarkdownReportWriter
             builder.Append("- ").Append(EscapeInline(question)).Append("\n");
         }
 
-        var projectCountsBySource = result.Result.Findings
-            .GroupBy(static finding => finding.SourcePath, StringComparer.Ordinal)
-            .ToDictionary(
-                static group => group.Key,
-                static group => group.Select(static finding => finding.ProjectPath).Distinct(StringComparer.Ordinal).Count(),
-                StringComparer.Ordinal);
-
-        builder.Append("\n| Source | Signal | Other Locations |\n| --- | --- | --- |\n");
-        foreach (var finding in result.Result.Findings.OrderBy(static item => item.ProjectPath, StringComparer.Ordinal)
-                     .ThenBy(static item => item.SourcePath, StringComparer.Ordinal)
-                     .ThenBy(static item => item.StartLine)
-                     .ThenBy(static item => item.SubjectId, StringComparer.Ordinal)
-                     .ThenBy(static item => item.Discriminator, StringComparer.Ordinal))
+        var orderedAll = allFindings.OrderBy(static item => item.AnalysisId, StringComparer.Ordinal)
+            .ThenBy(static item => item.Finding.ProjectPath, StringComparer.Ordinal)
+            .ThenBy(static item => item.Finding.SourcePath, StringComparer.Ordinal)
+            .ThenBy(static item => item.Finding.StartLine)
+            .ThenBy(static item => item.Finding.SubjectId, StringComparer.Ordinal)
+            .ThenBy(static item => item.Finding.Discriminator, StringComparer.Ordinal)
+            .ToArray();
+        var anchorByKey = orderedAll.Select((finding, index) => (finding, anchor: "finding-" + (index + 1).ToString(CultureInfo.InvariantCulture)))
+            .ToDictionary(static item => FindingKey(item.finding), static item => item.anchor);
+        builder.Append("\n| Symbol / cluster | Source | Signal | Related findings |\n| --- | --- | --- | --- |\n");
+        foreach (var reviewFinding in findings.OrderBy(static item => item.Finding.ProjectPath, StringComparer.Ordinal)
+                     .ThenBy(static item => item.Finding.SourcePath, StringComparer.Ordinal)
+                     .ThenBy(static item => item.Finding.StartLine)
+                     .ThenBy(static item => item.Finding.SubjectId, StringComparer.Ordinal)
+                     .ThenBy(static item => item.Finding.Discriminator, StringComparer.Ordinal))
         {
-            builder.Append("| [").Append(EscapeLinkText(finding.SourcePath)).Append(':')
-                .Append(finding.StartLine.ToString(CultureInfo.InvariantCulture)).Append("](")
-                .Append(SourceLink(config.ProjectRoot, finding.SourcePath, finding.StartLine, reportDirectory)).Append(')');
-            if (projectCountsBySource[finding.SourcePath] > 1)
-            {
-                builder.Append(" (").Append(EscapeTable(finding.ProjectPath)).Append(')');
-            }
-
-            builder.Append(" | ").Append(EscapeTable(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append(" | ")
-                .Append(FormatAdditionalLocations(config.ProjectRoot, finding, reportDirectory)).Append(" |\n");
+            var finding = reviewFinding.Finding;
+            var anchor = anchorByKey[FindingKey(reviewFinding)];
+            builder.Append("| <a id=\"").Append(anchor).Append("\"></a>`").Append(EscapeInline(FormatSymbol(finding))).Append("` | [")
+                .Append(EscapeLinkText(finding.SourcePath)).Append(':').Append(finding.StartLine.ToString(CultureInfo.InvariantCulture)).Append("](")
+                .Append(SourceLink(config.ProjectRoot, finding.SourcePath, finding.StartLine, reportDirectory)).Append(") | ")
+                .Append(EscapeTable(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append(" | ")
+                .Append(FormatRelatedLinks(reviewFinding, findings, allFindings, anchorByKey, reportDirectory, viewDirectory)).Append(" |\n");
         }
 
         return builder.ToString();
     }
+
+    private static string FormatSymbol(FindingDraft finding)
+    {
+        if (finding.RelatedSymbols.Count <= 1)
+        {
+            return finding.SubjectId;
+        }
+
+        return string.Join(", ", finding.RelatedSymbols.Select(static symbol => symbol.SymbolId + " (" + symbol.SourcePath + ":" + symbol.Line.ToString(CultureInfo.InvariantCulture) + ")"));
+    }
+
+    private static string FormatRelatedLinks(
+        ReviewFinding finding,
+        IReadOnlyList<ReviewFinding> visibleFindings,
+        IReadOnlyList<ReviewFinding> allFindings,
+        IReadOnlyDictionary<string, string> anchorByKey,
+        string reportDirectory,
+        string viewDirectory)
+    {
+        if (finding.RelatedFindings.Count == 0)
+        {
+            return "—";
+        }
+
+        return string.Join(", ", finding.RelatedFindings.Select(reference =>
+        {
+            var target = allFindings.FirstOrDefault(candidate => candidate.AnalysisId == reference.AnalysisId
+                && candidate.Finding.ProjectPath == reference.ProjectPath
+                && candidate.Finding.SourcePath == reference.SourcePath
+                && candidate.Finding.SubjectId == reference.SubjectId
+                && candidate.Finding.Discriminator == reference.Discriminator);
+            if (target is null)
+            {
+                return "";
+            }
+
+            var inCurrentView = visibleFindings.Any(candidate => FindingKey(candidate) == FindingKey(target));
+            var view = inCurrentView ? viewDirectory : "all-findings";
+            var reportPath = Path.Combine(reportDirectory, "..", view, EncodePathSegment(reference.AnalysisId) + ".md");
+            var relative = Path.GetRelativePath(reportDirectory, Path.GetFullPath(reportPath)).Replace('\\', '/');
+            var symbol = EscapeLinkText(reference.SymbolId + " (" + reference.SymbolSourcePath + ":" + reference.SymbolLine.ToString(CultureInfo.InvariantCulture) + ")");
+            return "[" + symbol + "](" + relative + "#" + anchorByKey[FindingKey(target)] + ")";
+        }).Where(static link => link.Length > 0));
+    }
+
+    private static string FindingKey(ReviewFinding finding) => finding.AnalysisId + "\0" + finding.Finding.ProjectPath + "\0"
+        + finding.Finding.SourcePath + "\0" + finding.Finding.SubjectId + "\0" + finding.Finding.Discriminator;
+
+    private static string QuotePowerShell(string value) => "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";
 
     private static string SourceLink(string projectRoot, string sourcePath, int line, string reportDirectory)
     {
@@ -268,24 +404,6 @@ public sealed class MarkdownReportWriter
     private static string FormatNumber(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
 
     private static string FormatPercent(double value) => (value * 100).ToString("0.0", CultureInfo.InvariantCulture) + "%";
-
-    private static string FormatAdditionalLocations(string projectRoot, FindingDraft finding, string reportDirectory)
-    {
-        var locations = finding.Evidence
-            .Where(evidence => evidence.SourcePath != finding.SourcePath || evidence.Line != finding.StartLine)
-            .Select(static evidence => (evidence.SourcePath, evidence.Line))
-            .Distinct()
-            .OrderBy(static location => location.SourcePath, StringComparer.Ordinal)
-            .ThenBy(static location => location.Line)
-            .ToArray();
-        if (locations.Length == 0)
-        {
-            return "—";
-        }
-
-        return string.Join(", ", locations.Select(location =>
-            $"[{EscapeLinkText(location.SourcePath)}:{location.Line.ToString(CultureInfo.InvariantCulture)}]({SourceLink(projectRoot, location.SourcePath, location.Line, reportDirectory)})"));
-    }
 
     private static string FormatOptions(ReviewAnalysisOptions options) => "{" + string.Join(
         ", ", options.Values.OrderBy(static pair => pair.Key, StringComparer.Ordinal)

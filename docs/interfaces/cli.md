@@ -12,7 +12,7 @@ On review success, stdout contains exactly one compact JSON line, for example:
 {"status":"completed","runId":"20260928T163802Z-a1b2c3d4","indexPath":"audit-reporting/20260928T163802Z-a1b2c3d4/index.md","counts":{"detected":0}}
 ```
 
-`indexPath` is relative to the configuration's project root. A complete run with findings also exits with code `0`. Errors produce one `{"code":"...","message":"..."}` JSON line on stderr and no success response on stdout. Exit codes are `2` for `INVALID_INPUT`, `3` for `ANALYSIS_FAILED`, `4` for `REPORT_FAILED` or `LOGGING_FAILED`, and `130` for `CANCELLED`. Parser errors use `INVALID_INPUT`; progress and log events are never written to either process stream.
+`indexPath` is relative to the configuration's project root. It links to separate `changed-files/` and `all-findings/` views and includes a quoted PowerShell `--cmd baseline` command using the running executable and the same configuration. A complete run with findings also exits with code `0`. Errors produce one `{"code":"...","message":"..."}` JSON line on stderr and no success response on stdout. Exit codes are `2` for `INVALID_INPUT`, `3` for `ANALYSIS_FAILED`, `4` for `REPORT_FAILED` or `LOGGING_FAILED`, and `130` for `CANCELLED`. Parser errors use `INVALID_INPUT`; progress and log events are never written to either process stream.
 
 Baseline success also exits with code `0` and writes one JSON line containing `status`, `baselinePath` (relative to the project root), and `files`. Baseline write failures return `BASELINE_FAILED` with exit code `4`; input, load, and cancellation errors use the same codes as review.
 

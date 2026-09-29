@@ -89,7 +89,9 @@ public sealed partial class AuditRepositoryIntegrationTests
             .ToArray();
         Assert.DoesNotContain("findings.json", publishedFiles, StringComparer.Ordinal);
         Assert.All(publishedFiles, path => Assert.True(
-            path == "index.md" || (path.StartsWith("analyses/", StringComparison.Ordinal) && path.EndsWith(".md", StringComparison.Ordinal)),
+            path == "index.md"
+                || (path.StartsWith("changed-files/", StringComparison.Ordinal) && path.EndsWith(".md", StringComparison.Ordinal))
+                || (path.StartsWith("all-findings/", StringComparison.Ordinal) && path.EndsWith(".md", StringComparison.Ordinal)),
             $"Unexpected manual audit artifact: '{path}'."));
         Assert.Contains("index.md", publishedFiles, StringComparer.Ordinal);
     }
@@ -175,13 +177,8 @@ public sealed partial class AuditRepositoryIntegrationTests
     private static void AssertMarkdownLinksResolve(string runDirectory, string repositoryPath)
     {
         var linkPattern = SourceLinkPattern();
-        var analysesDirectory = Path.Combine(runDirectory, "analyses");
-        if (!Directory.Exists(analysesDirectory))
-        {
-            return;
-        }
-
-        foreach (var reportPath in Directory.EnumerateFiles(analysesDirectory, "*.md"))
+        foreach (var reportPath in Directory.EnumerateFiles(runDirectory, "*.md", SearchOption.AllDirectories)
+                     .Where(path => !Path.GetFileName(path).Equals("index.md", StringComparison.Ordinal)))
         {
             var report = File.ReadAllText(reportPath);
             foreach (Match link in linkPattern.Matches(report))
