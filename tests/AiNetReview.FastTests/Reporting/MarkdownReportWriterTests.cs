@@ -62,7 +62,7 @@ public sealed class MarkdownReportWriterTests
     }
 
     [Fact]
-    public async Task WriteAsync_LinksOnlyAnalysesWithFindingsAndWritesOneTableRowPerFinding()
+    public async Task WriteAsync_LinksOnlyAnalysesWithFindingsAndWritesOneListItemPerFinding()
     {
         using var temp = TestTempDirectory.Create();
         var withFindings = new ReportAnalysis("has-findings", "Has Findings", "active");
@@ -89,9 +89,9 @@ public sealed class MarkdownReportWriterTests
         Assert.True(File.Exists(Path.Combine(runDirectory, "all-findings", "index.md")));
         Assert.True(File.Exists(Path.Combine(runDirectory, "changed-files", "index.md")));
         Assert.False(File.Exists(Path.Combine(runDirectory, "all-findings", "empty-analysis.md")));
-        Assert.Equal(2, analysisReport.Split("| <a id=", StringSplitOptions.None).Length - 1);
-        Assert.Contains("Sample.cs:2", analysisReport, StringComparison.Ordinal);
-        Assert.Contains("Sample.cs:3", analysisReport, StringComparison.Ordinal);
+        Assert.Contains("## Findings", analysisReport, StringComparison.Ordinal);
+        Assert.Contains("`Sample.cs`: `C:Sample`", analysisReport, StringComparison.Ordinal);
+        Assert.Contains("`Sample.cs`: `C:Other`", analysisReport, StringComparison.Ordinal);
         Assert.Equal(analysisReport, changedReport);
     }
 
@@ -109,10 +109,8 @@ public sealed class MarkdownReportWriterTests
         ]));
         var markdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "all-findings", "fixture-analysis.md"));
 
-        Assert.Contains("| Symbol / cluster | Source | Signal | Related findings |", markdown, StringComparison.Ordinal);
-        Assert.True(markdown.IndexOf("[a file\\#1.cs:3]", StringComparison.Ordinal) < markdown.IndexOf("[z file\\#1.cs:9]", StringComparison.Ordinal));
-        Assert.Equal(2, markdown.Split("| [", StringSplitOptions.None).Length - 1);
-        Assert.Contains("../../../a%20file%231.cs#L3", markdown, StringComparison.Ordinal);
+        Assert.Contains("## Findings", markdown, StringComparison.Ordinal);
+        Assert.True(markdown.IndexOf("`a file#1.cs`: `A`", StringComparison.Ordinal) < markdown.IndexOf("`z file#1.cs`: `Z`", StringComparison.Ordinal));
         Assert.Contains("\\| rationale", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("Sample/Sample.csproj", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("aMetric", markdown, StringComparison.Ordinal);
@@ -149,8 +147,8 @@ public sealed class MarkdownReportWriterTests
         var markdown = await File.ReadAllTextAsync(Path.Combine(runDirectory, "all-findings", "duplicate-code-candidates.md"));
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
 
-        Assert.Contains("[M:First.Run (First.cs:2)](../../../First.cs#L2)", markdown, StringComparison.Ordinal);
-        Assert.Contains("[M:Second.Run (Second.cs:5)](../../../Second.cs#L5)", markdown, StringComparison.Ordinal);
+        Assert.Contains("`First.cs`: `M:First.Run`", markdown, StringComparison.Ordinal);
+        Assert.Contains("`Second.cs`: `M:Second.Run`", markdown, StringComparison.Ordinal);
         Assert.Contains("(changed-files/duplicate-code-candidates.md)", index, StringComparison.Ordinal);
         Assert.Contains("(all-findings/duplicate-code-candidates.md)", index, StringComparison.Ordinal);
         Assert.True(File.Exists(Path.Combine(runDirectory, "all-findings", "duplicate-code-candidates.md")));
@@ -211,7 +209,7 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("Beta (1)", completeIndex, StringComparison.Ordinal);
         Assert.True(File.Exists(completeReportPath));
         Assert.Contains("M:Sample.Run", changedReport, StringComparison.Ordinal);
-        Assert.Contains("../all-findings/beta-analysis.md#finding-2", changedReport, StringComparison.Ordinal);
+        Assert.Contains("Related: beta-analysis (all-findings)", changedReport, StringComparison.Ordinal);
         var completeBeforeEdit = await File.ReadAllTextAsync(completeReportPath);
         await File.WriteAllTextAsync(changedReportPath, changedReport.Replace("M:Sample.Run", "handled", StringComparison.Ordinal));
         Assert.Equal(completeBeforeEdit, await File.ReadAllTextAsync(completeReportPath));

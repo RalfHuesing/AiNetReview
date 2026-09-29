@@ -50,9 +50,9 @@ public sealed class HostAdapterIntegrationTests
         Assert.Contains("\"minimumSimilarity\": \"exact\"", exactReport, StringComparison.Ordinal);
         Assert.Contains("2 methods;", exactReport, StringComparison.Ordinal);
         Assert.Matches("[0-9]+(?:\\.[0-9]+)?% similarity \\(minimum [0-9]+(?:\\.[0-9]+)?%\\)", exactReport);
-        Assert.Contains("ProductA/First.cs:", exactReport, StringComparison.Ordinal);
-        Assert.Contains("ProductB/Second.cs:", exactReport, StringComparison.Ordinal);
-        Assert.Contains("| Symbol / cluster | Source | Signal | Related findings |", exactReport, StringComparison.Ordinal);
+        Assert.Contains("`ProductA/First.cs`: ", exactReport, StringComparison.Ordinal);
+        Assert.Contains("`ProductB/Second.cs`: ", exactReport, StringComparison.Ordinal);
+        Assert.Contains("## Findings", exactReport, StringComparison.Ordinal);
         Assert.DoesNotContain("Metrics", exactReport, StringComparison.Ordinal);
         AssertMarkdownLinksResolve(Path.Combine(projectRoot, "reports", exact.RunId));
 
@@ -122,7 +122,7 @@ public sealed class HostAdapterIntegrationTests
         var firstReport = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", first.RunId, "all-findings", "dead-code-candidates.md"));
         Assert.Equal(1, first.Detected);
         Assert.Contains("Type without known use", firstReport, StringComparison.Ordinal);
-        Assert.Contains("| Symbol / cluster | Source | Signal | Related findings |", firstReport, StringComparison.Ordinal);
+        Assert.Contains("## Findings", firstReport, StringComparison.Ordinal);
         Assert.Contains("reflection", firstReport, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("external_library", firstReport, StringComparison.Ordinal);
 

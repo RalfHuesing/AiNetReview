@@ -66,9 +66,9 @@ public sealed class MarkdownReportWriter
                     cancellationToken.ThrowIfCancellationRequested();
                     var allFindings = findings.Where(finding => finding.AnalysisId == configuredAnalysis.AnalysisId).ToArray();
                     var changedFindings = allFindings.Where(static finding => finding.IsChanged).ToArray();
-                    await WriteViewAnalysisAsync(temporaryPath, "changed-files", config, configuredAnalysis, changedFindings, findings, cancellationToken)
+                    await WriteViewAnalysisAsync(temporaryPath, "changed-files", configuredAnalysis, changedFindings, findings, cancellationToken)
                         .ConfigureAwait(false);
-                    await WriteViewAnalysisAsync(temporaryPath, "all-findings", config, configuredAnalysis, allFindings, findings, cancellationToken)
+                    await WriteViewAnalysisAsync(temporaryPath, "all-findings", configuredAnalysis, allFindings, findings, cancellationToken)
                         .ConfigureAwait(false);
                 }
 
@@ -257,7 +257,6 @@ public sealed class MarkdownReportWriter
     private static async Task WriteViewAnalysisAsync(
         string runDirectory,
         string viewDirectory,
-        ReviewConfig config,
         ConfiguredReviewAnalysis configuredAnalysis,
         IReadOnlyList<ReviewFinding> findings,
         IReadOnlyList<ReviewFinding> allFindings,
@@ -271,17 +270,14 @@ public sealed class MarkdownReportWriter
         var reportDirectory = Path.Combine(runDirectory, viewDirectory);
         Directory.CreateDirectory(reportDirectory);
         var analysisPath = Path.Combine(reportDirectory, configuredAnalysis.AnalysisId + ".md");
-        await WriteUtf8Async(analysisPath, FormatAnalysisReport(config, configuredAnalysis, findings, allFindings, reportDirectory, viewDirectory), cancellationToken)
+        await WriteUtf8Async(analysisPath, FormatAnalysisReport(configuredAnalysis, findings, allFindings), cancellationToken)
             .ConfigureAwait(false);
     }
 
     private static string FormatAnalysisReport(
-        ReviewConfig config,
         ConfiguredReviewAnalysis configuredAnalysis,
         IReadOnlyList<ReviewFinding> findings,
-        IReadOnlyList<ReviewFinding> allFindings,
-        string reportDirectory,
-        string viewDirectory)
+        IReadOnlyList<ReviewFinding> allFindings)
     {
         var descriptor = configuredAnalysis.Analysis.Descriptor;
         var builder = new StringBuilder();
@@ -291,19 +287,11 @@ public sealed class MarkdownReportWriter
             .Append("Review questions:\n\n");
         foreach (var question in descriptor.ReviewQuestions)
         {
-            builder.Append("- ").Append(EscapeInline(question)).Append("\n");
+            builder.Append("- ").Append(EscapeInline(question)).Append('\n');
         }
 
-        var orderedAll = allFindings.OrderBy(static item => item.AnalysisId, StringComparer.Ordinal)
-            .ThenBy(static item => item.Finding.ProjectPath, StringComparer.Ordinal)
-            .ThenBy(static item => item.Finding.SourcePath, StringComparer.Ordinal)
-            .ThenBy(static item => item.Finding.StartLine)
-            .ThenBy(static item => item.Finding.SubjectId, StringComparer.Ordinal)
-            .ThenBy(static item => item.Finding.Discriminator, StringComparer.Ordinal)
-            .ToArray();
-        var anchorByKey = orderedAll.Select((finding, index) => (finding, anchor: "finding-" + (index + 1).ToString(CultureInfo.InvariantCulture)))
-            .ToDictionary(static item => FindingKey(item.finding), static item => item.anchor);
-        builder.Append("\n| Symbol / cluster | Source | Signal | Related findings |\n| --- | --- | --- | --- |\n");
+        builder.Append("\n## Findings\n\n");
+
         foreach (var reviewFinding in findings.OrderBy(static item => item.Finding.ProjectPath, StringComparer.Ordinal)
                      .ThenBy(static item => item.Finding.SourcePath, StringComparer.Ordinal)
                      .ThenBy(static item => item.Finding.StartLine)
@@ -311,45 +299,45 @@ public sealed class MarkdownReportWriter
                      .ThenBy(static item => item.Finding.Discriminator, StringComparer.Ordinal))
         {
             var finding = reviewFinding.Finding;
-            var anchor = anchorByKey[FindingKey(reviewFinding)];
-            builder.Append("| <a id=\"").Append(anchor).Append("\"></a>").Append(FormatSymbol(config.ProjectRoot, finding, reportDirectory)).Append(" | [")
-                .Append(EscapeLinkText(finding.SourcePath)).Append(':').Append(finding.StartLine.ToString(CultureInfo.InvariantCulture)).Append("](")
-                .Append(SourceLink(config.ProjectRoot, finding.SourcePath, finding.StartLine, reportDirectory)).Append(") | ")
-                .Append(EscapeTable(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append(" | ")
-                .Append(FormatRelatedLinks(reviewFinding, findings, allFindings, anchorByKey, reportDirectory, viewDirectory)).Append(" |\n");
+            var isCluster = finding.RelatedSymbols.Count > 1;
+
+            if (isCluster)
+            {
+                builder.Append("- Cluster: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append('\n');
+                foreach (var symbol in finding.RelatedSymbols)
+                {
+                    builder.Append("  - `").Append(symbol.SourcePath).Append("`: `")
+                        .Append(symbol.SymbolId).Append("`\n");
+                }
+            }
+            else
+            {
+                builder.Append("- `").Append(finding.SourcePath).Append("`: `")
+                    .Append(finding.SubjectId).Append("`\n")
+                    .Append("  - Signal: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append('\n');
+            }
+
+            var related = FormatRelated(reviewFinding, findings, allFindings);
+            if (!string.IsNullOrEmpty(related))
+            {
+                builder.Append("  - Related: ").Append(related).Append('\n');
+            }
         }
 
         return builder.ToString();
     }
 
-    private static string FormatSymbol(string projectRoot, FindingDraft finding, string reportDirectory)
-    {
-        if (finding.RelatedSymbols.Count <= 1)
-        {
-            return "`" + EscapeInline(finding.SubjectId) + "`";
-        }
-
-        return string.Join(", ", finding.RelatedSymbols.Select(symbol =>
-        {
-            var label = EscapeLinkText(symbol.SymbolId + " (" + symbol.SourcePath + ":" + symbol.Line.ToString(CultureInfo.InvariantCulture) + ")");
-            return "[" + label + "](" + SourceLink(projectRoot, symbol.SourcePath, symbol.Line, reportDirectory) + ")";
-        }));
-    }
-
-    private static string FormatRelatedLinks(
+    private static string FormatRelated(
         ReviewFinding finding,
         IReadOnlyList<ReviewFinding> visibleFindings,
-        IReadOnlyList<ReviewFinding> allFindings,
-        IReadOnlyDictionary<string, string> anchorByKey,
-        string reportDirectory,
-        string viewDirectory)
+        IReadOnlyList<ReviewFinding> allFindings)
     {
         if (finding.RelatedFindings.Count == 0)
         {
-            return "—";
+            return string.Empty;
         }
 
-        return string.Join(", ", finding.RelatedFindings.Select(reference =>
+        var relatedItems = finding.RelatedFindings.Select(reference =>
         {
             var target = allFindings.FirstOrDefault(candidate => candidate.AnalysisId == reference.AnalysisId
                 && candidate.Finding.ProjectPath == reference.ProjectPath
@@ -358,33 +346,20 @@ public sealed class MarkdownReportWriter
                 && candidate.Finding.Discriminator == reference.Discriminator);
             if (target is null)
             {
-                return "";
+                return reference.AnalysisId;
             }
 
             var inCurrentView = visibleFindings.Any(candidate => FindingKey(candidate) == FindingKey(target));
-            var view = inCurrentView ? viewDirectory : "all-findings";
-            var reportPath = Path.Combine(reportDirectory, "..", view, EncodePathSegment(reference.AnalysisId) + ".md");
-            var relative = Path.GetRelativePath(reportDirectory, Path.GetFullPath(reportPath)).Replace('\\', '/');
-            var symbol = EscapeLinkText(reference.SymbolId + " (" + reference.SymbolSourcePath + ":" + reference.SymbolLine.ToString(CultureInfo.InvariantCulture) + ")");
-            return "[" + symbol + "](" + relative + "#" + anchorByKey[FindingKey(target)] + ")";
-        }).Where(static link => link.Length > 0));
+            return inCurrentView ? reference.AnalysisId : $"{reference.AnalysisId} (all-findings)";
+        }).Distinct(StringComparer.Ordinal).ToArray();
+
+        return string.Join(", ", relatedItems);
     }
 
     private static string FindingKey(ReviewFinding finding) => finding.AnalysisId + "\0" + finding.Finding.ProjectPath + "\0"
         + finding.Finding.SourcePath + "\0" + finding.Finding.SubjectId + "\0" + finding.Finding.Discriminator;
 
     private static string QuotePowerShell(string value) => "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";
-
-    private static string SourceLink(string projectRoot, string sourcePath, int line, string reportDirectory)
-    {
-        var absoluteSourcePath = Path.GetFullPath(Path.Combine(projectRoot, sourcePath.Replace('/', Path.DirectorySeparatorChar)));
-        var relativePath = Path.GetRelativePath(reportDirectory, absoluteSourcePath);
-        var linkPath = Path.IsPathFullyQualified(relativePath)
-            ? new Uri(absoluteSourcePath).AbsoluteUri
-            : string.Join('/', relativePath.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries)
-                .Select(Uri.EscapeDataString));
-        return linkPath + "#L" + line.ToString(CultureInfo.InvariantCulture);
-    }
 
     private static string FormatSignal(string analysisId, FindingDraft finding)
     {
@@ -458,8 +433,6 @@ public sealed class MarkdownReportWriter
         JsonValueKind.Null => "null",
         _ => throw new ArgumentException("Option contains an undefined JSON value.", nameof(value)),
     };
-
-    private static string EscapeTable(string value) => EscapeInline(value);
 
     private static string FormatCodeSpan(string value)
     {

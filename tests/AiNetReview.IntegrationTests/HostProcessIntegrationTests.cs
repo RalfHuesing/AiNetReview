@@ -217,7 +217,7 @@ public sealed class HostProcessIntegrationTests
             Assert.True(File.Exists(analysisReportPath));
             var analysisReport = await File.ReadAllTextAsync(analysisReportPath);
             Assert.Contains("# Method Control-Flow Outliers", analysisReport, StringComparison.Ordinal);
-            Assert.Contains("| Symbol / cluster | Source | Signal | Related findings |", analysisReport, StringComparison.Ordinal);
+            Assert.Contains("## Findings", analysisReport, StringComparison.Ordinal);
             Assert.DoesNotContain("Metrics", analysisReport, StringComparison.Ordinal);
         }
         else

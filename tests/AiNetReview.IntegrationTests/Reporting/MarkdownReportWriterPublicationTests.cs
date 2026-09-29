@@ -48,7 +48,7 @@ public sealed class MarkdownReportWriterPublicationTests
     }
 
     [Fact]
-    public async Task WriteAsync_CentralAuditReportsLinkBackToSourcesOutsideTheirOutputDirectory()
+    public async Task WriteAsync_CentralAuditReportsReferenceSourcesOutsideTheirOutputDirectory()
     {
         using var temp = TestTempDirectory.Create();
         var repositoryRoot = temp.GetPath("target-repository");
@@ -75,20 +75,9 @@ public sealed class MarkdownReportWriterPublicationTests
         var report = await new MarkdownReportWriter().WriteAsync(config, result);
         var analysisReportPath = Path.Combine(outputDirectory, report.RunId, "all-findings", "publication-analysis.md");
         var analysisReport = await File.ReadAllTextAsync(analysisReportPath);
-        var links = Regex.Matches(analysisReport, @"\]\((?<target>[^)]+)#L[0-9]+\)", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1))
-            .Cast<Match>()
-            .ToArray();
-        Assert.NotEmpty(links);
-        foreach (var link in links)
-        {
-            var target = Uri.UnescapeDataString(link.Groups["target"].Value);
-            var linkedSource = Uri.TryCreate(target, UriKind.Absolute, out var uri) && uri.IsFile
-                ? uri.LocalPath
-                : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(analysisReportPath)!, target.Replace('/', Path.DirectorySeparatorChar)));
-            Assert.Equal(Path.GetFullPath(sourcePath), Path.GetFullPath(linkedSource));
-            Assert.True(File.Exists(linkedSource));
-        }
-
+        Assert.Contains("`Sample Code.cs`: `T:Sample`", analysisReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("#L", analysisReport, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(repositoryRoot, "Sample Code.cs")));
         Assert.False(Directory.Exists(Path.Combine(repositoryRoot, "reports")));
     }
 
