@@ -84,12 +84,22 @@ public sealed class MissingTestEvidenceSemanticGraphBuilderTests
         Assert.Contains(graph.Edges, static edge => edge.Kind == MissingTestEvidenceGraphEdgeKind.UserOperator && edge.To.MethodKind == MethodKind.UserDefinedOperator);
         Assert.Contains(graph.Edges, static edge => edge.Kind == MissingTestEvidenceGraphEdgeKind.UserConversion && edge.To.MethodKind == MethodKind.Conversion);
 
+        var paths = MissingTestEvidencePathClassifier.Classify(graph, CancellationToken.None);
+        var directlyCalledFunctions = graph.Nodes.Where(static node => node.Method.MethodKind is
+            MethodKind.Constructor or MethodKind.PropertyGet or MethodKind.PropertySet or MethodKind.EventAdd or
+            MethodKind.EventRemove or MethodKind.UserDefinedOperator or MethodKind.Conversion
+            || node.Method.Name == "Callback");
+        Assert.All(directlyCalledFunctions, node => Assert.Equal(MissingTestEvidencePathKind.Direct, paths[node.Method].Kind));
+
         var callbackCalls = graph.Edges.Where(static edge => edge.To.Name == "Callback").ToArray();
         Assert.True(callbackCalls.Length >= 3, "Calls in the direct body, lambda, and local function are possible edges of the containing test method.");
         Assert.Single(graph.UncertaintyInputs.Where(static input => input.Kind == MissingTestEvidenceUncertaintyKind.MethodGroup && input.AffectedMethod?.Name == "Callback"));
 
         var generatedEntry = Assert.Single(graph.Nodes.Where(static node => node.Method.Name == "Entry"));
+        var privateTarget = Assert.Single(graph.Nodes.Where(static node => node.Method.Name == "PrivatePath"));
         Assert.True(generatedEntry.IsGenerated);
+        Assert.Equal(MissingTestEvidencePathKind.Direct, paths[generatedEntry.Method].Kind);
+        Assert.Equal(MissingTestEvidencePathKind.Indirect, paths[privateTarget.Method].Kind);
         Assert.Contains(graph.Edges, edge => edge.From.Name == "Entry" && edge.To.Name == "PrivatePath");
         Assert.Contains(graph.Edges, static edge => edge.To.Name == "PrivatePath" && edge.SourceFilePath?.EndsWith("Worker.g.cs", StringComparison.Ordinal) == true);
     }
@@ -168,6 +178,114 @@ public sealed class MissingTestEvidenceSemanticGraphBuilderTests
         var root = Assert.Single(graph.Roots);
         Assert.DoesNotContain(graph.Edges, edge => SymbolEqualityComparer.Default.Equals(edge.From, root.Method));
         Assert.DoesNotContain(graph.UncertaintyInputs, input => SymbolEqualityComparer.Default.Equals(input.Source, root.Method));
+
+        var paths = MissingTestEvidencePathClassifier.Classify(graph, CancellationToken.None);
+        var unreachable = Assert.Single(graph.Nodes.Where(static node => node.Method.Name == "Entry"));
+        Assert.Equal(MissingTestEvidencePathKind.NoPath, paths[unreachable.Method].Kind);
+        Assert.Empty(paths[unreachable.Method].Path);
+    }
+
+    [Fact]
+    public async Task Classify_TracesDeepCyclicPathsThroughGeneratedAndPrivateFunctions()
+    {
+        var steps = Enumerable.Range(0, 13)
+            .Select(index => index == 12
+                ? "private static void Step12() { Step3(); }"
+                : $"private static void Step{index}() {{ Step{index + 1}();{(index == 8 ? " Step3();" : string.Empty)} }}");
+        using var fixture = CreateFixture(
+            productionSources:
+            [
+                ("Worker.cs", "public partial class Worker { public static void Entry() { GeneratedStep(); } " + string.Join(" ", steps) + " }"),
+                ("Worker.g.cs", "public partial class Worker { public static void GeneratedStep() { Step0(); } }"),
+            ],
+            testSource: "using Xunit; public sealed class Tests { [Fact] public void Root() { Worker.Entry(); } }");
+
+        var graph = await MissingTestEvidenceSemanticGraphBuilder.BuildAsync(fixture.Workspace.CurrentSolution, CancellationToken.None);
+        var paths = MissingTestEvidencePathClassifier.Classify(graph, CancellationToken.None);
+        var entry = Assert.Single(graph.Nodes.Where(static node => node.Method.Name == "Entry"));
+        var generated = Assert.Single(graph.Nodes.Where(static node => node.Method.Name == "GeneratedStep"));
+        var target = Assert.Single(graph.Nodes.Where(static node => node.Method.Name == "Step12"));
+
+        Assert.Contains(graph.Edges, static edge => edge.From.Name == "Root" && edge.To.Name == "Entry");
+        var root = Assert.Single(graph.Nodes.Where(static node => node.Method.Name == "Root"));
+        Assert.True(root.IsTestProject);
+        Assert.False(entry.IsTestProject);
+        Assert.Equal(MissingTestEvidencePathKind.NoPath, paths[root.Method].Kind);
+        Assert.Equal(MissingTestEvidencePathKind.Direct, paths[entry.Method].Kind);
+        Assert.Equal(MissingTestEvidencePathKind.Indirect, paths[generated.Method].Kind);
+        Assert.Equal(MissingTestEvidencePathKind.Indirect, paths[target.Method].Kind);
+        Assert.Equal(16, paths[target.Method].Path.Count);
+        Assert.True(paths[target.Method].Path.Any(static node => node.IsGenerated));
+        Assert.Equal("Step12", paths[target.Method].Path[^1].Method.Name);
+    }
+
+    [Fact]
+    public async Task Classify_PrefersDirectPathsAndBreaksIndirectTiesBySymbolIdSequence()
+    {
+        using var fixture = CreateFixture(
+            productionSources:
+            [
+                ("Worker.cs", """
+                    public sealed class Worker
+                    {
+                        public static void EntryA() { EntryB(); IndirectTarget(); }
+                        public static void EntryB() { EntryA(); IndirectTarget(); }
+                        public static void IndirectTarget() { }
+                        public static void HelperTarget() { }
+                        public static void DirectTarget() { }
+                    }
+                    """),
+            ],
+            testSource: "using Xunit; public sealed class Tests { [Fact] public void Root() { TestHelper(); Worker.EntryB(); Worker.EntryA(); Worker.DirectTarget(); } private static void TestHelper() { Worker.HelperTarget(); } }");
+
+        var graph = await MissingTestEvidenceSemanticGraphBuilder.BuildAsync(fixture.Workspace.CurrentSolution, CancellationToken.None);
+        var paths = MissingTestEvidencePathClassifier.Classify(graph, CancellationToken.None);
+        var indirectTarget = Assert.Single(graph.Nodes.Where(static node => node.Method.Name == "IndirectTarget"));
+        var helperTarget = Assert.Single(graph.Nodes.Where(static node => node.Method.Name == "HelperTarget"));
+        var directTarget = Assert.Single(graph.Nodes.Where(static node => node.Method.Name == "DirectTarget"));
+
+        Assert.Equal(MissingTestEvidencePathKind.Indirect, paths[indirectTarget.Method].Kind);
+        Assert.Equal(new[] { "Root", "EntryA", "IndirectTarget" }, paths[indirectTarget.Method].Path.Select(static node => node.Method.Name));
+        Assert.Equal(MissingTestEvidencePathKind.Direct, paths[helperTarget.Method].Kind);
+        Assert.Equal(new[] { "Root", "TestHelper", "HelperTarget" }, paths[helperTarget.Method].Path.Select(static node => node.Method.Name));
+        Assert.Equal(MissingTestEvidencePathKind.Direct, paths[directTarget.Method].Kind);
+        Assert.Equal(new[] { "Root", "DirectTarget" }, paths[directTarget.Method].Path.Select(static node => node.Method.Name));
+    }
+
+    [Fact]
+    public async Task Classify_PropagatesAffectedAndGlobalUncertaintyWithoutAddingPaths()
+    {
+        using var affectedFixture = CreateFixture(
+            productionSources:
+            [
+                ("Worker.cs", "public static class Worker { public static void ReferencedByMethodGroup() { } public static void Unreferenced() { } }"),
+            ],
+            testSource: "using System; using Xunit; public sealed class Tests { [Fact] public void Root() { Action callback = Worker.ReferencedByMethodGroup; } private static void Unreached() { Action callback = Worker.Unreferenced; } }");
+        var affectedGraph = await MissingTestEvidenceSemanticGraphBuilder.BuildAsync(affectedFixture.Workspace.CurrentSolution, CancellationToken.None);
+        var affectedPaths = MissingTestEvidencePathClassifier.Classify(affectedGraph, CancellationToken.None);
+        var referenced = Assert.Single(affectedGraph.Nodes.Where(static node => node.Method.Name == "ReferencedByMethodGroup"));
+        var unreferenced = Assert.Single(affectedGraph.Nodes.Where(static node => node.Method.Name == "Unreferenced"));
+
+        Assert.Equal(MissingTestEvidencePathKind.NoPath, affectedPaths[referenced.Method].Kind);
+        Assert.True(affectedPaths[referenced.Method].IsAttributionUncertain);
+        Assert.Equal(MissingTestEvidencePathKind.NoPath, affectedPaths[unreferenced.Method].Kind);
+        Assert.False(affectedPaths[unreferenced.Method].IsAttributionUncertain);
+
+        using var globalFixture = CreateFixture(
+            productionSources:
+            [
+                ("Worker.cs", "public static class Worker { public static void First() { } public static void Second() { } }"),
+            ],
+            testSource: "using Xunit; public sealed class Tests { [Fact] public void Root() { Worker.First(); Missing(); } }");
+        var globalGraph = await MissingTestEvidenceSemanticGraphBuilder.BuildAsync(globalFixture.Workspace.CurrentSolution, CancellationToken.None);
+        var globalPaths = MissingTestEvidencePathClassifier.Classify(globalGraph, CancellationToken.None);
+        var first = Assert.Single(globalGraph.Nodes.Where(static node => node.Method.Name == "First"));
+        var second = Assert.Single(globalGraph.Nodes.Where(static node => node.Method.Name == "Second"));
+
+        Assert.Equal(MissingTestEvidencePathKind.Direct, globalPaths[first.Method].Kind);
+        Assert.Equal(MissingTestEvidencePathKind.NoPath, globalPaths[second.Method].Kind);
+        Assert.True(globalPaths[first.Method].IsAttributionUncertain);
+        Assert.True(globalPaths[second.Method].IsAttributionUncertain);
     }
 
     [Fact]
@@ -246,7 +364,17 @@ public sealed class MissingTestEvidenceSemanticGraphBuilderTests
     private static IEnumerable<MetadataReference> PlatformReferences() =>
         ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))!
         .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-        .Where(static path => !Path.GetFileName(path).StartsWith("xunit", StringComparison.OrdinalIgnoreCase))
+        .Where(static path =>
+        {
+            var name = Path.GetFileNameWithoutExtension(path);
+            return !name.StartsWith("xunit", StringComparison.OrdinalIgnoreCase)
+                && !name.StartsWith("nunit", StringComparison.OrdinalIgnoreCase)
+                && !name.StartsWith("mstest", StringComparison.OrdinalIgnoreCase)
+                && !name.StartsWith("microsoft.testplatform", StringComparison.OrdinalIgnoreCase)
+                && !name.StartsWith("microsoft.visualstudio.testplatform", StringComparison.OrdinalIgnoreCase)
+                && !name.StartsWith("microsoft.visualstudio.testtools.unittesting", StringComparison.OrdinalIgnoreCase)
+                && !name.StartsWith("microsoft.testing", StringComparison.OrdinalIgnoreCase);
+        })
         .Select(static path => MetadataReference.CreateFromFile(path));
 
     private sealed class Fixture(AdhocWorkspace workspace) : IDisposable
