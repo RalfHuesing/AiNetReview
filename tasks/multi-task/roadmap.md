@@ -1,10 +1,18 @@
 # Roadmap: Sequentielle Umsetzung der drei Review-Tasks
 
-Verbindlich ist [Konzept.md](Konzept.md). Jeder nummerierte Umsetzungspunkt unten ist genau eine Agent-Session. Seine **Intention, sein Scope, seine Nicht-Ziele und seine Abnahme** stehen ausschließlich im gleich nummerierten Punkt der verlinkten Fach-Roadmap. Diese übergeordnete Checkbox wird erst geschlossen, wenn auch die Fach-Checkbox geschlossen, der Slice verifiziert, der Diff geprüft und der atomare Commit vorhanden ist. Der Orchestrator aktualisiert `Status.md` mit dem Ergebnis und der nächsten ausführbaren Checkbox. Parent-Checkboxen sind Aggregate und werden erst nach allen Kindern und ihrer Abnahme geschlossen.
+Verbindlich ist [Konzept.md](Konzept.md). Jede ausführbare Umsetzung-Checkbox ohne Kinder ist genau eine Agent-Session. Ihre **Intention, ihr Scope, ihre Nicht-Ziele und ihre Abnahme** stehen ausschließlich im gleich bezeichneten Punkt der verlinkten Fach-Roadmap. Diese übergeordnete Checkbox wird erst geschlossen, wenn auch die Fach-Checkbox geschlossen, der Slice verifiziert, der Diff geprüft und der atomare Commit vorhanden ist. Der Orchestrator aktualisiert `Status.md` mit dem Ergebnis und der nächsten ausführbaren Checkbox. Parent-Checkboxen sind Aggregate und werden erst nach allen Kindern und ihrer Abnahme geschlossen.
 
 Es läuft immer nur **ein** Agent. Orchestrator: `gpt-6-sol/high`; Umsetzung und Korrektur: `gpt-6-luna/high`; Audit: `gpt-6-sol/medium`. Audits melden belegte Findings; nur ein danach gestarteter Implementierungs-Agent ändert Code. Nach jedem Fix folgt ein erneuter unabhängiger Audit. Höchstens drei Review–Fix-Runden je Fach-Task insgesamt und drei beim Gesamtaudit; ohne begründeten neuen Ansatz endet ein blockierter Task früher. Diese Nutzervorgabe gilt hier auch dort, wo eine Fach-Roadmap oder der allgemeine Schritt-3-Workflow nur einen Korrekturpass nennt. Alle Ergebnisse, Restbefunde, Gates und Commit-Hashes stehen knapp in `Status.md`; kein Agentenprotokoll anlegen.
 
 Bei einer dokumentierten harten Blockade bleibt die betreffende Checkbox offen. Der Orchestrator nimmt danach die erste **erreichbare** offene Checkbox: Ein nicht abgeschlossener Core-Task verhindert beide Folgetasks; eine nur auf Testabdeckung begrenzte Blockade verhindert die Größenanalyse nicht. Ein fehlgeschlagener Agentenlauf wird nicht ohne geänderten Ansatz wiederholt. Die Fachkonzepte und Repository-Regeln bleiben maßgeblich; keine Produktanforderung wird hier neu entschieden.
+
+## 0. Ausgangs-Gates
+
+- [ ] **P0 — Vorbestehende Integrationsfehler klären**
+  - Intention: Die späteren Task-Audits sollen nicht an einem schon vor A1 instabilen Gate hängen bleiben.
+  - Scope: Die in [Status.md](Status.md) belegten Hostprozess- und Reportpublikationsfehler in einer fokussierten Diagnose untersuchen und die zugrunde liegende Ausnahme ermitteln. Einen reproduzierbaren Repository-Defekt mit einem zunächst fehlgeschlagenen Vertragstest in höchstens einem separaten atomaren Korrektur-Slice beheben; danach die normalen FastTests- und IntegrationTests-Skripte sowie den Build prüfen. Bei einem bloß umgebungsbedingten Fehler Ursache und belastbaren Gegencheck festhalten. Bleibt derselbe Fehler ohne neue konkrete Hypothese bestehen, die Blockade dokumentieren und stoppen; keine Testlauf-Schleife.
+  - Nicht: Fehlende Tests überspringen, Gates abschwächen, Audit-/Performance-Kategorien als Standardlauf starten oder die Fachanalysen vorziehen.
+  - Abnahme: Der fokussierte Gegencheck und je ein vollständiger normaler FastTests- und IntegrationTests-Lauf sowie der Build bestehen nach der geklärten Ursache; ein reproduzierbarer Defekt hat einen Rot-vor-Grün-Test. Andernfalls bleibt P0 mit konkreter Blocker-Ursache offen. Erst im grünen Fall beginnt A1; Diagnose, Prüfergebnisse und etwaiger Commit stehen in `Status.md`.
 
 ## A. Gemeinsame Core-Bausteine
 
@@ -25,7 +33,9 @@ Start nur nach geschlossenem Core-Aggregat und Prüfung von `ControlFlowMetrics.
 
 - [ ] **Testabdeckungs-Task abgeschlossen** — Aggregat aller folgenden Punkte; bei lokaler harter Blockade offen lassen und nach Dokumentation mit C fortfahren.
   - [ ] **B1 — Kandidaten bestimmen** — [Testabdeckungs-Roadmap, Punkt 1](../analyse-test-abdeckung/roadmap.md) vollständig ausführen und abnehmen.
-  - [ ] **B2 — Semantische Testpfade bestimmen** — [Testabdeckungs-Roadmap, Punkt 2](../analyse-test-abdeckung/roadmap.md) vollständig ausführen und abnehmen.
+  - [ ] **B2 — Semantische Testpfade bestimmen** — Aggregat aus [Testabdeckungs-Roadmap, Punkt 2a und 2b](../analyse-test-abdeckung/roadmap.md); erst nach beiden Slices und der kombinierten Abnahme schließen.
+    - [ ] **B2a — Semantischen Graphen aufbauen** — [Testabdeckungs-Roadmap, Punkt 2a](../analyse-test-abdeckung/roadmap.md) vollständig ausführen und abnehmen.
+    - [ ] **B2b — Testpfade klassifizieren** — [Testabdeckungs-Roadmap, Punkt 2b](../analyse-test-abdeckung/roadmap.md) vollständig ausführen und abnehmen.
   - [ ] **B2-Audit — Pfade und Unsicherheit prüfen**
     - Intention: Fehler im Call-Graph und unberechtigte Aussagen über Testabdeckung vor der Veröffentlichung entdecken.
     - Scope: Unabhängig Roots, Pfadpriorität, deterministische kürzeste Pfade, Unsicherheit und Fehlerfälle gegen [Testabdeckungs-Konzept](../analyse-test-abdeckung/Konzept.md), B1/B2-Code und Tests prüfen; Findings und gegebenenfalls sequenzielle Fix-/Nachaudit-Runden in `Status.md` festhalten.
@@ -48,7 +58,7 @@ Start nur nach geschlossenem Core-Aggregat und Prüfung von `ControlFlowMetrics.
     - Nicht: Core-Metriken oder festgelegte Schwellenwerte still ändern.
     - Abnahme: Kein offener Pflichtbefund zu C1/C2; geprüfte Commits, akzeptierte Restbefunde und verbrauchte Runden sind dokumentiert.
   - [ ] **C3 — Analyse und Bericht integrieren** — [Größen-Roadmap, Punkt 3](../analyse-groessen/roadmap.md) vollständig ausführen und abnehmen.
-  - [ ] **C4 — Größen-Schlussaudit und Stichprobe** — [Größen-Roadmap, Punkt 4](../analyse-groessen/roadmap.md) mit einem unabhängigen Audit-Agenten ausführen; volle Gates und die read-only Stichprobe an AiNetReview und AiNetLinter prüfen. Die Runden aus C2-Audit zählen zum Task-Limit. Audit-Ergebnis und etwaige Korrekturen dokumentieren und committen.
+  - [ ] **C4 — Größen-Schlussaudit und Stichprobe** — [Größen-Roadmap, Punkt 4](../analyse-groessen/roadmap.md) mit einem unabhängigen Audit-Agenten ausführen; volle Gates und die read-only Stichprobe an AiNetReview und AiNetLinter prüfen. Vor der Stichprobe sicherstellen, dass das tatsächlich verwendete lokale Audit-Profil aktiviert ist und `code-size-candidates` mit den Konzept-Defaults enthält; falls nötig ein temporäres Profil im AiNetReview-Repository verwenden, ohne das AiNetLinter-Repository oder bestehende lokale Profile zu ändern. Ein wegen `enabled: false` übersprungener Lauf ist kein Nachweis. Die Runden aus C2-Audit zählen zum Task-Limit. Audit-Ergebnis und etwaige Korrekturen dokumentieren und committen.
 
 ## Gesamtabnahme
 

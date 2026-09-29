@@ -22,6 +22,6 @@ The contract is [Konzept.md](Konzept.md). Complete the points in order. Each imp
 
 - [ ] **4. Final audit**
   - Intention: Confirm that the completed Core foundation matches the ready concept and has not changed existing review behavior.
-  - Scope: Review the three APIs, tests, outlier-analysis regression, dependency boundary, relevant `docs/` pages, and commits against every contract and scope limit in [Konzept.md](Konzept.md). Run the full solution tests and build gate plus `git diff --check`; record concrete gaps for one correction pass if needed.
+  - Scope: Review the three APIs, tests, outlier-analysis regression, dependency boundary, relevant `docs/` pages, and commits against every contract and scope limit in [Konzept.md](Konzept.md). Run the complete normal FastTests and IntegrationTests scripts, excluding the separately invoked manual Audit and Performance categories, plus the build gate and `git diff --check`; record concrete gaps for correction if needed.
   - Not: Implementing either follow-on review analysis, adding speculative shared abstractions, or changing selection thresholds.
   - Acceptance: Every concept requirement has implementation and verification evidence; existing outlier results and descriptor remain unchanged; no relevant test was weakened; the full solution gates pass; documentation describes only implemented behavior; and the roadmap checkboxes match the completed commits.
