@@ -15,8 +15,7 @@ using Microsoft.CodeAnalysis;
 /// <summary>Evaluates XAML, Razor, and JavaScript bindings in the loaded markup snapshot.</summary>
 internal sealed class DeadCodeMarkupUsageCollector
 {
-    private readonly HashSet<ISymbol> protectedSymbols = new(SymbolEqualityComparer.Default);
-    private readonly HashSet<ISymbol> uncertainSymbols = new(SymbolEqualityComparer.Default);
+    private readonly DeadCodeSymbolTracker symbols = new();
 
     private DeadCodeMarkupUsageCollector()
     {
@@ -56,7 +55,7 @@ internal sealed class DeadCodeMarkupUsageCollector
             }
         }
 
-        return new DeadCodeMarkupUsage(collector.protectedSymbols, collector.uncertainSymbols);
+        return new DeadCodeMarkupUsage(collector.symbols.ProtectedSymbols, collector.symbols.UncertainSymbols);
     }
 
     private void CollectXaml(MarkupDocumentSnapshot markup, Compilation compilation)
@@ -258,17 +257,9 @@ internal sealed class DeadCodeMarkupUsageCollector
         return compilation.GetTypeByMetadataName(clrNamespace.Length == 0 ? localName : clrNamespace + "." + localName);
     }
 
-    private void Protect(ISymbol symbol)
-    {
-        symbol = DeadCodeSymbolNormalizer.Normalize(symbol);
-        protectedSymbols.Add(symbol);
-        if (symbol.ContainingType is { } containingType)
-        {
-            protectedSymbols.Add(DeadCodeSymbolNormalizer.Normalize(containingType));
-        }
-    }
+    private void Protect(ISymbol symbol) => symbols.Protect(symbol);
 
-    private void MarkUncertain(ISymbol symbol) => uncertainSymbols.Add(DeadCodeSymbolNormalizer.Normalize(symbol));
+    private void MarkUncertain(ISymbol symbol) => symbols.MarkUncertain(symbol);
 
     private void MarkTypeAndMethodsUncertain(INamedTypeSymbol type)
     {

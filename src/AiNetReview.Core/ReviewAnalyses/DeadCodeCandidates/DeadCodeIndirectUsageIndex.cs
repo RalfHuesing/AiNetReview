@@ -18,22 +18,17 @@ internal sealed class DeadCodeIndirectUsageIndex
         "Microsoft.JSInterop.JSInvokableAttribute",
     ];
 
-    private readonly HashSet<ISymbol> protectedSymbols = new(SymbolEqualityComparer.Default);
-    private readonly HashSet<ISymbol> uncertainSymbols = new(SymbolEqualityComparer.Default);
+    private readonly DeadCodeSymbolTracker symbols = new();
 
     private DeadCodeIndirectUsageIndex()
     {
     }
 
-    public bool IsProtected(ISymbol symbol) => protectedSymbols.Contains(DeadCodeSymbolNormalizer.Normalize(symbol));
+    public bool IsProtected(ISymbol symbol) => symbols.IsProtected(symbol);
 
-    public bool HasUncertainty(ISymbol symbol) => uncertainSymbols.Contains(DeadCodeSymbolNormalizer.Normalize(symbol));
+    public bool HasUncertainty(ISymbol symbol) => symbols.HasUncertainty(symbol);
 
-    private void Merge(DeadCodeMarkupUsage markupUsage)
-    {
-        protectedSymbols.UnionWith(markupUsage.ProtectedSymbols);
-        uncertainSymbols.UnionWith(markupUsage.UncertainSymbols);
-    }
+    private void Merge(DeadCodeMarkupUsage markupUsage) => symbols.UnionWith(markupUsage);
 
     public static async Task<DeadCodeIndirectUsageIndex> CreateAsync(
         ReviewContext context,
@@ -255,17 +250,9 @@ internal sealed class DeadCodeIndirectUsageIndex
         }
     }
 
-    private void Protect(ISymbol symbol)
-    {
-        symbol = DeadCodeSymbolNormalizer.Normalize(symbol);
-        protectedSymbols.Add(symbol);
-        if (symbol.ContainingType is { } containingType)
-        {
-            protectedSymbols.Add(DeadCodeSymbolNormalizer.Normalize(containingType));
-        }
-    }
+    private void Protect(ISymbol symbol) => symbols.Protect(symbol);
 
-    private void MarkUncertain(ISymbol symbol) => uncertainSymbols.Add(DeadCodeSymbolNormalizer.Normalize(symbol));
+    private void MarkUncertain(ISymbol symbol) => symbols.MarkUncertain(symbol);
 
     private static bool HasEntryPointAttribute(ISymbol symbol, IReadOnlyList<INamedTypeSymbol> attributeTypes) =>
         symbol.GetAttributes().Any(attribute => attribute.AttributeClass is { } actual
