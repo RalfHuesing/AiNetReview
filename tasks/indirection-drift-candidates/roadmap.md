@@ -2,7 +2,7 @@
 
 The [ready concept](Konzept.md) is the binding contract for every point. Complete the points in order. Each implementation point includes its relevant tests, documentation check, verification, and commit. Do not start another workflow step from this roadmap.
 
-- [ ] **1 — Classify transparent forwarding methods**
+- [x] **1 — Classify transparent forwarding methods**
   - Intention: Give the analysis a precise, reusable per-run representation of statically bound forwarding edges.
   - Scope: Implement the Roslyn syntax and semantic classification, source declaration lookup, generic-symbol normalization, project ownership, and deterministic declaration locations defined under “Eligible declarations and symbols” and conditions 1–5 of the concept. Keep this component internal to the new review analysis; add focused FastTests for accepted body forms and each exclusion, including generated/test source, interface and virtual targets, linked documents, and unavailable semantic information.
   - Not: No graph findings, report-format change, production registration, historical comparison, or runtime-dispatch resolution in this point.
