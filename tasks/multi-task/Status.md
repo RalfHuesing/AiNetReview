@@ -12,8 +12,8 @@ Schritt 3 wurde noch nicht gestartet. Bei `HEAD 1c96537` war der Arbeitsbaum vor
 
 ## Nächster Punkt
 
-[P0 der übergeordneten Roadmap](roadmap.md): Den vorbestehenden Integrationsfehler gezielt diagnostizieren und die normalen Gates stabilisieren. Keine wiederholten vollständigen Testläufe ohne neue Hypothese. Danach A1 beginnen.
+[P0 der übergeordneten Roadmap](roadmap.md): Den vorbestehenden Integrationsfehler gezielt diagnostizieren und die normalen Gates stabilisieren. Keine wiederholten vollständigen Testläufe ohne neue Hypothese. Falls der Fehler danach offen, aber nachweislich unabhängig von den betroffenen A1–A3-Tests ist, dürfen diese Core-Slices mit dokumentierter Einschränkung beginnen; A4 bleibt bis zu grünen normalen Gates offen.
 
 ## Blocker und Restbefunde
 
-Die IntegrationTests sind vor der fachlichen Umsetzung nicht verlässlich grün. Bis zur Klärung bleibt P0 offen; ein Fehler in den neuen Analysen lässt sich sonst nicht sauber von einem vorbestehenden Gate-Fehler unterscheiden.
+Die IntegrationTests sind vor der fachlichen Umsetzung nicht verlässlich grün. Bis zur Klärung bleibt P0 offen; ein Fehler in den neuen Analysen lässt sich sonst nicht sauber von einem vorbestehenden Gate-Fehler unterscheiden. Eine belegte Unabhängigkeit erlaubt nur die Core-Slices A1–A3, nicht die Core-Abnahme oder den Start der Folgetasks.
