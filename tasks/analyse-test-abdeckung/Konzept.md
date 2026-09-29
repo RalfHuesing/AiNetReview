@@ -30,6 +30,22 @@ Tests provide deterministic feedback for autonomous changes. This analysis ident
 - AiNetLinter's class-level `StaticTestSentinel` behavior, naming/`typeof`/comment matches, or its exemptions.
 - Build-breaking diagnostics, changes to existing analysis thresholds, and automatic source or test edits.
 
+## Configuration
+
+The following is the `analyses` object in `ainetreview.json` when this is the only configured analysis. The other required root fields follow the existing [configuration contract](../../docs/configuration/file-format.md). The analysis descriptor and generated default configuration must use these exact names and values; omitted options resolve to the same defaults.
+
+```json
+{
+  "missing-test-evidence-candidates": {
+    "enabled": true,
+    "minDecisionCount": 3,
+    "minDecisionNesting": 2,
+    "minIndirectDecisionCount": 5,
+    "minIndirectDecisionNesting": 3
+  }
+}
+```
+
 ## Verification
 
 - Analysis tests cover each candidate kind, both pairs of selection thresholds and their boundary values, skipped/generated/test-project exclusions, test roots across the supported frameworks, direct, indirect, and absent paths, direct-path precedence, private methods, cycles, lambdas, method groups, virtual/interface dispatch, and uncertain bindings. Test names and comments without calls must not suppress a finding. One test root linked to several functions must not create a one-test-per-function requirement.
