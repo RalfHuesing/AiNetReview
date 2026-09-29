@@ -25,7 +25,7 @@ Auf Nutzerwunsch wurden die zwei zuvor auffälligen Integrationstests probeweise
 - Dokumentationsabgleich: `docs/review/findings.md`, `docs/README.md` und `docs/development/adding-review-analyses.md` geprüft. Die vorhandene Beschreibung stimmt mit dem extrahierten Verhalten überein; keine Current-State-Doku musste geändert werden.
 - Verifikation: fokussierte FastTests 32/32 bestanden; gezielter `MethodControlFlowOutliersIntegrationTests`-Test bestanden; Build-Gate mit 0 Warnungen und 0 Fehlern bestanden; `git diff --check` bestanden.
 - Vollständiger IntegrationTests-Lauf: 91/92 bestanden. `HostAdapterIntegrationTests.ReviewCommand_ProductionDuplicateCodeAnalysisPublishesCurrentCrossProjectClusters` meldete `REPORT_FAILED` beim Publizieren des Reports. Der gezielte isolierte Wiederholungslauf dieses Tests bestand. Kein A1-relevanter Fehler reproduziert; der flüchtige Reportpublikationsbefund bleibt bis A4 sichtbar und die vollständige Suite wird ohne neue Hypothese nicht wiederholt.
-- A1-Commit: wird nach Staging des verifizierten Task-Slices ergänzt.
+- A1-Commit: `10f1adaaa1f0617a9208a2a83e4f24b235d70b68` (`feat(core): extract control flow metrics`).
 
 ## Blocker und Restbefunde
 
