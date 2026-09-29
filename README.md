@@ -9,6 +9,7 @@ AiNetReview helps audit C# code after the usual build, tests, and static analysi
 | `method-control-flow-outliers` | Methods with unusually many decisions or deeply nested decision paths within their project. |
 | `dead-code-candidates` | Types and methods without known uses in the analyzed solution; indirect or external uses may still exist. |
 | `duplicate-code-candidates` | Groups of substantially similar method bodies; similarity does not by itself justify merging them. |
+| `indirection-drift-candidates` | Current statically declared paths with at least two transparent forwarding edges across three types and three production C# files; runtime dispatch and historical growth are not measured. |
 
 The reports are prompts for an audit, not defect claims. See [Current findings](docs/review/findings.md) for the analyses' scope and limitations.
 

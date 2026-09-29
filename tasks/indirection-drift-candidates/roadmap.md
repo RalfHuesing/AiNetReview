@@ -20,7 +20,7 @@ The [ready concept](Konzept.md) is the binding contract for every point. Complet
   - Not: No new CLI command, baseline format, runtime call resolution, build gate, or automatic code rewrite.
   - Acceptance: A normal configured host review produces ordered path reports in both applicable views, omits an empty analysis file, and preserves publication behavior on failure or cancellation. The repository build, affected FastTests, and IntegrationTests pass before committing.
 
-- [ ] **Audit — Verify the ready concept against implementation and a real audit**
+- [x] **Audit — Verify the ready concept against implementation and a real audit**
   - Intention: Confirm that the delivered signal is accurate, useful, and within the approved scope.
   - Scope: Read the completed diff and the concept; inspect the classifier, graph, finding, configuration, documentation, and report contracts. Run the required gates and at least one real repository audit; trace reported paths back to source and classify them as useful prompts, intentional layers, or measurement errors. Record concise evidence in the completion response and report actionable gaps for at most one correction point under the workflow.
   - Not: No scope expansion, metric-driven refactoring, speculative trend claim, or automatic correction during this read-only audit.
