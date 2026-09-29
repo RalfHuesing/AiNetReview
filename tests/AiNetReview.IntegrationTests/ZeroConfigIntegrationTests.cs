@@ -114,7 +114,7 @@ public sealed class ZeroConfigIntegrationTests
     {
         var services = new ServiceCollection();
         services.AddAiNetReviewServices();
-        services.AddAiNetReviewRules();
+        services.AddAiNetReviewAnalyses();
         services.AddLogging();
         return services.BuildServiceProvider();
     }

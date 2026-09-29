@@ -9,6 +9,6 @@ The linked rules apply to work in this repository:
 - [Git and automatic commits](05-git.mdc)
 - [Dependencies and NuGet packages](06-dependencies.mdc)
 - [Code practices](07-code-practices.mdc)
-- [Production rule configuration](08-production-rule-configuration.mdc)
+- [Production review analysis configuration](08-production-review-analysis-configuration.mdc)
 
 Keep rules short and enforceable. Put implementation details in `docs/` only after they exist. Put planned contracts in `tasks/`.

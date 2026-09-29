@@ -1,4 +1,4 @@
-namespace AiNetReview.FastTests.Rules;
+namespace AiNetReview.FastTests.ReviewAnalyses;
 
 using System;
 using System.Collections.Generic;
@@ -8,30 +8,30 @@ using System.Text.Json;
 using System.Threading;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Findings;
-using AiNetReview.Core.Rules;
-using AiNetReview.Core.Rules.DuplicateCodeCandidates;
+using AiNetReview.Core.ReviewAnalyses;
+using AiNetReview.Core.ReviewAnalyses.DuplicateCodeCandidates;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 
-public sealed class DuplicateCodeCandidatesRuleTests
+public sealed class DuplicateCodeCandidatesAnalysisTests
 {
     [Fact]
     public void Descriptor_UsesValidatedDefaultsAndRejectsInvalidValues()
     {
-        var rule = new DuplicateCodeCandidatesRule();
-        var defaults = rule.Descriptor.ResolveOptions();
+        var analysis = new DuplicateCodeCandidatesAnalysis();
+        var defaults = analysis.Descriptor.ResolveOptions();
 
         Assert.Equal(30, defaults["minTokens"].GetInt32());
         Assert.Equal("exact", defaults["minimumSimilarity"].GetString());
-        Assert.Equal(new[] { "minTokens", "minimumSimilarity" }, rule.Descriptor.Options.Select(static option => option.Name));
+        Assert.Equal(new[] { "minTokens", "minimumSimilarity" }, analysis.Descriptor.Options.Select(static option => option.Name));
 
-        AssertInvalidOption(rule, "minTokens", JsonSerializer.SerializeToElement(0));
-        AssertInvalidOption(rule, "minTokens", JsonSerializer.SerializeToElement(-1));
-        AssertInvalidOption(rule, "minTokens", JsonSerializer.SerializeToElement(1.5));
-        AssertInvalidOption(rule, "minTokens", JsonSerializer.SerializeToElement("30"));
-        AssertInvalidOption(rule, "minimumSimilarity", JsonSerializer.SerializeToElement("Exact"));
-        AssertInvalidOption(rule, "minimumSimilarity", JsonSerializer.SerializeToElement("loose"));
+        AssertInvalidOption(analysis, "minTokens", JsonSerializer.SerializeToElement(0));
+        AssertInvalidOption(analysis, "minTokens", JsonSerializer.SerializeToElement(-1));
+        AssertInvalidOption(analysis, "minTokens", JsonSerializer.SerializeToElement(1.5));
+        AssertInvalidOption(analysis, "minTokens", JsonSerializer.SerializeToElement("30"));
+        AssertInvalidOption(analysis, "minimumSimilarity", JsonSerializer.SerializeToElement("Exact"));
+        AssertInvalidOption(analysis, "minimumSimilarity", JsonSerializer.SerializeToElement("loose"));
     }
 
     [Theory]
@@ -51,13 +51,13 @@ public sealed class DuplicateCodeCandidatesRuleTests
             ("ProductA", "A.cs", Wrap("ExactOne", exactBody) + Wrap("ExactTwo", exactBody)),
             ("ProductB", "B.cs", Wrap("Near", nearBody)),
             ("ProductC", "C.cs", Wrap("Fuzzy", fuzzyBody)));
-        var rule = new DuplicateCodeCandidatesRule();
-        var options = rule.Descriptor.ResolveOptions(
+        var analysis = new DuplicateCodeCandidatesAnalysis();
+        var options = analysis.Descriptor.ResolveOptions(
         [
             KeyValuePair.Create("minimumSimilarity", JsonSerializer.SerializeToElement(level)),
         ]);
 
-        var result = await rule.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, options, CancellationToken.None);
         var finding = Assert.Single(result.Findings);
 
         Assert.Equal(expectedMembers, finding.Metrics["memberCount"]);
@@ -76,7 +76,7 @@ public sealed class DuplicateCodeCandidatesRuleTests
         });
 
         var validated = await new CurrentFindingValidator().ValidateAndSortAsync(
-            rule.Descriptor.RuleId,
+            analysis.Descriptor.AnalysisId,
             fixture.Context,
             result.Findings,
             CancellationToken.None);
@@ -97,11 +97,11 @@ public sealed class DuplicateCodeCandidatesRuleTests
     public async Task ExecuteAsync_ReturnsEmptyResultWhenNoClusterQualifies()
     {
         using var fixture = CreateFixture(("Product", "Methods.cs", Wrap("First", BuildBody())));
-        var rule = new DuplicateCodeCandidatesRule();
+        var analysis = new DuplicateCodeCandidatesAnalysis();
 
-        var result = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
 
-        Assert.Same(RuleResult.Empty, result);
+        Assert.Same(ReviewAnalysisResult.Empty, result);
     }
 
     [Fact]
@@ -112,11 +112,11 @@ public sealed class DuplicateCodeCandidatesRuleTests
         using var fixture = CreateFixture(
             ("ProductA", "A.cs", Wrap("First", body) + Wrap("Second", body)),
             ("ProductB", "B.cs", Wrap("Third", separateBody) + Wrap("Fourth", separateBody)));
-        var rule = new DuplicateCodeCandidatesRule();
-        var options = rule.Descriptor.ResolveOptions();
+        var analysis = new DuplicateCodeCandidatesAnalysis();
+        var options = analysis.Descriptor.ResolveOptions();
 
-        var first = await rule.ExecuteAsync(fixture.Context, options, CancellationToken.None);
-        var second = await rule.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+        var first = await analysis.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+        var second = await analysis.ExecuteAsync(fixture.Context, options, CancellationToken.None);
 
         Assert.Equal(2, first.Findings.Count);
         Assert.Equal(first.Findings.Select(Describe), second.Findings.Select(Describe));
@@ -132,29 +132,29 @@ public sealed class DuplicateCodeCandidatesRuleTests
         var longBody = BuildBoundaryBody(30);
         using var fixture = CreateFixture(("Product", "Methods.cs",
             Wrap("ShortOne", shortBody) + Wrap("ShortTwo", shortBody) + Wrap("LongOne", longBody) + Wrap("LongTwo", longBody)));
-        var rule = new DuplicateCodeCandidatesRule();
-        var options = rule.Descriptor.ResolveOptions(
+        var analysis = new DuplicateCodeCandidatesAnalysis();
+        var options = analysis.Descriptor.ResolveOptions(
         [
             KeyValuePair.Create("minTokens", JsonSerializer.SerializeToElement(30)),
         ]);
 
-        var result = await rule.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, options, CancellationToken.None);
         Assert.Equal(2, Assert.Single(result.Findings).Metrics["memberCount"]);
         Assert.All(Assert.Single(result.Findings).Evidence, static evidence => Assert.Contains("Long", evidence.Detail, StringComparison.Ordinal));
 
-        var higherMinimum = rule.Descriptor.ResolveOptions(
+        var higherMinimum = analysis.Descriptor.ResolveOptions(
         [
             KeyValuePair.Create("minTokens", JsonSerializer.SerializeToElement(146)),
         ]);
-        Assert.Same(RuleResult.Empty, await rule.ExecuteAsync(fixture.Context, higherMinimum, CancellationToken.None));
+        Assert.Same(ReviewAnalysisResult.Empty, await analysis.ExecuteAsync(fixture.Context, higherMinimum, CancellationToken.None));
 
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => rule.ExecuteAsync(fixture.Context, options, cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => analysis.ExecuteAsync(fixture.Context, options, cancellation.Token));
     }
 
-    private static void AssertInvalidOption(DuplicateCodeCandidatesRule rule, string name, JsonElement value) =>
-        Assert.Throws<ArgumentException>(() => rule.Descriptor.ResolveOptions([KeyValuePair.Create(name, value)]));
+    private static void AssertInvalidOption(DuplicateCodeCandidatesAnalysis analysis, string name, JsonElement value) =>
+        Assert.Throws<ArgumentException>(() => analysis.Descriptor.ResolveOptions([KeyValuePair.Create(name, value)]));
 
     private static string Describe(FindingDraft finding) =>
         $"{finding.ProjectPath}|{finding.SourcePath}|{finding.SubjectId}|{finding.Discriminator}|{string.Join(',', finding.Evidence.Select(static item => item.SourcePath + ':' + item.Line))}";
@@ -190,7 +190,7 @@ public sealed class DuplicateCodeCandidatesRuleTests
     private static string Wrap(string typeName, string body) =>
         $"public static class {typeName} {{ public static int Run(int value) {{ {body} }} }}\n";
 
-    private static RuleFixture CreateFixture(params (string Project, string File, string Source)[] documents)
+    private static AnalysisFixture CreateFixture(params (string Project, string File, string Source)[] documents)
     {
         var workspace = new AdhocWorkspace();
         var root = TestTempDirectory.Create();
@@ -224,7 +224,7 @@ public sealed class DuplicateCodeCandidatesRuleTests
             throw new InvalidOperationException("Could not initialize Roslyn test workspace.");
         }
 
-        return new RuleFixture(workspace, new ReviewContext(workspace.CurrentSolution, root.DirectoryPath), root);
+        return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root.DirectoryPath), root);
     }
 
     private static IEnumerable<MetadataReference> PlatformReferences() =>
@@ -242,7 +242,7 @@ public sealed class DuplicateCodeCandidatesRuleTests
             })
             .Select(static path => MetadataReference.CreateFromFile(path));
 
-    private sealed class RuleFixture(AdhocWorkspace workspace, ReviewContext context, IDisposable root) : IDisposable
+    private sealed class AnalysisFixture(AdhocWorkspace workspace, ReviewContext context, IDisposable root) : IDisposable
     {
         public ReviewContext Context { get; } = context;
 

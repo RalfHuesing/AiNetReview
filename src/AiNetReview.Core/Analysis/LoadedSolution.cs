@@ -19,7 +19,7 @@ public sealed class LoadedSolution : IDisposable
 
     public Solution Solution { get; }
 
-    /// <summary>Gets markup content captured with the loaded solution, when requested by a configured rule.</summary>
+    /// <summary>Gets markup content captured with the loaded solution, when requested by a configured analysis.</summary>
     public IReadOnlyList<MarkupDocumentSnapshot> MarkupDocuments { get; }
 
     public void Dispose() => Workspace.Dispose();

@@ -1,4 +1,4 @@
-namespace AiNetReview.FastTests.Rules;
+namespace AiNetReview.FastTests.ReviewAnalyses;
 
 using System;
 using System.Collections.Generic;
@@ -7,12 +7,12 @@ using System.Linq;
 using System.Threading;
 using System.Text.Json;
 using AiNetReview.Core.Analysis;
-using AiNetReview.Core.Rules.DeadCodeCandidates;
+using AiNetReview.Core.ReviewAnalyses.DeadCodeCandidates;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 
-public sealed class DeadCodeCandidatesRuleTests
+public sealed class DeadCodeCandidatesAnalysisTests
 {
     [Fact]
     public void deadcode_test_ReferencesAuditFixtureDeclarations()
@@ -36,10 +36,10 @@ public sealed class DeadCodeCandidatesRuleTests
             using Product;
             public sealed class UsesType { private Recursive value = new(); }
             """, null));
-        var rule = new DeadCodeCandidatesRule();
-        var options = rule.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var options = analysis.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
 
-        var result = await rule.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, options, CancellationToken.None);
 
         Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("deadcode_test_SelfRecursive", StringComparison.Ordinal));
     }
@@ -84,9 +84,9 @@ public sealed class DeadCodeCandidatesRuleTests
                 using Product;
                 public sealed class GeneratedConsumer { public void Run(Used value) { value.ExtensionTarget(); } }
                 """, "GeneratedConsumer.g.cs"));
-        var rule = new DeadCodeCandidatesRule();
+        var analysis = new DeadCodeCandidatesAnalysis();
 
-        var result = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
 
         var orphan = Assert.Single(result.Findings, static finding => finding.SubjectId.Contains("Orphan", StringComparison.Ordinal));
         Assert.Equal("type-candidate", orphan.Discriminator);
@@ -124,12 +124,12 @@ public sealed class DeadCodeCandidatesRuleTests
             internal sealed class InternalContainer { public void PublicMember() { } }
             public sealed class Consumer { public void Run() { _ = new InternalContainer(); } }
             """, null));
-        var rule = new DeadCodeCandidatesRule();
+        var analysis = new DeadCodeCandidatesAnalysis();
 
-        var defaultResult = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
-        var closedResult = await rule.ExecuteAsync(
+        var defaultResult = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
+        var closedResult = await analysis.ExecuteAsync(
             fixture.Context,
-            rule.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]),
+            analysis.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]),
             CancellationToken.None);
 
         Assert.DoesNotContain(defaultResult.Findings, static finding => finding.SubjectId == "T:UnusedPublicType");
@@ -175,9 +175,9 @@ public sealed class DeadCodeCandidatesRuleTests
             namespace Generated;
             public class GeneratedType { public void GeneratedMethod() { } }
             """, "GeneratedThing.g.cs"));
-        var rule = new DeadCodeCandidatesRule();
+        var analysis = new DeadCodeCandidatesAnalysis();
 
-        var result = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
 
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("ContractMethod", StringComparison.Ordinal));
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("BaseMethod", StringComparison.Ordinal));
@@ -204,15 +204,15 @@ public sealed class DeadCodeCandidatesRuleTests
                 private void Use() { Uncertain(42); }
             }
             """, null));
-        var rule = new DeadCodeCandidatesRule();
+        var analysis = new DeadCodeCandidatesAnalysis();
 
-        var localResult = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+        var localResult = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
         using var emptyWorkspace = new AdhocWorkspace();
         using var root = TestTempDirectory.Create();
         var noCoverage = new ReviewContext(emptyWorkspace.CurrentSolution, root.DirectoryPath);
 
         await Assert.ThrowsAsync<AnalysisFailedException>(() =>
-            rule.ExecuteAsync(noCoverage, rule.Descriptor.ResolveOptions(), CancellationToken.None));
+            analysis.ExecuteAsync(noCoverage, analysis.Descriptor.ResolveOptions(), CancellationToken.None));
         Assert.DoesNotContain(localResult.Findings, static finding => finding.SubjectId.Contains("Uncertain", StringComparison.Ordinal));
         Assert.Contains(localResult.Findings, static finding => finding.SubjectId == "M:Example.Use");
     }
@@ -220,7 +220,7 @@ public sealed class DeadCodeCandidatesRuleTests
     [Fact]
     public void Descriptor_AcceptsOnlySupportedApiSurfaceValues()
     {
-        var descriptor = new DeadCodeCandidatesRule().Descriptor;
+        var descriptor = new DeadCodeCandidatesAnalysis().Descriptor;
 
         Assert.Equal("external_library", descriptor.ResolveOptions()["apiSurface"].GetString());
         Assert.Empty(descriptor.ResolveOptions()["entryPointAttributes"].EnumerateArray());
@@ -250,13 +250,13 @@ public sealed class DeadCodeCandidatesRuleTests
                 private void Ordinary() { }
             }
             """, null));
-        var rule = new DeadCodeCandidatesRule();
-        var options = rule.Descriptor.ResolveOptions([
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var options = analysis.Descriptor.ResolveOptions([
             new("apiSurface", JsonSerializer.SerializeToElement("closed_solution")),
             new("entryPointAttributes", JsonSerializer.SerializeToElement(new[] { "Contracts.EntryPointAttribute" })),
         ]);
 
-        var result = await rule.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, options, CancellationToken.None);
 
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Configured", StringComparison.Ordinal));
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Fixed", StringComparison.Ordinal));
@@ -282,10 +282,10 @@ public sealed class DeadCodeCandidatesRuleTests
             fixture.Context.Solution,
             fixture.Context.ProjectRoot,
             [new MarkupDocumentSnapshot(markupPath, "<Widget @onclick=\"HandleClick\" />")]);
-        var rule = new DeadCodeCandidatesRule();
-        var options = rule.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var options = analysis.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
 
-        var result = await rule.ExecuteAsync(snapshotContext, options, CancellationToken.None);
+        var result = await analysis.ExecuteAsync(snapshotContext, options, CancellationToken.None);
 
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId == "T:Ui.Widget");
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("HandleClick", StringComparison.Ordinal));
@@ -295,7 +295,7 @@ public sealed class DeadCodeCandidatesRuleTests
             fixture.Context.Solution,
             fixture.Context.ProjectRoot,
             [new MarkupDocumentSnapshot(Path.ChangeExtension(markupPath, ".xaml"), "<Widget")]);
-        await Assert.ThrowsAsync<AnalysisFailedException>(() => rule.ExecuteAsync(invalidMarkup, options, CancellationToken.None));
+        await Assert.ThrowsAsync<AnalysisFailedException>(() => analysis.ExecuteAsync(invalidMarkup, options, CancellationToken.None));
     }
 
     [Fact]
@@ -319,10 +319,10 @@ public sealed class DeadCodeCandidatesRuleTests
             }
             internal sealed class Independent { private void Candidate() { } }
             """, null));
-        var rule = new DeadCodeCandidatesRule();
-        var options = rule.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var options = analysis.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
 
-        var result = await rule.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, options, CancellationToken.None);
 
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Reflected", StringComparison.Ordinal));
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Bound", StringComparison.Ordinal));
@@ -340,10 +340,10 @@ public sealed class DeadCodeCandidatesRuleTests
             internal sealed class Composition { private IServiceCollection Register(IServiceCollection services) => services.AddSingleton<RegisteredService>(); }
             internal sealed class IndependentService { private void Candidate() { } }
             """, null));
-        var rule = new DeadCodeCandidatesRule();
-        var options = rule.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var options = analysis.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
 
-        var result = await rule.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, options, CancellationToken.None);
 
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId == "T:RegisteredService");
         Assert.Contains(result.Findings, static finding => finding.SubjectId == "T:IndependentService");
@@ -373,10 +373,10 @@ public sealed class DeadCodeCandidatesRuleTests
             }
             internal sealed class Independent { private void Candidate() { } }
             """, null));
-        var rule = new DeadCodeCandidatesRule();
-        var options = rule.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var options = analysis.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
 
-        var result = await rule.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, options, CancellationToken.None);
 
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("InvokeAsync", StringComparison.Ordinal));
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("RouteEntry", StringComparison.Ordinal));
@@ -400,10 +400,10 @@ public sealed class DeadCodeCandidatesRuleTests
             </ui:Page>
             """;
         var context = new ReviewContext(fixture.Context.Solution, fixture.Context.ProjectRoot, [new MarkupDocumentSnapshot(path, snapshot)]);
-        var rule = new DeadCodeCandidatesRule();
-        var options = rule.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var options = analysis.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
 
-        var result = await rule.ExecuteAsync(context, options, CancellationToken.None);
+        var result = await analysis.ExecuteAsync(context, options, CancellationToken.None);
 
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId == "T:Ui.Page");
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Clicked", StringComparison.Ordinal));
@@ -420,17 +420,17 @@ public sealed class DeadCodeCandidatesRuleTests
         var path = Path.Combine(fixture.Context.ProjectRoot, "interop.js");
         var context = new ReviewContext(fixture.Context.Solution, fixture.Context.ProjectRoot,
             [new MarkupDocumentSnapshot(path, "DotNet.invokeMethodAsync('Product', 'Invoke');")]);
-        var rule = new DeadCodeCandidatesRule();
-        var options = rule.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var options = analysis.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]);
 
-        var result = await rule.ExecuteAsync(context, options, CancellationToken.None);
+        var result = await analysis.ExecuteAsync(context, options, CancellationToken.None);
 
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Invoke", StringComparison.Ordinal));
         Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Other", StringComparison.Ordinal));
         Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Independent", StringComparison.Ordinal));
     }
 
-    private static RuleFixture CreateFixture(params (string Name, string Assembly, string Source, string? FileName)[] projects)
+    private static AnalysisFixture CreateFixture(params (string Name, string Assembly, string Source, string? FileName)[] projects)
     {
         var workspace = new AdhocWorkspace();
         var root = TestTempDirectory.Create();
@@ -468,7 +468,7 @@ public sealed class DeadCodeCandidatesRuleTests
         }
 
         Assert.True(workspace.TryApplyChanges(solution));
-        return new RuleFixture(workspace, new ReviewContext(workspace.CurrentSolution, root.DirectoryPath), root);
+        return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root.DirectoryPath), root);
     }
 
     private static IEnumerable<MetadataReference> PlatformReferences() =>
@@ -487,7 +487,7 @@ public sealed class DeadCodeCandidatesRuleTests
         })
         .Select(static path => MetadataReference.CreateFromFile(path));
 
-    private sealed class RuleFixture(AdhocWorkspace workspace, ReviewContext context, IDisposable root) : IDisposable
+    private sealed class AnalysisFixture(AdhocWorkspace workspace, ReviewContext context, IDisposable root) : IDisposable
     {
         public ReviewContext Context { get; } = context;
 

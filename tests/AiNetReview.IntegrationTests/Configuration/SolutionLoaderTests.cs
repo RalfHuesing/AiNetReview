@@ -8,8 +8,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
-using AiNetReview.Core.Rules;
-using AiNetReview.Core.Rules.MethodControlFlowOutliers;
+using AiNetReview.Core.ReviewAnalyses;
+using AiNetReview.Core.ReviewAnalyses.MethodControlFlowOutliers;
 
 public sealed class SolutionLoaderTests
 {
@@ -183,7 +183,7 @@ public sealed class SolutionLoaderTests
         var markupPath = Path.Combine(root, "Sample", "Views", "Page.razor");
         Directory.CreateDirectory(Path.GetDirectoryName(markupPath)!);
         await File.WriteAllTextAsync(markupPath, "<button @onclick=\"Save\">Save</button>");
-        var config = Config(root, markupRule: true);
+        var config = Config(root, markupAnalysis: true);
 
         using var loaded = await new SolutionLoader().LoadAsync(config);
 
@@ -201,7 +201,7 @@ public sealed class SolutionLoaderTests
         var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
         var markupPath = Path.Combine(root, "Sample", "View.xaml");
         await File.WriteAllTextAsync(markupPath, "<Window Title=\"Original\" />");
-        var config = Config(root, markupRule: true);
+        var config = Config(root, markupAnalysis: true);
 
         using var loaded = await new SolutionLoader().LoadAsync(config);
         await File.WriteAllTextAsync(markupPath, "<Window Title=\"Changed\" />");
@@ -210,29 +210,29 @@ public sealed class SolutionLoaderTests
     }
 
     [Fact]
-    public async Task ReviewRunner_ProvidesLoadedMarkupSnapshotToRules()
+    public async Task ReviewRunner_ProvidesLoadedMarkupSnapshotToAnalyses()
     {
         using var temp = TestTempDirectory.Create();
         var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
         await File.WriteAllTextAsync(Path.Combine(root, "Sample", "View.razor"), "snapshot content");
-        var rule = new MarkupFixtureRule();
-        var config = new ReviewConfigValidator(new RuleRegistry([new MethodControlFlowOutliersRule(), rule]))
-            .Validate(root, ConfigurationJson("Sample.slnx", rules: "\"dead-code-candidates\": {}"));
+        var analysis = new MarkupFixtureAnalysis();
+        var config = new ReviewConfigValidator(new ReviewAnalysisRegistry([new MethodControlFlowOutliersAnalysis(), analysis]))
+            .Validate(root, ConfigurationJson("Sample.slnx", analyses: "\"dead-code-candidates\": {}"));
         using var loaded = await new SolutionLoader().LoadAsync(config);
 
         await new ReviewRunner().RunAsync(config, loaded);
 
-        Assert.Equal("snapshot content", Assert.Single(rule.MarkupDocuments).Text);
+        Assert.Equal("snapshot content", Assert.Single(analysis.MarkupDocuments).Text);
     }
 
     [Fact]
-    public async Task LoadAsync_DoesNotCaptureMarkupWithoutConfiguredRule()
+    public async Task LoadAsync_DoesNotCaptureMarkupWithoutConfiguredReviewAnalysis()
     {
         using var temp = TestTempDirectory.Create();
         var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
         var markupPath = Path.Combine(root, "Sample", "View.js");
         await File.WriteAllTextAsync(markupPath, new string('x', 1024 * 1024 + 1));
-        var config = Config(root, markupRule: false);
+        var config = Config(root, markupAnalysis: false);
 
         using var loaded = await new SolutionLoader().LoadAsync(config);
 
@@ -240,17 +240,17 @@ public sealed class SolutionLoaderTests
     }
 
     [Fact]
-    public async Task LoadAsync_DoesNotCaptureMarkupForDisabledDeadCodeRule()
+    public async Task LoadAsync_DoesNotCaptureMarkupForDisabledDeadCodeAnalysis()
     {
         using var temp = TestTempDirectory.Create();
         var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
         var markupPath = Path.Combine(root, "Sample", "View.js");
         await File.WriteAllTextAsync(markupPath, new string('x', 1024 * 1024 + 1));
-        var config = new ReviewConfigValidator(Registry(includeMarkupRule: true)).Validate(
+        var config = new ReviewConfigValidator(Registry(includeMarkupAnalysis: true)).Validate(
             root,
             ConfigurationJson(
                 "Sample.slnx",
-                rules: "\"dead-code-candidates\": {\"enabled\": false}, \"method-control-flow-outliers\": {}"));
+                analyses: "\"dead-code-candidates\": {\"enabled\": false}, \"method-control-flow-outliers\": {}"));
 
         using var loaded = await new SolutionLoader().LoadAsync(config);
 
@@ -274,7 +274,7 @@ public sealed class SolutionLoaderTests
         }
 
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "nested", "Foreign.csproj"), "<Project />");
-        using var loaded = await new SolutionLoader().LoadAsync(Config(root, markupRule: true));
+        using var loaded = await new SolutionLoader().LoadAsync(Config(root, markupAnalysis: true));
 
         var markup = Assert.Single(loaded.MarkupDocuments);
         Assert.Equal(includedPath, markup.FilePath);
@@ -309,7 +309,7 @@ public sealed class SolutionLoaderTests
         await AppendProjectXmlAsync(root,
             "<ItemGroup><AdditionalFiles Include=\"linked-markup/Page.razor\" /></ItemGroup>");
 
-        using var loaded = await new SolutionLoader().LoadAsync(Config(root, markupRule: true));
+        using var loaded = await new SolutionLoader().LoadAsync(Config(root, markupAnalysis: true));
 
         Assert.Contains(
             Assert.Single(loaded.Solution.Projects).AdditionalDocuments,
@@ -329,7 +329,7 @@ public sealed class SolutionLoaderTests
         await AppendProjectXmlAsync(root,
             "<ItemGroup><AdditionalFiles Include=\"nested/Page.razor\" /></ItemGroup>");
 
-        using var loaded = await new SolutionLoader().LoadAsync(Config(root, markupRule: true));
+        using var loaded = await new SolutionLoader().LoadAsync(Config(root, markupAnalysis: true));
 
         Assert.Empty(loaded.MarkupDocuments);
     }
@@ -355,7 +355,7 @@ public sealed class SolutionLoaderTests
             await File.WriteAllTextAsync(Path.Combine(path, "Generated.razor"), "build output");
         }
 
-        using var loaded = await new SolutionLoader().LoadAsync(Config(root, markupRule: true));
+        using var loaded = await new SolutionLoader().LoadAsync(Config(root, markupAnalysis: true));
 
         Assert.Empty(loaded.MarkupDocuments);
     }
@@ -384,7 +384,7 @@ public sealed class SolutionLoaderTests
 
         Assert.True((File.GetAttributes(link) & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint);
 
-        using var loaded = await new SolutionLoader().LoadAsync(Config(root, markupRule: true));
+        using var loaded = await new SolutionLoader().LoadAsync(Config(root, markupAnalysis: true));
 
         Assert.Empty(loaded.MarkupDocuments);
     }
@@ -396,7 +396,7 @@ public sealed class SolutionLoaderTests
         var root = await CreateProjectAsync(temp, ".slnx", "namespace Sample; public sealed class SampleType { }");
         var markupPath = Path.Combine(root, "Sample", "Locked.razor");
         await File.WriteAllTextAsync(markupPath, "locked");
-        var config = Config(root, markupRule: true);
+        var config = Config(root, markupAnalysis: true);
         await using var locked = new FileStream(markupPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
 
         var error = await Assert.ThrowsAsync<AnalysisFailedException>(() => new SolutionLoader().LoadAsync(config));
@@ -417,7 +417,7 @@ public sealed class SolutionLoaderTests
         }
 
         var error = await Assert.ThrowsAsync<AnalysisFailedException>(
-            () => new SolutionLoader().LoadAsync(Config(root, markupRule: true)));
+            () => new SolutionLoader().LoadAsync(Config(root, markupAnalysis: true)));
 
         Assert.Contains("2,000", error.Message, StringComparison.Ordinal);
     }
@@ -430,7 +430,7 @@ public sealed class SolutionLoaderTests
         await File.WriteAllTextAsync(Path.Combine(root, "Sample", "Oversized.js"), new string('x', 1024 * 1024 + 1));
 
         var error = await Assert.ThrowsAsync<AnalysisFailedException>(
-            () => new SolutionLoader().LoadAsync(Config(root, markupRule: true)));
+            () => new SolutionLoader().LoadAsync(Config(root, markupAnalysis: true)));
 
         Assert.Contains("1 MiB", error.Message, StringComparison.Ordinal);
     }
@@ -447,26 +447,26 @@ public sealed class SolutionLoaderTests
             externalMarkup: outsideMarkup);
 
         var error = await Assert.ThrowsAsync<AnalysisFailedException>(
-            () => new SolutionLoader().LoadAsync(Config(root, markupRule: true)));
+            () => new SolutionLoader().LoadAsync(Config(root, markupAnalysis: true)));
 
         Assert.Contains("outside", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static ReviewConfig Config(string root, bool markupRule) =>
-        new ReviewConfigValidator(Registry(markupRule)).Validate(
+    private static ReviewConfig Config(string root, bool markupAnalysis) =>
+        new ReviewConfigValidator(Registry(markupAnalysis)).Validate(
             root,
-            ConfigurationJson("Sample.slnx", rules: markupRule ? "\"dead-code-candidates\": {}" : null));
+            ConfigurationJson("Sample.slnx", analyses: markupAnalysis ? "\"dead-code-candidates\": {}" : null));
 
-    private static RuleRegistry Registry(bool includeMarkupRule = false) => includeMarkupRule
-        ? new RuleRegistry([new MethodControlFlowOutliersRule(), new MarkupFixtureRule()])
-        : new RuleRegistry([new MethodControlFlowOutliersRule()]);
+    private static ReviewAnalysisRegistry Registry(bool includeMarkupAnalysis = false) => includeMarkupAnalysis
+        ? new ReviewAnalysisRegistry([new MethodControlFlowOutliersAnalysis(), new MarkupFixtureAnalysis()])
+        : new ReviewAnalysisRegistry([new MethodControlFlowOutliersAnalysis()]);
 
-    private static string ConfigurationJson(string solution, string outputDirectory = "reports", string? rules = null) => $$"""
+    private static string ConfigurationJson(string solution, string outputDirectory = "reports", string? analyses = null) => $$"""
         {
           "schemaVersion": 1,
           "solution": "{{solution}}",
           "outputDirectory": "{{outputDirectory}}",
-          "rules": { {{(rules is null ? "\"method-control-flow-outliers\": {}" : rules)}} }
+          "analyses": { {{(analyses is null ? "\"method-control-flow-outliers\": {}" : analyses)}} }
         }
         """;
 
@@ -609,25 +609,25 @@ public sealed class SolutionLoaderTests
         }
     }
 
-    private sealed class MarkupFixtureRule : IReviewRule
+    private sealed class MarkupFixtureAnalysis : IReviewAnalysis
     {
         public IReadOnlyList<MarkupDocumentSnapshot> MarkupDocuments { get; private set; } = Array.Empty<MarkupDocumentSnapshot>();
 
-        public RuleDescriptor Descriptor { get; } = new(
+        public ReviewAnalysisDescriptor Descriptor { get; } = new(
             "dead-code-candidates",
             "Fixture",
             1,
-            "Fixture rule for loader snapshot tests.",
+            "Fixture analysis for loader snapshot tests.",
             "Fixture behavior.",
             ["Is the snapshot available?"]);
 
-        public Task<RuleResult> ExecuteAsync(
+        public Task<ReviewAnalysisResult> ExecuteAsync(
             ReviewContext context,
-            RuleOptions options,
+            ReviewAnalysisOptions options,
             System.Threading.CancellationToken cancellationToken)
         {
             MarkupDocuments = context.MarkupDocuments;
-            return Task.FromResult(RuleResult.Empty);
+            return Task.FromResult(ReviewAnalysisResult.Empty);
         }
     }
 }

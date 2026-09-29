@@ -7,7 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AiNetReview.Core.Analysis;
-using AiNetReview.Core.Rules.MethodControlFlowOutliers;
+using AiNetReview.Core.ReviewAnalyses.MethodControlFlowOutliers;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
@@ -97,7 +97,7 @@ public sealed class SolutionReferenceIndexTests
     }
 
     [Fact]
-    public async Task CreateAsync_DoesNotChangeExistingRuleResults()
+    public async Task CreateAsync_DoesNotChangeExistingReviewAnalysisResults()
     {
         using var fixture = CreateProjectFixture("Ordinary", """
             public class Example
@@ -116,12 +116,12 @@ public sealed class SolutionReferenceIndexTests
                 }
             }
             """);
-        var rule = new MethodControlFlowOutliersRule();
-        var options = rule.Descriptor.ResolveOptions();
-        var before = await rule.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+        var analysis = new MethodControlFlowOutliersAnalysis();
+        var options = analysis.Descriptor.ResolveOptions();
+        var before = await analysis.ExecuteAsync(fixture.Context, options, CancellationToken.None);
 
         _ = await SolutionReferenceIndex.CreateAsync(fixture.Context);
-        var after = await rule.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+        var after = await analysis.ExecuteAsync(fixture.Context, options, CancellationToken.None);
 
         Assert.Equal(before.Findings.Count, after.Findings.Count);
         for (var index = 0; index < before.Findings.Count; index++)

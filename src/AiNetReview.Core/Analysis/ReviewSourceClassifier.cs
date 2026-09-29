@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 
-/// <summary>Classifies source and project scope for product review rules.</summary>
+/// <summary>Classifies source and project scope for product review analyses.</summary>
 internal static class ReviewSourceClassifier
 {
     private static readonly string[] TestReferenceAssemblyPrefixes =

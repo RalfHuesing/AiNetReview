@@ -5,14 +5,14 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using AiNetReview.Core.Configuration;
-using AiNetReview.Core.Rules;
-using AiNetReview.Core.Rules.MethodControlFlowOutliers;
-using AiNetReview.Core.Rules.DeadCodeCandidates;
-using AiNetReview.Core.Rules.DuplicateCodeCandidates;
+using AiNetReview.Core.ReviewAnalyses;
+using AiNetReview.Core.ReviewAnalyses.MethodControlFlowOutliers;
+using AiNetReview.Core.ReviewAnalyses.DeadCodeCandidates;
+using AiNetReview.Core.ReviewAnalyses.DuplicateCodeCandidates;
 
 public sealed class ReviewConfigValidatorTests
 {
-    private static RuleRegistry Registry() => new([new MethodControlFlowOutliersRule(), new DeadCodeCandidatesRule(), new DuplicateCodeCandidatesRule()]);
+    private static ReviewAnalysisRegistry Registry() => new([new MethodControlFlowOutliersAnalysis(), new DeadCodeCandidatesAnalysis(), new DuplicateCodeCandidatesAnalysis()]);
 
     [Fact]
     public void Validate_AppliesAndValidatesDuplicateCodeOptions()
@@ -22,14 +22,14 @@ public sealed class ReviewConfigValidatorTests
         var validator = new ReviewConfigValidator(Registry());
 
         var config = validator.Validate(temp.DirectoryPath,
-            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"duplicate-code-candidates\":{}}}");
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"duplicate-code-candidates\":{}}}");
 
-        var rule = Assert.Single(config.Rules);
-        Assert.Equal("duplicate-code-candidates", rule.RuleId);
-        Assert.Equal(30, rule.EffectiveOptions["minTokens"].GetInt32());
-        Assert.Equal("exact", rule.EffectiveOptions["minimumSimilarity"].GetString());
+        var analysis = Assert.Single(config.Analyses);
+        Assert.Equal("duplicate-code-candidates", analysis.AnalysisId);
+        Assert.Equal(30, analysis.EffectiveOptions["minTokens"].GetInt32());
+        Assert.Equal("exact", analysis.EffectiveOptions["minimumSimilarity"].GetString());
         Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
-            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"duplicate-code-candidates\":{\"minimumSimilarity\":\"loose\"}}}"));
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"duplicate-code-candidates\":{\"minimumSimilarity\":\"loose\"}}}"));
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public sealed class ReviewConfigValidatorTests
     }
 
     [Fact]
-    public void Validate_AppliesRuleDefaultsAndCreatesNormalizedDirectories()
+    public void Validate_AppliesAnalysisDefaultsAndCreatesNormalizedDirectories()
     {
         using var temp = TestTempDirectory.Create();
         temp.CreateFile("Project.slnx", "<Solution />");
@@ -58,9 +58,9 @@ public sealed class ReviewConfigValidatorTests
         Assert.Equal("Project.slnx", config.SolutionPath);
         Assert.Equal("reports/current", config.OutputDirectory);
         Assert.True(Directory.Exists(config.ResolvedOutputDirectory));
-        Assert.Single(config.Rules);
-        Assert.Equal("method-control-flow-outliers", config.Rules[0].RuleId);
-        Assert.Equal(90, config.Rules[0].EffectiveOptions["percentile"].GetInt32());
+        Assert.Single(config.Analyses);
+        Assert.Equal("method-control-flow-outliers", config.Analyses[0].AnalysisId);
+        Assert.Equal(90, config.Analyses[0].EffectiveOptions["percentile"].GetInt32());
     }
 
     [Fact]
@@ -80,8 +80,8 @@ public sealed class ReviewConfigValidatorTests
 
     [Theory]
     [InlineData("missing.slnx", "method-control-flow-outliers")]
-    [InlineData("Project.slnx", "unknown-rule")]
-    public void ValidateForAudit_RejectsInvalidSolutionOrRuleWithoutCreatingCentralOutput(string solution, string ruleId)
+    [InlineData("Project.slnx", "unknown-analysis")]
+    public void ValidateForAudit_RejectsInvalidSolutionOrAnalysisWithoutCreatingCentralOutput(string solution, string analysisId)
     {
         using var temp = TestTempDirectory.Create();
         temp.CreateFile("Project.slnx", "<Solution />");
@@ -91,7 +91,7 @@ public sealed class ReviewConfigValidatorTests
             schemaVersion = 1,
             solution,
             outputDirectory = "reports",
-            rules = new Dictionary<string, object> { [ruleId] = new { } },
+            analyses = new Dictionary<string, object> { [analysisId] = new { } },
         });
 
         Assert.Throws<InvalidReviewInputException>(() => new ReviewConfigValidator(Registry())
@@ -125,38 +125,38 @@ public sealed class ReviewConfigValidatorTests
         temp.CreateFile("Project.slnx", "<Solution />");
         var validator = new ReviewConfigValidator(Registry());
         var defaultConfig = validator.Validate(temp.DirectoryPath,
-            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{}}}");
-        var defaults = defaultConfig.Rules.Single().EffectiveOptions;
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"dead-code-candidates\":{}}}");
+        var defaults = defaultConfig.Analyses.Single().EffectiveOptions;
 
         Assert.Equal("external_library", defaults["apiSurface"].GetString());
         Assert.Empty(defaults["entryPointAttributes"].EnumerateArray());
 
         var configured = validator.Validate(temp.DirectoryPath,
-            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{\"apiSurface\":\"closed_solution\",\"entryPointAttributes\":[\"Example.EntryPointAttribute\"]}}}");
-        Assert.Equal("closed_solution", configured.Rules.Single().EffectiveOptions["apiSurface"].GetString());
-        Assert.Equal("Example.EntryPointAttribute", configured.Rules.Single().EffectiveOptions["entryPointAttributes"].EnumerateArray().Single().GetString());
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"dead-code-candidates\":{\"apiSurface\":\"closed_solution\",\"entryPointAttributes\":[\"Example.EntryPointAttribute\"]}}}");
+        Assert.Equal("closed_solution", configured.Analyses.Single().EffectiveOptions["apiSurface"].GetString());
+        Assert.Equal("Example.EntryPointAttribute", configured.Analyses.Single().EffectiveOptions["entryPointAttributes"].EnumerateArray().Single().GetString());
 
         Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
-            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{\"apiSurface\":\"unknown\"}}}"));
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"dead-code-candidates\":{\"apiSurface\":\"unknown\"}}}"));
         Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
-            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{\"entryPointAttributes\":[\"Unqualified\"]}}}"));
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"dead-code-candidates\":{\"entryPointAttributes\":[\"Unqualified\"]}}}"));
     }
 
     [Fact]
-    public void Validate_DisabledRuleIsValidatedButExcludedFromExecution()
+    public void Validate_DisabledAnalysisIsValidatedButExcludedFromExecution()
     {
         using var temp = TestTempDirectory.Create();
         temp.CreateFile("Project.slnx", "<Solution />");
         var validator = new ReviewConfigValidator(Registry());
 
         var config = validator.Validate(temp.DirectoryPath,
-            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{\"enabled\":false,\"apiSurface\":\"closed_solution\"},\"method-control-flow-outliers\":{}}}");
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"dead-code-candidates\":{\"enabled\":false,\"apiSurface\":\"closed_solution\"},\"method-control-flow-outliers\":{}}}");
 
-        var activeRule = Assert.Single(config.Rules);
-        Assert.Equal("method-control-flow-outliers", activeRule.RuleId);
+        var activeAnalysis = Assert.Single(config.Analyses);
+        Assert.Equal("method-control-flow-outliers", activeAnalysis.AnalysisId);
 
         Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
-            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{\"enabled\":false,\"unknown\":true},\"method-control-flow-outliers\":{}}}"));
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"dead-code-candidates\":{\"enabled\":false,\"unknown\":true},\"method-control-flow-outliers\":{}}}"));
     }
 
     [Theory]
@@ -169,29 +169,30 @@ public sealed class ReviewConfigValidatorTests
         temp.CreateFile("Project.slnx", "<Solution />");
 
         Assert.Throws<InvalidReviewInputException>(() => new ReviewConfigValidator(Registry()).Validate(temp.DirectoryPath,
-            $"{{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{{\"method-control-flow-outliers\":{{\"enabled\":{enabled}}}}}}}"));
+            $"{{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{{\"method-control-flow-outliers\":{{\"enabled\":{enabled}}}}}}}"));
     }
 
     [Fact]
-    public void Validate_AllowsEveryConfiguredRuleToBeDisabled()
+    public void Validate_AllowsEveryConfiguredReviewAnalysisToBeDisabled()
     {
         using var temp = TestTempDirectory.Create();
         temp.CreateFile("Project.slnx", "<Solution />");
 
         var config = new ReviewConfigValidator(Registry()).Validate(temp.DirectoryPath,
-            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"method-control-flow-outliers\":{\"enabled\":false},\"dead-code-candidates\":{\"enabled\":false}}}");
-        Assert.Empty(config.Rules);
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"method-control-flow-outliers\":{\"enabled\":false},\"dead-code-candidates\":{\"enabled\":false}}}");
+        Assert.Empty(config.Analyses);
     }
 
     [Theory]
-    [InlineData("{\"schemaVersion\":1,\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"method-control-flow-outliers\":{}}}")]
-    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"method-control-flow-outliers\":{\"option\":1,\"option\":2}}}")]
-    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"method-control-flow-outliers\":{},\"method-control-flow-outliers\":{}}}")]
-    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"extra\":true,\"rules\":{\"method-control-flow-outliers\":{}}}")]
-    [InlineData("{\"schemaVersion\":2,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"method-control-flow-outliers\":{}}}")]
-    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"unknown\":{}}}")]
-    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"method-control-flow-outliers\":{\"unknown\":true}}}")]
-    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":[]} ")]
+    [InlineData("{\"schemaVersion\":1,\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"analyses\":{\"method-control-flow-outliers\":{}}}")]
+    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"analyses\":{\"method-control-flow-outliers\":{\"option\":1,\"option\":2}}}")]
+    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"analyses\":{\"method-control-flow-outliers\":{},\"method-control-flow-outliers\":{}}}")]
+    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"extra\":true,\"analyses\":{\"method-control-flow-outliers\":{}}}")]
+    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"rules\":{\"method-control-flow-outliers\":{}}}")]
+    [InlineData("{\"schemaVersion\":2,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"analyses\":{\"method-control-flow-outliers\":{}}}")]
+    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"analyses\":{\"unknown\":{}}}")]
+    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"analyses\":{\"method-control-flow-outliers\":{\"unknown\":true}}}")]
+    [InlineData("{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"out\",\"analyses\":[]} ")]
     public void Validate_RejectsInvalidJsonContract(string json)
     {
         using var temp = TestTempDirectory.Create();
@@ -215,7 +216,7 @@ public sealed class ReviewConfigValidatorTests
             schemaVersion = 1,
             solution,
             outputDirectory = output,
-            rules = new Dictionary<string, object> { ["method-control-flow-outliers"] = new { } },
+            analyses = new Dictionary<string, object> { ["method-control-flow-outliers"] = new { } },
         });
 
         Assert.Throws<InvalidReviewInputException>(() => new ReviewConfigValidator(Registry()).Validate(temp.DirectoryPath, json));
@@ -233,7 +234,7 @@ public sealed class ReviewConfigValidatorTests
             schemaVersion = 1,
             solution = fieldName == "solution" ? "Project\0.slnx" : "Project.slnx",
             outputDirectory = fieldName == "outputDirectory" ? "reports\0invalid" : "reports",
-            rules = new Dictionary<string, object> { ["method-control-flow-outliers"] = new { } },
+            analyses = new Dictionary<string, object> { ["method-control-flow-outliers"] = new { } },
         });
 
         Assert.Throws<InvalidReviewInputException>(() => new ReviewConfigValidator(Registry()).Validate(temp.DirectoryPath, json));
@@ -252,7 +253,7 @@ public sealed class ReviewConfigValidatorTests
             schemaVersion = 1,
             solution = fieldName == "solution" ? "nested\\Project.slnx" : "nested/Project.slnx",
             outputDirectory = fieldName == "outputDirectory" ? "nested\\reports" : "reports",
-            rules = new Dictionary<string, object> { ["method-control-flow-outliers"] = new { } },
+            analyses = new Dictionary<string, object> { ["method-control-flow-outliers"] = new { } },
         });
 
         Assert.Throws<InvalidReviewInputException>(() => new ReviewConfigValidator(Registry()).Validate(temp.DirectoryPath, json));
@@ -282,7 +283,7 @@ public sealed class ReviewConfigValidatorTests
             schemaVersion = 1,
             solution = "Project.slnx",
             outputDirectory = "escape/reports",
-            rules = new Dictionary<string, object> { ["method-control-flow-outliers"] = new { } },
+            analyses = new Dictionary<string, object> { ["method-control-flow-outliers"] = new { } },
         });
 
         Assert.Throws<InvalidReviewInputException>(() => new ReviewConfigValidator(Registry()).Validate(temp.DirectoryPath, json));
@@ -293,7 +294,7 @@ public sealed class ReviewConfigValidatorTests
           "schemaVersion": 1,
           "solution": "Project.slnx",
           "outputDirectory": "reports/./current",
-          "rules": { "method-control-flow-outliers": {} }
+          "analyses": { "method-control-flow-outliers": {} }
         }
         """;
 }

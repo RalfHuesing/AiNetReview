@@ -8,13 +8,13 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using AiNetReview.Bootstrap;
 using AiNetReview.Cli;
-using AiNetReview.Core.Rules;
+using AiNetReview.Core.ReviewAnalyses;
 using Microsoft.Extensions.DependencyInjection;
 
 public sealed class MethodControlFlowOutliersIntegrationTests
 {
     [Fact]
-    public async Task ReviewCommand_WithProductionRule_ReportsComplexMethodWithEvidenceAndOmitsSimpleMethod()
+    public async Task ReviewCommand_WithProductionAnalysis_ReportsComplexMethodWithEvidenceAndOmitsSimpleMethod()
     {
         using var tempDirectory = TestTempDirectory.Create("ainet-control-flow-");
         var projectRoot = tempDirectory.GetPath("review-project");
@@ -49,11 +49,11 @@ public sealed class MethodControlFlowOutliersIntegrationTests
             "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
         await File.WriteAllTextAsync(configPath,
-            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"method-control-flow-outliers\":{}}}");
+            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"method-control-flow-outliers\":{}}}");
 
         var services = new ServiceCollection();
         services.AddAiNetReviewServices();
-        services.AddAiNetReviewRules();
+        services.AddAiNetReviewAnalyses();
         services.AddLogging();
         await using var provider = services.BuildServiceProvider();
         using var output = new StringWriter();
@@ -71,13 +71,13 @@ public sealed class MethodControlFlowOutliersIntegrationTests
         Assert.False(string.IsNullOrWhiteSpace(runId));
         Assert.Equal(
             new[] { "dead-code-candidates", "duplicate-code-candidates", "method-control-flow-outliers" },
-            provider.GetRequiredService<RuleRegistry>().Rules.Select(static rule => rule.Descriptor.RuleId));
+            provider.GetRequiredService<ReviewAnalysisRegistry>().Analyses.Select(static analysis => analysis.Descriptor.AnalysisId));
 
-        var rulesDirectory = Path.Combine(projectRoot, "reports", runId!, "rules");
-        var reportPath = Path.Combine(rulesDirectory, "method-control-flow-outliers.md");
+        var analysesDirectory = Path.Combine(projectRoot, "reports", runId!, "analyses");
+        var reportPath = Path.Combine(analysesDirectory, "method-control-flow-outliers.md");
         Assert.True(File.Exists(reportPath));
         Assert.Equal(new[] { "method-control-flow-outliers.md" },
-            Directory.GetFiles(rulesDirectory).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+            Directory.GetFiles(analysesDirectory).Select(Path.GetFileName).Order(StringComparer.Ordinal));
 
         var report = await File.ReadAllTextAsync(reportPath);
         Assert.Contains("8 decisions across", report, StringComparison.Ordinal);

@@ -1,10 +1,10 @@
 # Wenige starke Signale für agentische Code-Audits
 
-Status: ergänzende Ideennotiz, keine verbindliche Spezifikation und kein implementiertes Produktverhalten. Die statistische Kandidatenauswahl ist als Regel [method-control-flow-outliers](../../docs/review/findings.md) umgesetzt; die [Ideensammlung](erste-fachliche-review-signale.md) diskutiert weitere Ansätze.
+Status: ergänzende Ideennotiz, keine verbindliche Spezifikation und kein implementiertes Produktverhalten. Die statistische Kandidatenauswahl ist als Analyse [method-control-flow-outliers](../../docs/review/findings.md) umgesetzt; die [Ideensammlung](erste-fachliche-review-signale.md) diskutiert weitere Ansätze.
 
 ## Grundgedanke
 
-AiNetReview braucht wahrscheinlich keine große Sammlung kleinteiliger Qualitätsregeln. Wenige überprüfbare Signale können einem Agenten die Stellen zeigen, an denen ein Audit sinnvoll ist. Ein Treffer ist eine Frage an den Code und seinen Kontext, keine Anweisung zur sofortigen Änderung. Der Agent soll die Absicht, Aufrufer, Verträge und Tests prüfen und anschließend begründet ändern oder den Fall akzeptieren. Automatisches Aufteilen einer Methode nur zur Senkung eines Messwerts kann das Verständnis verschlechtern.
+AiNetReview braucht wahrscheinlich keine große Sammlung kleinteiliger Qualitätsanalysen. Wenige überprüfbare Signale können einem Agenten die Stellen zeigen, an denen ein Audit sinnvoll ist. Ein Treffer ist eine Frage an den Code und seinen Kontext, keine Anweisung zur sofortigen Änderung. Der Agent soll die Absicht, Aufrufer, Verträge und Tests prüfen und anschließend begründet ändern oder den Fall akzeptieren. Automatisches Aufteilen einer Methode nur zur Senkung eines Messwerts kann das Verständnis verschlechtern.
 
 ## Kognitive Komplexität und tiefe Verschachtelung
 
@@ -22,4 +22,4 @@ Für einen ersten Audit erscheinen deshalb **separate, erklärte Messwerte** sin
 2. **Verstreuter Kontext:** Wie viele Methoden, Dateien und Zustandsübergänge muss ein Agent für einen fachlichen Ablauf zusammenführen? Konkrete Beziehungen sind wichtiger als ein abstrakter Graphwert. Diese Analyse könnte für agentische Entwicklung besonders wertvoll sein, ist aber schwieriger zuverlässig umzusetzen.
 3. **Änderungsrisiko:** Welche Verträge, Aufrufer, Fehlerpfade und Tests berührt eine Änderung? Ein Audit direkt nach einem Entwicklungstask sollte nach möglichen unbeabsichtigten Auswirkungen fragen. Diese Sicht ist voraussichtlich wertvoll, verlangt aber eine verlässliche Zuordnung von Änderungen und Auswirkungen; sie muss nicht von Git als Laufzeitvoraussetzung abhängen.
 
-Diese drei Blickrichtungen sind keine Forderung nach drei sofortigen Produktregeln. Zunächst die lokale Auswertung an echten Audits erproben und festhalten, welche Kandidaten zu einer nützlichen Frage, einer begründeten Akzeptanz oder einer sinnvollen Änderung geführt haben. Weitere Signale erst aufnehmen, wenn sie einen zusätzlichen Nutzen zeigen.
+Diese drei Blickrichtungen sind keine Forderung nach drei sofortigen Produktanalysen. Zunächst die lokale Auswertung an echten Audits erproben und festhalten, welche Kandidaten zu einer nützlichen Frage, einer begründeten Akzeptanz oder einer sinnvollen Änderung geführt haben. Weitere Signale erst aufnehmen, wenn sie einen zusätzlichen Nutzen zeigen.

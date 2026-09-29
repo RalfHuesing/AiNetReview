@@ -9,14 +9,14 @@ using System.Threading;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Bootstrap;
 using AiNetReview.Cli;
-using AiNetReview.Core.Rules;
-using AiNetReview.IntegrationTests.FixtureRules;
+using AiNetReview.Core.ReviewAnalyses;
+using AiNetReview.IntegrationTests.FixtureAnalyses;
 using Microsoft.Extensions.DependencyInjection;
 
 public sealed class HostAdapterIntegrationTests
 {
     [Fact]
-    public async Task ReviewCommand_ProductionDuplicateCodeRulePublishesCurrentCrossProjectClusters()
+    public async Task ReviewCommand_ProductionDuplicateCodeAnalysisPublishesCurrentCrossProjectClusters()
     {
         using var tempDirectory = TestTempDirectory.Create("ainet-host-duplicate-code-");
         var projectRoot = tempDirectory.GetPath("adapter-project");
@@ -73,7 +73,7 @@ public sealed class HostAdapterIntegrationTests
         var emptyRunDirectory = Path.Combine(projectRoot, "reports", empty.RunId);
         var emptyIndex = await File.ReadAllTextAsync(Path.Combine(emptyRunDirectory, "index.md"));
         Assert.Contains("No findings were found.", emptyIndex, StringComparison.Ordinal);
-        Assert.False(File.Exists(Path.Combine(emptyRunDirectory, "rules", "duplicate-code-candidates.md")));
+        Assert.False(File.Exists(Path.Combine(emptyRunDirectory, "analyses", "duplicate-code-candidates.md")));
         Assert.True(File.Exists(Path.Combine(projectRoot, "reports", exact.RunId, "index.md")));
         Assert.True(File.Exists(Path.Combine(projectRoot, "reports", fuzzy.RunId, "index.md")));
 
@@ -101,7 +101,7 @@ public sealed class HostAdapterIntegrationTests
     }
 
     [Fact]
-    public async Task ReviewCommand_ProductionDeadCodeRulePublishesRepeatedAndEmptyAudits()
+    public async Task ReviewCommand_ProductionDeadCodeAnalysisPublishesRepeatedAndEmptyAudits()
     {
         using var tempDirectory = TestTempDirectory.Create("ainet-host-dead-code-");
         var projectRoot = tempDirectory.GetPath("adapter-project");
@@ -116,10 +116,10 @@ public sealed class HostAdapterIntegrationTests
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
         await File.WriteAllTextAsync(configPath,
-            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{}}}");
+            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"dead-code-candidates\":{}}}");
 
         var first = await RunProductionDeadCodeAsync(configPath);
-        var firstReport = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", first.RunId, "rules", "dead-code-candidates.md"));
+        var firstReport = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", first.RunId, "analyses", "dead-code-candidates.md"));
         Assert.Equal(1, first.Detected);
         Assert.Contains("Type without known use", firstReport, StringComparison.Ordinal);
         Assert.Contains("| Source | Signal | Other Locations |", firstReport, StringComparison.Ordinal);
@@ -127,7 +127,7 @@ public sealed class HostAdapterIntegrationTests
         Assert.Contains("external_library", firstReport, StringComparison.Ordinal);
 
         var second = await RunProductionDeadCodeAsync(configPath);
-        var secondReport = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", second.RunId, "rules", "dead-code-candidates.md"));
+        var secondReport = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", second.RunId, "analyses", "dead-code-candidates.md"));
         Assert.Equal(1, second.Detected);
         Assert.NotEqual(first.RunId, second.RunId);
         Assert.Contains("Type without known use", secondReport, StringComparison.Ordinal);
@@ -138,7 +138,7 @@ public sealed class HostAdapterIntegrationTests
         var emptyRunDirectory = Path.Combine(projectRoot, "reports", empty.RunId);
         var emptyIndex = await File.ReadAllTextAsync(Path.Combine(emptyRunDirectory, "index.md"));
         Assert.Contains("No findings were found.", emptyIndex, StringComparison.Ordinal);
-        Assert.False(File.Exists(Path.Combine(emptyRunDirectory, "rules", "dead-code-candidates.md")));
+        Assert.False(File.Exists(Path.Combine(emptyRunDirectory, "analyses", "dead-code-candidates.md")));
 
         var publishedRunsBeforeCancellation = Directory.GetDirectories(Path.Combine(projectRoot, "reports")).Length;
         using var cancellation = new CancellationTokenSource();
@@ -176,7 +176,7 @@ public sealed class HostAdapterIntegrationTests
 
         var first = await RunFixtureAsync(projectRoot, configPath, "base");
         Assert.Equal(2, first.Detected);
-        var firstReport = await ReadRuleReportAsync(projectRoot, first.RunId);
+        var firstReport = await ReadAnalysisReportAsync(projectRoot, first.RunId);
         Assert.Contains("FixtureCaseA", firstReport, StringComparison.Ordinal);
         Assert.Contains("FixtureCaseB", firstReport, StringComparison.Ordinal);
         Assert.Contains("scenario 'base'", firstReport, StringComparison.Ordinal);
@@ -185,7 +185,7 @@ public sealed class HostAdapterIntegrationTests
             "namespace Sample; public sealed class Sample { public void FixtureCaseC() { } }");
         var second = await RunFixtureAsync(projectRoot, configPath, "alternate");
         Assert.Equal(1, second.Detected);
-        var secondReport = await ReadRuleReportAsync(projectRoot, second.RunId);
+        var secondReport = await ReadAnalysisReportAsync(projectRoot, second.RunId);
         Assert.Contains("FixtureCaseC", secondReport, StringComparison.Ordinal);
         Assert.DoesNotContain("FixtureCaseA", secondReport, StringComparison.Ordinal);
         Assert.DoesNotContain("FixtureCaseB", secondReport, StringComparison.Ordinal);
@@ -197,7 +197,7 @@ public sealed class HostAdapterIntegrationTests
         var thirdRunDirectory = Path.Combine(projectRoot, "reports", third.RunId);
         var thirdIndex = await File.ReadAllTextAsync(Path.Combine(thirdRunDirectory, "index.md"));
         Assert.Contains("No findings were found.", thirdIndex, StringComparison.Ordinal);
-        Assert.False(Directory.Exists(Path.Combine(thirdRunDirectory, "rules")));
+        Assert.False(Directory.Exists(Path.Combine(thirdRunDirectory, "analyses")));
 
         Assert.True(File.Exists(Path.Combine(projectRoot, "reports", first.RunId, "index.md")));
         Assert.True(File.Exists(Path.Combine(projectRoot, "reports", second.RunId, "index.md")));
@@ -264,12 +264,12 @@ public sealed class HostAdapterIntegrationTests
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
         await File.WriteAllTextAsync(configPath,
-            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"fixture-finding\":{}}}");
+            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"fixture-finding\":{}}}");
 
         var services = new ServiceCollection();
         services.AddAiNetReviewServices();
-        services.AddAiNetReviewRules();
-        services.AddSingleton<IReviewRule, FixtureFindingRule>();
+        services.AddAiNetReviewAnalyses();
+        services.AddSingleton<IReviewAnalysis, FixtureFindingAnalysis>();
         services.AddLogging();
         await using var provider = services.BuildServiceProvider();
         using var output = new StringWriter();
@@ -286,11 +286,11 @@ public sealed class HostAdapterIntegrationTests
         using var response = JsonDocument.Parse(output.ToString());
         Assert.Equal(1, response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
         var runId = response.RootElement.GetProperty("runId").GetString();
-        var report = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "rules", "fixture-finding.md"));
+        var report = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "analyses", "fixture-finding.md"));
         Assert.Contains("Fixture scenario 'base' requires review of FixtureCaseA.", report, StringComparison.Ordinal);
         Assert.Equal(
             new[] { "dead-code-candidates", "duplicate-code-candidates", "fixture-finding", "method-control-flow-outliers" },
-            provider.GetRequiredService<RuleRegistry>().Rules.Select(static rule => rule.Descriptor.RuleId));
+            provider.GetRequiredService<ReviewAnalysisRegistry>().Analyses.Select(static analysis => analysis.Descriptor.AnalysisId));
     }
 
     [Fact]
@@ -311,10 +311,10 @@ public sealed class HostAdapterIntegrationTests
         await File.WriteAllTextAsync(markupPath, "unreadable during snapshot");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
         await File.WriteAllTextAsync(configPath,
-            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"dead-code-candidates\":{}}}");
+            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"dead-code-candidates\":{}}}");
         var services = new ServiceCollection();
         services.AddAiNetReviewServices();
-        services.AddAiNetReviewRules();
+        services.AddAiNetReviewAnalyses();
         services.AddLogging();
         await using var provider = services.BuildServiceProvider();
         using var output = new StringWriter();
@@ -360,13 +360,13 @@ public sealed class HostAdapterIntegrationTests
             schemaVersion = 1,
             solution = "Sample.slnx",
             outputDirectory = "reports",
-            rules = new Dictionary<string, object> { ["fixture-finding"] = new { scenario } },
+            analyses = new Dictionary<string, object> { ["fixture-finding"] = new { scenario } },
         });
         await File.WriteAllTextAsync(configPath, config);
         var services = new ServiceCollection();
         services.AddAiNetReviewServices();
-        services.AddAiNetReviewRules();
-        services.AddSingleton<IReviewRule, FixtureFindingRule>();
+        services.AddAiNetReviewAnalyses();
+        services.AddSingleton<IReviewAnalysis, FixtureFindingAnalysis>();
         services.AddLogging();
         await using var provider = services.BuildServiceProvider();
         using var output = new StringWriter();
@@ -382,14 +382,14 @@ public sealed class HostAdapterIntegrationTests
             response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
     }
 
-    private static Task<string> ReadRuleReportAsync(string projectRoot, string runId) =>
-        File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId, "rules", "fixture-finding.md"));
+    private static Task<string> ReadAnalysisReportAsync(string projectRoot, string runId) =>
+        File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId, "analyses", "fixture-finding.md"));
 
     private static async Task<(string RunId, int Detected)> RunProductionDeadCodeAsync(string configPath)
     {
         var services = new ServiceCollection();
         services.AddAiNetReviewServices();
-        services.AddAiNetReviewRules();
+        services.AddAiNetReviewAnalyses();
         services.AddLogging();
         await using var provider = services.BuildServiceProvider();
         using var output = new StringWriter();
@@ -411,7 +411,7 @@ public sealed class HostAdapterIntegrationTests
             schemaVersion = 1,
             solution = "Sample.slnx",
             outputDirectory = "reports",
-            rules = new Dictionary<string, object>
+            analyses = new Dictionary<string, object>
             {
                 ["duplicate-code-candidates"] = new { minTokens = 30, minimumSimilarity },
             },
@@ -451,7 +451,7 @@ public sealed class HostAdapterIntegrationTests
     }
 
     private static Task<string> ReadDuplicateCodeReportAsync(string projectRoot, string runId) =>
-        File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId, "rules", "duplicate-code-candidates.md"));
+        File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId, "analyses", "duplicate-code-candidates.md"));
 
     private static void AssertMarkdownLinksResolve(string runDirectory)
     {
@@ -493,7 +493,7 @@ public sealed class HostAdapterIntegrationTests
     {
         var services = new ServiceCollection();
         services.AddAiNetReviewServices();
-        services.AddAiNetReviewRules();
+        services.AddAiNetReviewAnalyses();
         services.AddLogging();
         return services.BuildServiceProvider();
     }

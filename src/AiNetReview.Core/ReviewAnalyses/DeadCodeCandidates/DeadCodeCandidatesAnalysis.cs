@@ -1,4 +1,4 @@
-namespace AiNetReview.Core.Rules.DeadCodeCandidates;
+namespace AiNetReview.Core.ReviewAnalyses.DeadCodeCandidates;
 
 using System;
 using System.Collections.Generic;
@@ -13,19 +13,19 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
 /// <summary>Selects explicit types and ordinary methods without known direct or recognized indirect solution use.</summary>
-public sealed class DeadCodeCandidatesRule : IReviewRule
+public sealed class DeadCodeCandidatesAnalysis : IReviewAnalysis
 {
     private const string ExternalLibrary = "external_library";
     private const string ClosedSolution = "closed_solution";
 
-    private static readonly RuleOptionDescriptor ApiSurfaceOption = new(
+    private static readonly ReviewAnalysisOptionDescriptor ApiSurfaceOption = new(
         "apiSurface",
         "Public API is protected by default; closed_solution also considers publicly visible declarations as candidates.",
         JsonSerializer.SerializeToElement(ExternalLibrary),
         static value => value.ValueKind == JsonValueKind.String
             && value.GetString() is ExternalLibrary or ClosedSolution);
 
-    private static readonly RuleOptionDescriptor EntryPointAttributesOption = new(
+    private static readonly ReviewAnalysisOptionDescriptor EntryPointAttributesOption = new(
         "entryPointAttributes",
         "Additional fully qualified attribute type names that mark declarations as indirect entry points.",
         JsonSerializer.SerializeToElement(Array.Empty<string>()),
@@ -35,7 +35,7 @@ public sealed class DeadCodeCandidatesRule : IReviewRule
                 && StringComparer.Ordinal.Equals(item.GetString(), item.GetString()!.Trim())
                 && item.GetString()!.Contains('.', StringComparison.Ordinal)));
 
-    public RuleDescriptor Descriptor { get; } = new(
+    public ReviewAnalysisDescriptor Descriptor { get; } = new(
         "dead-code-candidates",
         "Dead Code Candidates",
         1,
@@ -47,9 +47,9 @@ public sealed class DeadCodeCandidatesRule : IReviewRule
         ],
         [ApiSurfaceOption, EntryPointAttributesOption]);
 
-    public async Task<RuleResult> ExecuteAsync(
+    public async Task<ReviewAnalysisResult> ExecuteAsync(
         ReviewContext context,
-        RuleOptions options,
+        ReviewAnalysisOptions options,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -146,7 +146,7 @@ public sealed class DeadCodeCandidatesRule : IReviewRule
             }
         }
 
-        return new RuleResult(findings
+        return new ReviewAnalysisResult(findings
             .OrderBy(static finding => finding.ProjectPath, StringComparer.Ordinal)
             .ThenBy(static finding => finding.SourcePath, StringComparer.Ordinal)
             .ThenBy(static finding => finding.StartLine)

@@ -1,4 +1,4 @@
-namespace AiNetReview.Core.Rules.DuplicateCodeCandidates;
+namespace AiNetReview.Core.ReviewAnalyses.DuplicateCodeCandidates;
 
 using System;
 using System.Collections.Generic;
@@ -8,17 +8,17 @@ using System.Threading;
 using System.Threading.Tasks;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Findings;
-using AiNetReview.Core.Rules;
+using AiNetReview.Core.ReviewAnalyses;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 
 /// <summary>Reports current clusters of similar executable C# method bodies for human review.</summary>
-public sealed class DuplicateCodeCandidatesRule : IReviewRule
+public sealed class DuplicateCodeCandidatesAnalysis : IReviewAnalysis
 {
     private const int DefaultMinimumTokens = 30;
     private const string DefaultMinimumSimilarity = "exact";
 
-    private static readonly RuleOptionDescriptor MinimumTokensOption = new(
+    private static readonly ReviewAnalysisOptionDescriptor MinimumTokensOption = new(
         "minTokens",
         "Minimum number of body tokens required for a method to be considered (positive integer).",
         JsonSerializer.SerializeToElement(DefaultMinimumTokens),
@@ -26,14 +26,14 @@ public sealed class DuplicateCodeCandidatesRule : IReviewRule
             && value.TryGetInt32(out var minimumTokens)
             && minimumTokens > 0);
 
-    private static readonly RuleOptionDescriptor MinimumSimilarityOption = RuleOptionDescriptor.String(
+    private static readonly ReviewAnalysisOptionDescriptor MinimumSimilarityOption = ReviewAnalysisOptionDescriptor.String(
         "minimumSimilarity",
         "Minimum Jaccard similarity level for a candidate pair: exact (0.95), near (0.80), or fuzzy (0.65).",
         DefaultMinimumSimilarity,
         static value => value is "exact" or "near" or "fuzzy");
 
-    public RuleDescriptor Descriptor { get; } = new(
-        ruleId: "duplicate-code-candidates",
+    public ReviewAnalysisDescriptor Descriptor { get; } = new(
+        analysisId: "duplicate-code-candidates",
         title: "Duplicate Code Candidates",
         behaviorVersion: 1,
         purpose: "Flags clusters of substantially similar executable C# method bodies.",
@@ -45,9 +45,9 @@ public sealed class DuplicateCodeCandidatesRule : IReviewRule
         ],
         options: [MinimumTokensOption, MinimumSimilarityOption]);
 
-    public async Task<RuleResult> ExecuteAsync(
+    public async Task<ReviewAnalysisResult> ExecuteAsync(
         ReviewContext context,
-        RuleOptions options,
+        ReviewAnalysisOptions options,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -63,7 +63,7 @@ public sealed class DuplicateCodeCandidatesRule : IReviewRule
             cancellationToken).ConfigureAwait(false);
         if (clusters.Count == 0)
         {
-            return RuleResult.Empty;
+            return ReviewAnalysisResult.Empty;
         }
 
         var sources = await LoadSourcesAsync(context, cancellationToken).ConfigureAwait(false);
@@ -90,7 +90,7 @@ public sealed class DuplicateCodeCandidatesRule : IReviewRule
                 evidence));
         }
 
-        return new RuleResult(findings);
+        return new ReviewAnalysisResult(findings);
     }
 
     private static async Task<IReadOnlyDictionary<(string ProjectPath, string SourcePath), SourceText>> LoadSourcesAsync(

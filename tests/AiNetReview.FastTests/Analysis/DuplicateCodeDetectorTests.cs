@@ -244,7 +244,7 @@ public sealed class DuplicateCodeDetectorTests
 
     private static string ToIdentifier(int index) => $"v{index}";
 
-    private static RuleFixture CreateFixture(params (string Project, string File, string Source)[] documents)
+    private static AnalysisFixture CreateFixture(params (string Project, string File, string Source)[] documents)
     {
         var workspace = new AdhocWorkspace();
         var root = TestTempDirectory.Create();
@@ -273,7 +273,7 @@ public sealed class DuplicateCodeDetectorTests
             throw new InvalidOperationException("Could not initialize Roslyn test workspace.");
         }
 
-        return new RuleFixture(workspace, new ReviewContext(workspace.CurrentSolution, root.DirectoryPath), root);
+        return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root.DirectoryPath), root);
     }
 
     private static IEnumerable<MetadataReference> PlatformReferences() =>
@@ -292,7 +292,7 @@ public sealed class DuplicateCodeDetectorTests
             })
             .Select(static path => MetadataReference.CreateFromFile(path));
 
-    private sealed class RuleFixture(AdhocWorkspace workspace, ReviewContext context, IDisposable root) : IDisposable
+    private sealed class AnalysisFixture(AdhocWorkspace workspace, ReviewContext context, IDisposable root) : IDisposable
     {
         public ReviewContext Context { get; } = context;
 

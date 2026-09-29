@@ -7,10 +7,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Findings;
-using AiNetReview.Core.Rules;
+using AiNetReview.Core.ReviewAnalyses;
 using Microsoft.CodeAnalysis;
 
-/// <summary>Runs configured rules against one loaded solution without retaining results between calls.</summary>
+/// <summary>Runs configured analyses against one loaded solution without retaining results between calls.</summary>
 public sealed class ReviewRunner
 {
     private readonly CurrentFindingValidator findingValidator = new();
@@ -32,18 +32,18 @@ public sealed class ReviewRunner
 
         cancellationToken.ThrowIfCancellationRequested();
         var context = new ReviewContext(solution, config.ProjectRoot, loadedSolution.MarkupDocuments);
-        var results = new List<RuleRunResult>();
-        foreach (var configuredRule in config.Rules.OrderBy(static rule => rule.RuleId, StringComparer.Ordinal))
+        var results = new List<ReviewAnalysisRunResult>();
+        foreach (var configuredAnalysis in config.Analyses.OrderBy(static analysis => analysis.AnalysisId, StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            RuleResult result;
+            ReviewAnalysisResult result;
             try
             {
-                result = await configuredRule.Rule.ExecuteAsync(
+                result = await configuredAnalysis.Analysis.ExecuteAsync(
                     context,
-                    configuredRule.EffectiveOptions,
+                    configuredAnalysis.EffectiveOptions,
                     cancellationToken).ConfigureAwait(false)
-                    ?? throw new AnalysisFailedException($"Rule '{configuredRule.RuleId}' returned no result.");
+                    ?? throw new AnalysisFailedException($"Review analysis '{configuredAnalysis.AnalysisId}' returned no result.");
             }
             catch (OperationCanceledException)
             {
@@ -55,16 +55,16 @@ public sealed class ReviewRunner
             }
             catch (Exception ex)
             {
-                throw new AnalysisFailedException($"Rule '{configuredRule.RuleId}' did not complete successfully.", ex);
+                throw new AnalysisFailedException($"Review analysis '{configuredAnalysis.AnalysisId}' did not complete successfully.", ex);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
             var findings = await findingValidator.ValidateAndSortAsync(
-                configuredRule.RuleId,
+                configuredAnalysis.AnalysisId,
                 context,
                 result.Findings,
                 cancellationToken).ConfigureAwait(false);
-            results.Add(new RuleRunResult(configuredRule.RuleId, new RuleResult(findings)));
+            results.Add(new ReviewAnalysisRunResult(configuredAnalysis.AnalysisId, new ReviewAnalysisResult(findings)));
         }
 
         return new ReviewRunResult(Array.AsReadOnly(results.ToArray()));
@@ -75,12 +75,12 @@ public sealed class ReviewRunner
         : StringComparer.Ordinal;
 }
 
-public sealed record RuleRunResult(string RuleId, RuleResult Result)
+public sealed record ReviewAnalysisRunResult(string AnalysisId, ReviewAnalysisResult Result)
 {
     public int DetectedCount => Result.Findings.Count;
 }
 
-public sealed record ReviewRunResult(IReadOnlyList<RuleRunResult> Rules)
+public sealed record ReviewRunResult(IReadOnlyList<ReviewAnalysisRunResult> Analyses)
 {
-    public int DetectedCount => Rules.Sum(static rule => rule.DetectedCount);
+    public int DetectedCount => Analyses.Sum(static analysis => analysis.DetectedCount);
 }

@@ -2,7 +2,7 @@ namespace AiNetReview.Core.Configuration;
 
 using System;
 using System.Collections.Generic;
-using AiNetReview.Core.Rules;
+using AiNetReview.Core.ReviewAnalyses;
 
 /// <summary>A validated, normalized configuration for one project root.</summary>
 public sealed class ReviewConfig
@@ -13,14 +13,14 @@ public sealed class ReviewConfig
         string outputDirectory,
         string resolvedSolutionPath,
         string resolvedOutputDirectory,
-        IReadOnlyList<ConfiguredRule> rules)
+        IReadOnlyList<ConfiguredReviewAnalysis> analyses)
     {
         ProjectRoot = projectRoot;
         SolutionPath = solutionPath;
         OutputDirectory = outputDirectory;
         ResolvedSolutionPath = resolvedSolutionPath;
         ResolvedOutputDirectory = resolvedOutputDirectory;
-        Rules = rules;
+        Analyses = analyses;
     }
 
     public string ProjectRoot { get; }
@@ -33,7 +33,7 @@ public sealed class ReviewConfig
 
     public string ResolvedOutputDirectory { get; }
 
-    public IReadOnlyList<ConfiguredRule> Rules { get; }
+    public IReadOnlyList<ConfiguredReviewAnalysis> Analyses { get; }
 }
 
-public sealed record ConfiguredRule(string RuleId, IReviewRule Rule, RuleOptions EffectiveOptions);
+public sealed record ConfiguredReviewAnalysis(string AnalysisId, IReviewAnalysis Analysis, ReviewAnalysisOptions EffectiveOptions);

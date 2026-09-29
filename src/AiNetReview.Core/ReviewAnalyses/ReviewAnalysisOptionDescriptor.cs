@@ -1,13 +1,13 @@
-namespace AiNetReview.Core.Rules;
+namespace AiNetReview.Core.ReviewAnalyses;
 
 using System;
 using System.Text.Json;
 
-public sealed class RuleOptionDescriptor
+public sealed class ReviewAnalysisOptionDescriptor
 {
     private readonly Func<JsonElement, bool>? validator;
 
-    public RuleOptionDescriptor(
+    public ReviewAnalysisOptionDescriptor(
         string name,
         string description,
         JsonElement defaultValue,
@@ -44,14 +44,14 @@ public sealed class RuleOptionDescriptor
     public bool IsValidValue(JsonElement value) =>
         value.ValueKind == DefaultValue.ValueKind && (validator is null || validator(value));
 
-    public static RuleOptionDescriptor String(
+    public static ReviewAnalysisOptionDescriptor String(
         string name,
         string description,
         string defaultValue,
         Func<string, bool>? validator = null)
     {
         ArgumentNullException.ThrowIfNull(defaultValue);
-        return new RuleOptionDescriptor(
+        return new ReviewAnalysisOptionDescriptor(
             name,
             description,
             JsonSerializer.SerializeToElement(defaultValue),

@@ -13,12 +13,12 @@ using Microsoft.CodeAnalysis;
 public sealed class CurrentFindingValidator
 {
     public async Task<IReadOnlyList<FindingDraft>> ValidateAndSortAsync(
-        string ruleId,
+        string analysisId,
         ReviewContext context,
         IEnumerable<FindingDraft> findings,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(ruleId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(analysisId);
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(findings);
 
@@ -60,7 +60,7 @@ public sealed class CurrentFindingValidator
             cancellationToken.ThrowIfCancellationRequested();
             if (finding is null)
             {
-                throw Invalid("A rule returned a null finding.");
+                throw Invalid("A analysis returned a null finding.");
             }
 
             RequireText(finding.ProjectPath, "projectPath");
@@ -112,10 +112,10 @@ public sealed class CurrentFindingValidator
                 }
             }
 
-            var key = new FindingKey(ruleId, finding.ProjectPath, finding.SourcePath, finding.SubjectId, finding.Discriminator);
+            var key = new FindingKey(analysisId, finding.ProjectPath, finding.SourcePath, finding.SubjectId, finding.Discriminator);
             if (!uniqueKeys.Add(key))
             {
-                throw Invalid("Finding identity tuple (ruleId, projectPath, sourcePath, subjectId, discriminator) must be unique within a run.");
+                throw Invalid("Finding identity tuple (analysisId, projectPath, sourcePath, subjectId, discriminator) must be unique within a run.");
             }
 
             validated.Add(finding);
@@ -211,7 +211,7 @@ public sealed class CurrentFindingValidator
         ? StringComparer.OrdinalIgnoreCase
         : StringComparer.Ordinal;
 
-    private readonly record struct FindingKey(string RuleId, string ProjectPath, string SourcePath, string SubjectId, string Discriminator);
+    private readonly record struct FindingKey(string AnalysisId, string ProjectPath, string SourcePath, string SubjectId, string Discriminator);
 
     private sealed record SourceDocument(ProjectId ProjectId, Microsoft.CodeAnalysis.Text.SourceText Text);
 }

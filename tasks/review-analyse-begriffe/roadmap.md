@@ -2,7 +2,7 @@
 
 Verbindlicher Vertrag und vollständige Änderungsflächen: [Konzept.md](Konzept.md). Umsetzung erst in Schritt 3 des Agent-Workflows.
 
-- [ ] **Produktbegriff „Review-Analyse“ im gesamten Repository umsetzen**
+- [x] **Produktbegriff „Review-Analyse“ im gesamten Repository umsetzen**
   - Intention: Code, Konfiguration, erzeugte Berichte und erklärende Texte verwenden für die ausführbare Produktanalyse denselben Begriff. Eine Fundstelle bleibt eine überprüfbare Beobachtung, kein Regelverstoß.
   - Scope: Die Alt→Neu-Tabelle und alle acht Änderungsflächen im Konzept vollständig abarbeiten. Dazu gehören `src/`, Host, `tests/`, `ainetreview.json`, alle vorhandenen lokalen `audit-targets/*.json`, `README.md`, `docs/`, produktbezogene Agent-Dateien und die genannten `tasks/`-Notizen. Dateinamen, Ordner, Namespaces, öffentliche Typen und Member, lokale Namen, Log-/Fehler-/Berichtstexte, JSON-Beispiele und Markdown-Links mitziehen. Die Agentenregel `08-production-rule-configuration.mdc` wie im Konzept umbenennen und ihren Index aktualisieren. Aktuelle `docs/`-Seiten im selben Commit wie die Codeänderung aktualisieren.
   - Verträge: `schemaVersion: 1` mit ausschließlich `analyses`; `rules` als unbekanntes Feld ablehnen. Generator, Validator, Root-Konfiguration, Audit-Profile und Test-Fixtures auf denselben Vertrag bringen. Berichtspfad `analyses/<id>.md` und Indexlinks müssen zusammenpassen. Die drei produktiven Analyse-ID-Werte, ihre Auswahlsemantik und Ergebnisreihenfolge bleiben erhalten. Keine Legacy-Aliase, automatische Konvertierung oder zweite Schreibweise. `.agents/rules/` bezeichnet weiterhin verbindliche Agentenregeln; echte AiNetLinter-Regeln bleiben so benannt.

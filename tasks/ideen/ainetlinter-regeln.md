@@ -163,11 +163,11 @@ graph TD
 ```
 
 #### 1. Bereits in AiNetReview integriert bzw. direktes Äquivalent vorhanden
-| AiNetLinter-Regel | AiNetReview-Regel | Bemerkung |
+| AiNetLinter-Regel | AiNetReview-Analyse | Bemerkung |
 | :--- | :--- | :--- |
 | `MaxCyclomaticComplexity` / `MaxCognitiveComplexity` | `method-control-flow-outliers` | AiNetReview nutzt keine starre Zahl (z. B. 12), sondern ein konfigurierbares Perzentil (z. B. 90. Perzentil), um die tatsächlichen Ausreißer des Projekts zu finden. |
 | `DuplicateCode` | `duplicate-code-candidates` | Bereits integriert (Token-CPD mit konfigurierbarer Ähnlichkeitsschwelle). |
-| *Dead-Code-Advisory* (MCP-Scan) | `dead-code-candidates` | In AiNetReview als vollwertige Produktionsregel implementiert. |
+| *Dead-Code-Advisory* (MCP-Scan) | `dead-code-candidates` | In AiNetReview als vollwertige Produktionsanalyse implementiert. |
 
 ---
 
@@ -225,7 +225,7 @@ Diese Regeln sind für einen vorgeschalteten schnellen Linter oder Compiler-Anal
 
 ## 3. Empfohlene nächste Schritte für AiNetReview
 
-1. **Top-Kandidat für die nächste Review-Regel**:
+1. **Top-Kandidat für die nächste Review-Analyse**:
    * **`AIContextFootprint`** oder eine kombinierte Metrik für **transitive Verständniskosten** (siehe Priorität 2 in `tasks/ideen/erste-fachliche-review-signale.md`).
 2. **Signal-Kandidat für Code-Hygiene**:
    * **`silent-catch-candidates`** oder **`async-task-blocking-candidates`** als kompakte, hochpräzise Prüfungen auf echte Fehlerquellen ohne Schwellwert-Diskussionen.

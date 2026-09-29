@@ -9,29 +9,29 @@ using System.Threading.Tasks;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Findings;
-using AiNetReview.Core.Rules;
-using AiNetReview.IntegrationTests.FixtureRules;
+using AiNetReview.Core.ReviewAnalyses;
+using AiNetReview.IntegrationTests.FixtureAnalyses;
 
 public sealed class ReviewRunnerTests
 {
     [Fact]
-    public async Task RunAsync_ReturnsCurrentRuleResultsWithoutRetainingState()
+    public async Task RunAsync_ReturnsCurrentReviewAnalysisResultsWithoutRetainingState()
     {
         using var temp = TestTempDirectory.Create();
         var root = await CreateProjectAsync(temp);
-        var rule = new FixtureFindingRule();
-        var config = CreateConfig(root, [rule], "base");
+        var analysis = new FixtureFindingAnalysis();
+        var config = CreateConfig(root, [analysis], "base");
         using var loaded = await new SolutionLoader().LoadAsync(config);
         var runner = new ReviewRunner();
 
         var firstRun = await runner.RunAsync(config, loaded);
         var repeatedRun = await runner.RunAsync(config, loaded);
-        var emptyRuleRun = await runner.RunAsync(CreateConfig(root, [new TestRule("empty-rule", [])]), loaded);
+        var emptyAnalysisRun = await runner.RunAsync(CreateConfig(root, [new TestAnalysis("empty-analysis", [])]), loaded);
 
-        var firstResult = Assert.Single(firstRun.Rules).Result;
-        var repeatedResult = Assert.Single(repeatedRun.Rules).Result;
+        var firstResult = Assert.Single(firstRun.Analyses).Result;
+        var repeatedResult = Assert.Single(repeatedRun.Analyses).Result;
         Assert.Equal(2, firstRun.DetectedCount);
-        Assert.Equal(2, Assert.Single(firstRun.Rules).DetectedCount);
+        Assert.Equal(2, Assert.Single(firstRun.Analyses).DetectedCount);
         Assert.Equal(2, firstResult.Findings.Count);
         Assert.Equal(2, repeatedResult.Findings.Count);
         Assert.Equal(
@@ -41,12 +41,12 @@ public sealed class ReviewRunnerTests
         Assert.Contains("FixtureCaseA", firstResult.Findings[0].SubjectId, StringComparison.Ordinal);
         Assert.Contains("FixtureCaseB", firstResult.Findings[1].SubjectId, StringComparison.Ordinal);
 
-        var emptyConfig = CreateConfig(root, [new FixtureFindingRule()], "none");
+        var emptyConfig = CreateConfig(root, [new FixtureFindingAnalysis()], "none");
         var emptyRun = await runner.RunAsync(emptyConfig, loaded);
-        Assert.Empty(Assert.Single(emptyRun.Rules).Result.Findings);
+        Assert.Empty(Assert.Single(emptyRun.Analyses).Result.Findings);
         Assert.Equal(0, emptyRun.DetectedCount);
-        Assert.Equal(0, emptyRuleRun.DetectedCount);
-        Assert.Empty(Assert.Single(emptyRuleRun.Rules).Result.Findings);
+        Assert.Equal(0, emptyAnalysisRun.DetectedCount);
+        Assert.Empty(Assert.Single(emptyAnalysisRun.Analyses).Result.Findings);
     }
 
     [Fact]
@@ -54,16 +54,16 @@ public sealed class ReviewRunnerTests
     {
         using var temp = TestTempDirectory.Create();
         var root = await CreateProjectAsync(temp);
-        var rule = new TestFindingRule("ordered-rule", [
+        var analysis = new TestFindingAnalysis("ordered-analysis", [
             CreateFinding("Sample/FixtureCases.cs", "B", 5, "FixtureCaseB"),
             CreateFinding("Sample/FixtureCases.cs", "A", 4, "FixtureCaseA"),
         ]);
-        var config = CreateConfig(root, [rule]);
+        var config = CreateConfig(root, [analysis]);
         using var loaded = await new SolutionLoader().LoadAsync(config);
 
         var result = await new ReviewRunner().RunAsync(config, loaded);
 
-        var findings = Assert.Single(result.Rules).Result.Findings;
+        var findings = Assert.Single(result.Analyses).Result.Findings;
         Assert.Equal(new[] { "A", "B" }, findings.Select(static finding => finding.SubjectId));
     }
 
@@ -73,10 +73,10 @@ public sealed class ReviewRunnerTests
         using var temp = TestTempDirectory.Create();
         var root = await CreateProjectAsync(temp);
         var finding = CreateFinding("Sample/FixtureCases.cs", "A", 4, "FixtureCaseA");
-        using var loaded = await new SolutionLoader().LoadAsync(CreateConfig(root, [new TestFindingRule("duplicate-rule", [finding, finding])]));
+        using var loaded = await new SolutionLoader().LoadAsync(CreateConfig(root, [new TestFindingAnalysis("duplicate-analysis", [finding, finding])]));
 
         await Assert.ThrowsAsync<AnalysisFailedException>(() => new ReviewRunner().RunAsync(
-            CreateConfig(root, [new TestFindingRule("duplicate-rule", [finding, finding])]), loaded));
+            CreateConfig(root, [new TestFindingAnalysis("duplicate-analysis", [finding, finding])]), loaded));
 
         var invalidEvidence = new FindingDraft(
             "Sample/Sample.csproj",
@@ -88,7 +88,7 @@ public sealed class ReviewRunnerTests
             new Dictionary<string, double> { ["metric"] = 1 },
             [new FindingEvidence("Sample/FixtureCases.cs", 4, "Fixture", "Invalid source evidence", "not in loaded source")]);
         await Assert.ThrowsAsync<AnalysisFailedException>(() => new ReviewRunner().RunAsync(
-            CreateConfig(root, [new TestFindingRule("invalid-rule", [invalidEvidence])]), loaded));
+            CreateConfig(root, [new TestFindingAnalysis("invalid-analysis", [invalidEvidence])]), loaded));
 
         var invalidMetric = new FindingDraft(
             "Sample/Sample.csproj",
@@ -100,7 +100,7 @@ public sealed class ReviewRunnerTests
             new Dictionary<string, double> { ["metric"] = double.NaN },
             [new FindingEvidence("Sample/FixtureCases.cs", 4, "Fixture", "Valid source evidence", "FixtureCaseA")]);
         await Assert.ThrowsAsync<AnalysisFailedException>(() => new ReviewRunner().RunAsync(
-            CreateConfig(root, [new TestFindingRule("invalid-metric-rule", [invalidMetric])]), loaded));
+            CreateConfig(root, [new TestFindingAnalysis("invalid-metric-analysis", [invalidMetric])]), loaded));
     }
 
     [Fact]
@@ -117,12 +117,12 @@ public sealed class ReviewRunnerTests
             "Review the related implementation.",
             new Dictionary<string, double> { ["count"] = 1 },
             [new FindingEvidence("Other/Other.cs", 1, "Related implementation", "Evidence in another project", "LoadedOtherValue")]);
-        using var loaded = await new SolutionLoader().LoadAsync(CreateConfig(root, [new TestFindingRule("cross-project-rule", [finding])]));
+        using var loaded = await new SolutionLoader().LoadAsync(CreateConfig(root, [new TestFindingAnalysis("cross-project-analysis", [finding])]));
 
         var result = await new ReviewRunner().RunAsync(
-            CreateConfig(root, [new TestFindingRule("cross-project-rule", [finding])]), loaded);
+            CreateConfig(root, [new TestFindingAnalysis("cross-project-analysis", [finding])]), loaded);
 
-        Assert.Same(finding, Assert.Single(Assert.Single(result.Rules).Result.Findings));
+        Assert.Same(finding, Assert.Single(Assert.Single(result.Analyses).Result.Findings));
     }
 
     [Theory]
@@ -145,7 +145,7 @@ public sealed class ReviewRunnerTests
             "Invalid evidence fixture.",
             new Dictionary<string, double> { ["count"] = 1 },
             [new FindingEvidence(evidencePath, line, "Fixture", "Invalid evidence", snippet)]);
-        var config = CreateConfig(root, [new TestFindingRule("invalid-evidence-rule", [finding])]);
+        var config = CreateConfig(root, [new TestFindingAnalysis("invalid-evidence-analysis", [finding])]);
         using var loaded = await new SolutionLoader().LoadAsync(config);
 
         await Assert.ThrowsAsync<AnalysisFailedException>(() => new ReviewRunner().RunAsync(config, loaded));
@@ -156,7 +156,7 @@ public sealed class ReviewRunnerTests
     {
         using var temp = TestTempDirectory.Create();
         var root = await CreateProjectAsync(temp, includeSecondProject: true);
-        var config = CreateConfig(root, [new TestRule("snapshot-rule", [])]);
+        var config = CreateConfig(root, [new TestAnalysis("snapshot-analysis", [])]);
         using var loaded = await new SolutionLoader().LoadAsync(config);
         await File.WriteAllTextAsync(Path.Combine(root, "Other", "Other.cs"),
             """namespace Other; public sealed class Other { public int Value => "ChangedDiskOnly".Length; }""");
@@ -170,7 +170,7 @@ public sealed class ReviewRunnerTests
             "This text exists only after loading.",
             new Dictionary<string, double> { ["count"] = 1 },
             [new FindingEvidence("Other/Other.cs", 1, "Changed file", "Not in snapshot", "ChangedDiskOnly")]);
-        var invalidConfig = CreateConfig(root, [new TestFindingRule("snapshot-rule", [changedDiskEvidence])]);
+        var invalidConfig = CreateConfig(root, [new TestFindingAnalysis("snapshot-analysis", [changedDiskEvidence])]);
 
         await Assert.ThrowsAsync<AnalysisFailedException>(() => new ReviewRunner().RunAsync(invalidConfig, loaded));
 
@@ -183,48 +183,48 @@ public sealed class ReviewRunnerTests
             "This text remains in the loaded snapshot.",
             new Dictionary<string, double> { ["count"] = 1 },
             [new FindingEvidence("Other/Other.cs", 1, "Loaded file", "Snapshot evidence", "LoadedOtherValue")]);
-        var validConfig = CreateConfig(root, [new TestFindingRule("snapshot-rule", [loadedSnapshotEvidence])]);
+        var validConfig = CreateConfig(root, [new TestFindingAnalysis("snapshot-analysis", [loadedSnapshotEvidence])]);
         var result = await new ReviewRunner().RunAsync(validConfig, loaded);
-        Assert.Same(loadedSnapshotEvidence, Assert.Single(Assert.Single(result.Rules).Result.Findings));
+        Assert.Same(loadedSnapshotEvidence, Assert.Single(Assert.Single(result.Analyses).Result.Findings));
     }
 
     [Fact]
-    public async Task RunAsync_OrdersRulesAndPropagatesIncompleteRuns()
+    public async Task RunAsync_OrdersAnalysesAndPropagatesIncompleteRuns()
     {
         using var temp = TestTempDirectory.Create();
         var root = await CreateProjectAsync(temp);
         var calls = new List<string>();
-        var alpha = new TestRule("alpha-rule", calls);
-        var zeta = new TestRule("zeta-rule", calls);
+        var alpha = new TestAnalysis("alpha-analysis", calls);
+        var zeta = new TestAnalysis("zeta-analysis", calls);
         var config = CreateConfig(root, [zeta, alpha]);
         using var loaded = await new SolutionLoader().LoadAsync(config);
         var runner = new ReviewRunner();
 
         var result = await runner.RunAsync(config, loaded);
 
-        Assert.Equal(new[] { "alpha-rule", "zeta-rule" }, calls);
-        Assert.Equal(new[] { "alpha-rule", "zeta-rule" }, result.Rules.Select(static rule => rule.RuleId));
+        Assert.Equal(new[] { "alpha-analysis", "zeta-analysis" }, calls);
+        Assert.Equal(new[] { "alpha-analysis", "zeta-analysis" }, result.Analyses.Select(static analysis => analysis.AnalysisId));
 
-        var failure = CreateConfig(root, [new TestRule("failure-rule", calls, throwOnRun: true)]);
+        var failure = CreateConfig(root, [new TestAnalysis("failure-analysis", calls, throwOnRun: true)]);
         await Assert.ThrowsAsync<AnalysisFailedException>(() => runner.RunAsync(failure, loaded));
 
         using var cancellation = new CancellationTokenSource();
-        var cancelling = CreateConfig(root, [new TestRule("cancelling-rule", calls, cancel: cancellation)]);
+        var cancelling = CreateConfig(root, [new TestAnalysis("cancelling-analysis", calls, cancel: cancellation)]);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(cancelling, loaded, cancellation.Token));
     }
 
-    private static ReviewConfig CreateConfig(string root, IEnumerable<IReviewRule> rules, string? scenario = null)
+    private static ReviewConfig CreateConfig(string root, IEnumerable<IReviewAnalysis> analyses, string? scenario = null)
     {
-        var registry = new RuleRegistry(rules);
-        var ruleJson = string.Join(",", registry.Rules.Select(rule => scenario is null
-            ? $"\"{rule.Descriptor.RuleId}\":{{}}"
-            : $"\"{rule.Descriptor.RuleId}\":{{\"scenario\":\"{scenario}\"}}"));
+        var registry = new ReviewAnalysisRegistry(analyses);
+        var analysisJson = string.Join(",", registry.Analyses.Select(analysis => scenario is null
+            ? $"\"{analysis.Descriptor.AnalysisId}\":{{}}"
+            : $"\"{analysis.Descriptor.AnalysisId}\":{{\"scenario\":\"{scenario}\"}}"));
         var json = $$"""
             {
               "schemaVersion": 1,
               "solution": "Sample.slnx",
               "outputDirectory": "reports",
-              "rules": { {{ruleJson}} }
+              "analyses": { {{analysisJson}} }
             }
             """;
         return new ReviewConfigValidator(registry).Validate(root, json);
@@ -294,28 +294,28 @@ public sealed class ReviewRunnerTests
         Assert.True(process.ExitCode == 0, $"dotnet restore failed: {await stdout}{await stderr}");
     }
 
-    private sealed class TestRule : IReviewRule
+    private sealed class TestAnalysis : IReviewAnalysis
     {
         private readonly List<string> calls;
         private readonly bool throwOnRun;
         private readonly CancellationTokenSource? cancel;
 
-        internal TestRule(string ruleId, List<string> calls, bool throwOnRun = false, CancellationTokenSource? cancel = null)
+        internal TestAnalysis(string analysisId, List<string> calls, bool throwOnRun = false, CancellationTokenSource? cancel = null)
         {
             this.calls = calls;
             this.throwOnRun = throwOnRun;
             this.cancel = cancel;
-            Descriptor = new RuleDescriptor(ruleId, "Test Rule", 1, "Test purpose.", "Test measurement.", ["Is this test rule registered?"]);
+            Descriptor = new ReviewAnalysisDescriptor(analysisId, "Test Review analysis", 1, "Test purpose.", "Test measurement.", ["Is this test analysis registered?"]);
         }
 
-        public RuleDescriptor Descriptor { get; }
+        public ReviewAnalysisDescriptor Descriptor { get; }
 
-        public async Task<RuleResult> ExecuteAsync(ReviewContext context, RuleOptions options, CancellationToken cancellationToken)
+        public async Task<ReviewAnalysisResult> ExecuteAsync(ReviewContext context, ReviewAnalysisOptions options, CancellationToken cancellationToken)
         {
-            calls.Add(Descriptor.RuleId);
+            calls.Add(Descriptor.AnalysisId);
             if (throwOnRun)
             {
-                throw new InvalidOperationException("fixture rule failed");
+                throw new InvalidOperationException("fixture analysis failed");
             }
 
             if (cancel is not null)
@@ -323,26 +323,26 @@ public sealed class ReviewRunnerTests
                 await cancel.CancelAsync();
             }
 
-            return RuleResult.Empty;
+            return ReviewAnalysisResult.Empty;
         }
     }
 
-    private sealed class TestFindingRule : IReviewRule
+    private sealed class TestFindingAnalysis : IReviewAnalysis
     {
         private readonly IReadOnlyList<FindingDraft> findings;
 
-        internal TestFindingRule(string ruleId, IReadOnlyList<FindingDraft> findings)
+        internal TestFindingAnalysis(string analysisId, IReadOnlyList<FindingDraft> findings)
         {
             this.findings = findings;
-            Descriptor = new RuleDescriptor(ruleId, "Finding Rule", 1, "Produces test findings.", "Counts fixture cases.", ["Are findings current?"]);
+            Descriptor = new ReviewAnalysisDescriptor(analysisId, "Finding Review analysis", 1, "Produces test findings.", "Counts fixture cases.", ["Are findings current?"]);
         }
 
-        public RuleDescriptor Descriptor { get; }
+        public ReviewAnalysisDescriptor Descriptor { get; }
 
-        public Task<RuleResult> ExecuteAsync(ReviewContext context, RuleOptions options, CancellationToken cancellationToken)
+        public Task<ReviewAnalysisResult> ExecuteAsync(ReviewContext context, ReviewAnalysisOptions options, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(new RuleResult(findings));
+            return Task.FromResult(new ReviewAnalysisResult(findings));
         }
     }
 }

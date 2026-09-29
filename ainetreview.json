@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "solution": "AiNetReview.slnx",
   "outputDirectory": "audit-reporting",
-  "rules": {
+  "analyses": {
     "method-control-flow-outliers": {
       "enabled": true,
       "percentile": 90

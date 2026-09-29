@@ -1,9 +1,9 @@
 namespace AiNetReview.Bootstrap;
 
-using AiNetReview.Core.Rules;
-using AiNetReview.Core.Rules.MethodControlFlowOutliers;
-using AiNetReview.Core.Rules.DeadCodeCandidates;
-using AiNetReview.Core.Rules.DuplicateCodeCandidates;
+using AiNetReview.Core.ReviewAnalyses;
+using AiNetReview.Core.ReviewAnalyses.MethodControlFlowOutliers;
+using AiNetReview.Core.ReviewAnalyses.DeadCodeCandidates;
+using AiNetReview.Core.ReviewAnalyses.DuplicateCodeCandidates;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Reporting;
@@ -14,7 +14,7 @@ public static class ServiceRegistration
     public static IServiceCollection AddAiNetReviewServices(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.AddSingleton<RuleRegistry>();
+        services.AddSingleton<ReviewAnalysisRegistry>();
         services.AddSingleton<SolutionDiscovery>();
         services.AddSingleton<DefaultReviewConfigGenerator>();
         services.AddSingleton<ReviewConfigValidator>();
@@ -24,12 +24,12 @@ public static class ServiceRegistration
         return services;
     }
 
-    public static IServiceCollection AddAiNetReviewRules(this IServiceCollection services)
+    public static IServiceCollection AddAiNetReviewAnalyses(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.AddSingleton<IReviewRule, MethodControlFlowOutliersRule>();
-        services.AddSingleton<IReviewRule, DeadCodeCandidatesRule>();
-        services.AddSingleton<IReviewRule, DuplicateCodeCandidatesRule>();
+        services.AddSingleton<IReviewAnalysis, MethodControlFlowOutliersAnalysis>();
+        services.AddSingleton<IReviewAnalysis, DeadCodeCandidatesAnalysis>();
+        services.AddSingleton<IReviewAnalysis, DuplicateCodeCandidatesAnalysis>();
         return services;
     }
 }

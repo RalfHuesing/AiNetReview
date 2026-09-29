@@ -9,5 +9,5 @@ alwaysApply: true
 - Do not treat task specifications as proof of implemented behavior; verify code before describing it as current state.
 - Do not turn review findings into build failures or automatically refactor reviewed code.
 - Do not make architecture, size, complexity, coupling, or context-dependent performance advice a build-breaking analyzer diagnostic. Reserve analyzer errors for concrete technical defects.
-- Do not add dynamic rule loading, a separate daemon, or a dependency from Core to CLI or MCP. Follow the contracts in `docs/`.
+- Do not add dynamic review analysis loading, a separate daemon, or a dependency from Core to CLI or MCP. Follow the contracts in `docs/`.
 - Do not write Serilog events to stdout or stderr, or resolve the log directory from the working directory or analyzed project's paths. Follow the executable-relative logging contract in [CLI](file:///c:/Daten/Entwicklung/Ralf/AiNetReview/docs/interfaces/cli.md).

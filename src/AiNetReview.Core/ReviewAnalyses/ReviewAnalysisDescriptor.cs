@@ -1,4 +1,4 @@
-namespace AiNetReview.Core.Rules;
+namespace AiNetReview.Core.ReviewAnalyses;
 
 using System;
 using System.Collections.Generic;
@@ -6,36 +6,36 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text.Json;
 
-public sealed class RuleDescriptor
+public sealed class ReviewAnalysisDescriptor
 {
-    private const int MaximumRuleIdLength = 252;
+    private const int MaximumAnalysisIdLength = 252;
 
-    private readonly ReadOnlyCollection<RuleOptionDescriptor> options;
+    private readonly ReadOnlyCollection<ReviewAnalysisOptionDescriptor> options;
     private readonly ReadOnlyCollection<string> reviewQuestions;
-    private readonly IReadOnlyDictionary<string, RuleOptionDescriptor> optionsByName;
+    private readonly IReadOnlyDictionary<string, ReviewAnalysisOptionDescriptor> optionsByName;
 
-    public RuleDescriptor(
-        string ruleId,
+    public ReviewAnalysisDescriptor(
+        string analysisId,
         string title,
         int behaviorVersion,
         string purpose,
         string measurement,
         IEnumerable<string> reviewQuestions,
-        IEnumerable<RuleOptionDescriptor>? options = null,
+        IEnumerable<ReviewAnalysisOptionDescriptor>? options = null,
         bool isTemplate = false,
         bool defaultEnabled = true)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(ruleId);
-        if (!StringComparer.Ordinal.Equals(ruleId, ruleId.Trim()))
+        ArgumentException.ThrowIfNullOrWhiteSpace(analysisId);
+        if (!StringComparer.Ordinal.Equals(analysisId, analysisId.Trim()))
         {
-            throw new ArgumentException("Rule ID cannot start or end with whitespace.", nameof(ruleId));
+            throw new ArgumentException("Review analysis ID cannot start or end with whitespace.", nameof(analysisId));
         }
 
-        if (!IsSafeRuleId(ruleId))
+        if (!IsSafeAnalysisId(analysisId))
         {
             throw new ArgumentException(
-                $"Rule ID must be a lowercase ASCII slug of at most {MaximumRuleIdLength} characters and cannot be a reserved Windows device name.",
-                nameof(ruleId));
+                $"Review analysis ID must be a lowercase ASCII slug of at most {MaximumAnalysisIdLength} characters and cannot be a reserved Windows device name.",
+                nameof(analysisId));
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
@@ -53,13 +53,13 @@ public sealed class RuleDescriptor
             throw new ArgumentException("At least one nonempty review question is required.", nameof(reviewQuestions));
         }
 
-        var optionList = (options ?? Array.Empty<RuleOptionDescriptor>()).ToArray();
+        var optionList = (options ?? Array.Empty<ReviewAnalysisOptionDescriptor>()).ToArray();
         if (optionList.Any(static option => option is null))
         {
             throw new ArgumentException("Option descriptors cannot contain null values.", nameof(options));
         }
 
-        var optionsByNameBuilder = new Dictionary<string, RuleOptionDescriptor>(StringComparer.Ordinal);
+        var optionsByNameBuilder = new Dictionary<string, ReviewAnalysisOptionDescriptor>(StringComparer.Ordinal);
         foreach (var option in optionList)
         {
             if (!optionsByNameBuilder.TryAdd(option.Name, option))
@@ -69,8 +69,8 @@ public sealed class RuleDescriptor
         }
 
         this.options = Array.AsReadOnly(optionList.OrderBy(static option => option.Name, StringComparer.Ordinal).ToArray());
-        optionsByName = new ReadOnlyDictionary<string, RuleOptionDescriptor>(optionsByNameBuilder);
-        RuleId = ruleId;
+        optionsByName = new ReadOnlyDictionary<string, ReviewAnalysisOptionDescriptor>(optionsByNameBuilder);
+        AnalysisId = analysisId;
         Title = title;
         BehaviorVersion = behaviorVersion;
         Purpose = purpose;
@@ -79,7 +79,7 @@ public sealed class RuleDescriptor
         DefaultEnabled = defaultEnabled;
     }
 
-    public string RuleId { get; }
+    public string AnalysisId { get; }
 
     public string Title { get; }
 
@@ -91,21 +91,21 @@ public sealed class RuleDescriptor
 
     public IReadOnlyList<string> ReviewQuestions => reviewQuestions;
 
-    public IReadOnlyList<RuleOptionDescriptor> Options => options;
+    public IReadOnlyList<ReviewAnalysisOptionDescriptor> Options => options;
 
     public bool IsTemplate { get; }
 
     public bool DefaultEnabled { get; }
 
-    private static bool IsSafeRuleId(string ruleId)
+    private static bool IsSafeAnalysisId(string analysisId)
     {
-        if (ruleId.Length > MaximumRuleIdLength || !IsAsciiLowerAlphaNumeric(ruleId[0]) || ruleId[^1] == '-')
+        if (analysisId.Length > MaximumAnalysisIdLength || !IsAsciiLowerAlphaNumeric(analysisId[0]) || analysisId[^1] == '-')
         {
             return false;
         }
 
         var previousWasHyphen = false;
-        foreach (var character in ruleId)
+        foreach (var character in analysisId)
         {
             if (IsAsciiLowerAlphaNumeric(character))
             {
@@ -121,19 +121,19 @@ public sealed class RuleDescriptor
             previousWasHyphen = true;
         }
 
-        return !IsReservedWindowsDeviceName(ruleId);
+        return !IsReservedWindowsDeviceName(analysisId);
     }
 
     private static bool IsAsciiLowerAlphaNumeric(char character) =>
         character is >= 'a' and <= 'z' or >= '0' and <= '9';
 
-    private static bool IsReservedWindowsDeviceName(string ruleId) =>
-        ruleId is "con" or "prn" or "aux" or "nul"
-        || ruleId.Length == 4
-        && (ruleId.StartsWith("com", StringComparison.Ordinal) || ruleId.StartsWith("lpt", StringComparison.Ordinal))
-        && ruleId[3] is >= '1' and <= '9';
+    private static bool IsReservedWindowsDeviceName(string analysisId) =>
+        analysisId is "con" or "prn" or "aux" or "nul"
+        || analysisId.Length == 4
+        && (analysisId.StartsWith("com", StringComparison.Ordinal) || analysisId.StartsWith("lpt", StringComparison.Ordinal))
+        && analysisId[3] is >= '1' and <= '9';
 
-    public RuleOptions ResolveOptions(IEnumerable<KeyValuePair<string, JsonElement>>? configuredOptions = null)
+    public ReviewAnalysisOptions ResolveOptions(IEnumerable<KeyValuePair<string, JsonElement>>? configuredOptions = null)
     {
         var resolved = new SortedDictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (var option in options)
@@ -143,7 +143,7 @@ public sealed class RuleDescriptor
 
         if (configuredOptions is null)
         {
-            return new RuleOptions(resolved);
+            return new ReviewAnalysisOptions(resolved);
         }
 
         var seenNames = new HashSet<string>(StringComparer.Ordinal);
@@ -156,17 +156,17 @@ public sealed class RuleDescriptor
 
             if (!optionsByName.TryGetValue(pair.Key, out var descriptor))
             {
-                throw new ArgumentException($"Unknown option '{pair.Key}' for rule '{RuleId}'.", nameof(configuredOptions));
+                throw new ArgumentException($"Unknown option '{pair.Key}' for analysis '{AnalysisId}'.", nameof(configuredOptions));
             }
 
             if (!descriptor.IsValidValue(pair.Value))
             {
-                throw new ArgumentException($"Invalid value for option '{pair.Key}' of rule '{RuleId}'.", nameof(configuredOptions));
+                throw new ArgumentException($"Invalid value for option '{pair.Key}' of analysis '{AnalysisId}'.", nameof(configuredOptions));
             }
 
             resolved[pair.Key] = pair.Value.Clone();
         }
 
-        return new RuleOptions(resolved);
+        return new ReviewAnalysisOptions(resolved);
     }
 }

@@ -1,4 +1,4 @@
-namespace AiNetReview.IntegrationTests.FixtureRules;
+namespace AiNetReview.IntegrationTests.FixtureAnalyses;
 
 using System;
 using System.Collections.Generic;
@@ -8,33 +8,33 @@ using System.Threading;
 using System.Threading.Tasks;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Findings;
-using AiNetReview.Core.Rules;
+using AiNetReview.Core.ReviewAnalyses;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-public sealed class FixtureFindingRule : IReviewRule
+public sealed class FixtureFindingAnalysis : IReviewAnalysis
 {
-    public FixtureFindingRule(int behaviorVersion = 1)
+    public FixtureFindingAnalysis(int behaviorVersion = 1)
     {
-        Descriptor = new RuleDescriptor(
-            ruleId: "fixture-finding",
+        Descriptor = new ReviewAnalysisDescriptor(
+            analysisId: "fixture-finding",
             title: "Fixture Finding",
             behaviorVersion: behaviorVersion,
-            purpose: "Provides a test-only rule for verifying current finding reports.",
+            purpose: "Provides a test-only analysis for verifying current finding reports.",
             measurement: "Emits one finding for each named fixture method.",
             reviewQuestions: ["Does this fixture method still require review?"],
-            options: [RuleOptionDescriptor.String(
+            options: [ReviewAnalysisOptionDescriptor.String(
                 "scenario",
                 "Fixture scenario",
                 "base",
                 static value => !string.IsNullOrWhiteSpace(value))]);
     }
 
-    public RuleDescriptor Descriptor { get; }
+    public ReviewAnalysisDescriptor Descriptor { get; }
 
-    public async Task<RuleResult> ExecuteAsync(
+    public async Task<ReviewAnalysisResult> ExecuteAsync(
         ReviewContext context,
-        RuleOptions options,
+        ReviewAnalysisOptions options,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -43,7 +43,7 @@ public sealed class FixtureFindingRule : IReviewRule
         var scenario = options["scenario"].GetString() ?? "base";
         if (scenario == "none")
         {
-            return RuleResult.Empty;
+            return ReviewAnalysisResult.Empty;
         }
 
         var findings = new List<FindingDraft>();
@@ -92,7 +92,7 @@ public sealed class FixtureFindingRule : IReviewRule
             }
         }
 
-        return new RuleResult(findings);
+        return new ReviewAnalysisResult(findings);
     }
 
     private static string ToRelativePath(string projectRoot, string path) =>

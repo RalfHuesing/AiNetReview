@@ -1,4 +1,4 @@
-namespace AiNetReview.Core.Rules.MethodControlFlowOutliers;
+namespace AiNetReview.Core.ReviewAnalyses.MethodControlFlowOutliers;
 
 using System;
 using System.Collections.Generic;
@@ -14,10 +14,10 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
 /// <summary>Reports methods with unusually high decision counts or decision nesting within their project.</summary>
-public sealed class MethodControlFlowOutliersRule : IReviewRule
+public sealed class MethodControlFlowOutliersAnalysis : IReviewAnalysis
 {
     private const int DefaultPercentile = 90;
-    private static readonly RuleOptionDescriptor PercentileOption = new(
+    private static readonly ReviewAnalysisOptionDescriptor PercentileOption = new(
         name: "percentile",
         description: "Nearest-rank percentile used independently for decision count and maximum nesting (integer 50 through 99).",
         defaultValue: JsonSerializer.SerializeToElement(DefaultPercentile),
@@ -25,8 +25,8 @@ public sealed class MethodControlFlowOutliersRule : IReviewRule
             && value.TryGetInt32(out var percentile)
             && percentile is >= 50 and <= 99);
 
-    public RuleDescriptor Descriptor { get; } = new(
-        ruleId: "method-control-flow-outliers",
+    public ReviewAnalysisDescriptor Descriptor { get; } = new(
+        analysisId: "method-control-flow-outliers",
         title: "Method Control-Flow Outliers",
         behaviorVersion: 1,
         purpose: "Flags methods with unusually many decisions or deeply nested decision paths in their project.",
@@ -38,9 +38,9 @@ public sealed class MethodControlFlowOutliersRule : IReviewRule
         ],
         options: [PercentileOption]);
 
-    public async Task<RuleResult> ExecuteAsync(
+    public async Task<ReviewAnalysisResult> ExecuteAsync(
         ReviewContext context,
-        RuleOptions options,
+        ReviewAnalysisOptions options,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -104,7 +104,7 @@ public sealed class MethodControlFlowOutliersRule : IReviewRule
             }
         }
 
-        return new RuleResult(findings);
+        return new ReviewAnalysisResult(findings);
     }
 
     private static async Task<List<MethodMeasurement>> AnalyzeProjectAsync(

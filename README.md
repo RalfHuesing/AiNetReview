@@ -4,19 +4,19 @@ AiNetReview helps audit C# code after the usual build, tests, and static analysi
 
 ## Current review signals
 
-| Rule | What to investigate |
+| Review analysis | What to investigate |
 | --- | --- |
 | `method-control-flow-outliers` | Methods with unusually many decisions or deeply nested decision paths within their project. |
 | `dead-code-candidates` | Types and methods without known uses in the analyzed solution; indirect or external uses may still exist. |
 | `duplicate-code-candidates` | Groups of substantially similar method bodies; similarity does not by itself justify merging them. |
 
-The reports are prompts for an audit, not defect claims. See [Current findings](docs/review/findings.md) for the rules' scope and limitations.
+The reports are prompts for an audit, not defect claims. See [Current findings](docs/review/findings.md) for the analyses' scope and limitations.
 
 ## Run a review
 
 GitHub [releases](https://github.com/RalfHuesing/AiNetReview/releases) provide Windows x64 archives when a version is published. To run from source, install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) and build `AiNetReview.slnx`.
 
-1. Place `ainetreview.json` in the root of the project you want to review. Start from the [repository example](ainetreview.json), then set `solution` to a `.sln` or `.slnx` path relative to that root. Adjust the enabled rules and `outputDirectory` as needed.
+1. Place `ainetreview.json` in the root of the project you want to review. Start from the [repository example](ainetreview.json), then set `solution` to a `.sln` or `.slnx` path relative to that root. Adjust the enabled analyses and `outputDirectory` as needed.
 2. Build and test the target solution first. From an extracted release archive, run AiNetReview with an absolute path to its configuration:
 
    ```powershell

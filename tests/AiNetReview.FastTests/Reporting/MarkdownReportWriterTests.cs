@@ -10,21 +10,21 @@ using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Findings;
 using AiNetReview.Core.Reporting;
-using AiNetReview.Core.Rules;
+using AiNetReview.Core.ReviewAnalyses;
 
 public sealed class MarkdownReportWriterTests
 {
     [Fact]
-    public async Task WriteAsync_ReportsEmptyActiveRulesWithoutCreatingRuleFiles()
+    public async Task WriteAsync_ReportsEmptyActiveAnalysesWithoutCreatingAnalysisFiles()
     {
         using var temp = TestTempDirectory.Create();
-        var rule = new ReportRule("alpha-rule", "Alpha | Rule", "value|with `markdown`");
-        var secondRule = new ReportRule("zeta-rule", "Zeta Rule", "last");
-        var config = CreateConfig(temp.DirectoryPath, rule, secondRule);
+        var analysis = new ReportAnalysis("alpha-analysis", "Alpha | Review analysis", "value|with `markdown`");
+        var secondAnalysis = new ReportAnalysis("zeta-analysis", "Zeta Review analysis", "last");
+        var config = CreateConfig(temp.DirectoryPath, analysis, secondAnalysis);
 
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
-            new RuleRunResult(secondRule.Descriptor.RuleId, RuleResult.Empty),
-            new RuleRunResult(rule.Descriptor.RuleId, RuleResult.Empty),
+            new ReviewAnalysisRunResult(secondAnalysis.Descriptor.AnalysisId, ReviewAnalysisResult.Empty),
+            new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, ReviewAnalysisResult.Empty),
         ]));
 
         var indexBytes = await File.ReadAllBytesAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "index.md"));
@@ -46,27 +46,27 @@ public sealed class MarkdownReportWriterTests
     }
 
     [Fact]
-    public async Task WriteAsync_DistinguishesWhenNoRulesAreActive()
+    public async Task WriteAsync_DistinguishesWhenNoAnalysesAreActive()
     {
         using var temp = TestTempDirectory.Create();
-        var rule = new ReportRule("inactive-rule", "Inactive Rule", "unused");
-        var config = CreateConfig(temp.DirectoryPath, false, rule);
+        var analysis = new ReportAnalysis("inactive-analysis", "Inactive Review analysis", "unused");
+        var config = CreateConfig(temp.DirectoryPath, false, analysis);
 
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([]));
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
 
-        Assert.Contains("No review was performed because all rules are disabled.", index, StringComparison.Ordinal);
+        Assert.Contains("No review was performed because all analyses are disabled.", index, StringComparison.Ordinal);
         Assert.DoesNotContain("No findings were found", index, StringComparison.Ordinal);
         Assert.Single(Directory.GetFiles(runDirectory, "*", SearchOption.AllDirectories));
     }
 
     [Fact]
-    public async Task WriteAsync_LinksOnlyRulesWithFindingsAndWritesOneTableRowPerFinding()
+    public async Task WriteAsync_LinksOnlyAnalysesWithFindingsAndWritesOneTableRowPerFinding()
     {
         using var temp = TestTempDirectory.Create();
-        var withFindings = new ReportRule("has-findings", "Has Findings", "active");
-        var withoutFindings = new ReportRule("empty-rule", "Empty Rule", "active");
+        var withFindings = new ReportAnalysis("has-findings", "Has Findings", "active");
+        var withoutFindings = new ReportAnalysis("empty-analysis", "Empty Review analysis", "active");
         var config = CreateConfig(temp.DirectoryPath, withFindings, withoutFindings);
         var finding = Finding("Sample.cs", 2, "C:Sample", "A concise signal", "class Sample", "type-candidate");
         var samePathInAnotherProject = new FindingDraft(
@@ -75,34 +75,34 @@ public sealed class MarkdownReportWriterTests
             [new FindingEvidence("Sample.cs", 3, "Type declaration", "A candidate declaration.", "class Other")]);
 
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
-            new RuleRunResult(withFindings.Descriptor.RuleId, new RuleResult([finding, samePathInAnotherProject])),
-            new RuleRunResult(withoutFindings.Descriptor.RuleId, RuleResult.Empty),
+            new ReviewAnalysisRunResult(withFindings.Descriptor.AnalysisId, new ReviewAnalysisResult([finding, samePathInAnotherProject])),
+            new ReviewAnalysisRunResult(withoutFindings.Descriptor.AnalysisId, ReviewAnalysisResult.Empty),
         ]));
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
-        var ruleReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "rules", "has-findings.md"));
+        var analysisReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "analyses", "has-findings.md"));
 
-        Assert.Contains("[Has Findings](rules/has-findings.md)", index, StringComparison.Ordinal);
-        Assert.DoesNotContain("Empty Rule", index, StringComparison.Ordinal);
-        Assert.Single(Directory.GetFiles(Path.Combine(runDirectory, "rules")));
-        Assert.Equal(2, ruleReport.Split("| [", StringSplitOptions.None).Length - 1);
-        Assert.Contains("(Sample/Sample.csproj)", ruleReport, StringComparison.Ordinal);
-        Assert.Contains("(Other/Sample.csproj)", ruleReport, StringComparison.Ordinal);
+        Assert.Contains("[Has Findings](analyses/has-findings.md)", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("Empty Review analysis", index, StringComparison.Ordinal);
+        Assert.Single(Directory.GetFiles(Path.Combine(runDirectory, "analyses")));
+        Assert.Equal(2, analysisReport.Split("| [", StringSplitOptions.None).Length - 1);
+        Assert.Contains("(Sample/Sample.csproj)", analysisReport, StringComparison.Ordinal);
+        Assert.Contains("(Other/Sample.csproj)", analysisReport, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task WriteAsync_SortsFindingsAndEscapesContentAndSourceLinks()
     {
         using var temp = TestTempDirectory.Create();
-        var rule = new ReportRule("fixture-rule", "Fixture", "safe");
-        var config = CreateConfig(temp.DirectoryPath, rule);
+        var analysis = new ReportAnalysis("fixture-analysis", "Fixture", "safe");
+        var config = CreateConfig(temp.DirectoryPath, analysis);
         var z = Finding("z file#1.cs", 9, "Z", "last|rationale", "second`snippet", "zeta");
         var a = Finding("a file#1.cs", 3, "A", "first | rationale", "`snippet`", "alpha");
 
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
-            new RuleRunResult(rule.Descriptor.RuleId, new RuleResult([z, a])),
+            new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([z, a])),
         ]));
-        var markdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "rules", "fixture-rule.md"));
+        var markdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "analyses", "fixture-analysis.md"));
 
         Assert.Contains("| Source | Signal | Other Locations |", markdown, StringComparison.Ordinal);
         Assert.True(markdown.IndexOf("[a file\\#1.cs:3]", StringComparison.Ordinal) < markdown.IndexOf("[z file\\#1.cs:9]", StringComparison.Ordinal));
@@ -122,14 +122,14 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("All findings addressed", index, StringComparison.Ordinal);
     }
 
-    private static ReviewConfig CreateConfig(string root, params ReportRule[] rules) => CreateConfig(root, true, rules);
+    private static ReviewConfig CreateConfig(string root, params ReportAnalysis[] analyses) => CreateConfig(root, true, analyses);
 
-    private static ReviewConfig CreateConfig(string root, bool enabled, params ReportRule[] rules)
+    private static ReviewConfig CreateConfig(string root, bool enabled, params ReportAnalysis[] analyses)
     {
         File.WriteAllText(Path.Combine(root, "Sample.slnx"), "<Solution />");
-        var registry = new RuleRegistry(rules);
-        var entries = string.Join(',', rules.Select(rule => "\"" + rule.Descriptor.RuleId + "\":{" + (enabled ? string.Empty : "\"enabled\":false") + "}"));
-        var config = "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"rules\":{" + entries + "}}";
+        var registry = new ReviewAnalysisRegistry(analyses);
+        var entries = string.Join(',', analyses.Select(analysis => "\"" + analysis.Descriptor.AnalysisId + "\":{" + (enabled ? string.Empty : "\"enabled\":false") + "}"));
+        var config = "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{" + entries + "}}";
         return new ReviewConfigValidator(registry).Validate(root, config);
     }
 
@@ -141,21 +141,21 @@ public sealed class MarkdownReportWriterTests
             new FindingEvidence(path, line, "A | label", "earlier evidence", snippet),
         ]);
 
-    private sealed class ReportRule : IReviewRule
+    private sealed class ReportAnalysis : IReviewAnalysis
     {
-        internal ReportRule(string id, string title, string optionValue)
+        internal ReportAnalysis(string id, string title, string optionValue)
         {
-            Descriptor = new RuleDescriptor(id, title, 1, "A test purpose.", "A test measurement.", ["Review this result?"],
+            Descriptor = new ReviewAnalysisDescriptor(id, title, 1, "A test purpose.", "A test measurement.", ["Review this result?"],
                 [
-                    RuleOptionDescriptor.String("scenario", "Scenario", optionValue),
-                    RuleOptionDescriptor.String("zeta", "Last option", "z"),
-                    RuleOptionDescriptor.String("alpha", "First option", "a"),
+                    ReviewAnalysisOptionDescriptor.String("scenario", "Scenario", optionValue),
+                    ReviewAnalysisOptionDescriptor.String("zeta", "Last option", "z"),
+                    ReviewAnalysisOptionDescriptor.String("alpha", "First option", "a"),
                 ]);
         }
 
-        public RuleDescriptor Descriptor { get; }
+        public ReviewAnalysisDescriptor Descriptor { get; }
 
-        public Task<RuleResult> ExecuteAsync(AiNetReview.Core.Analysis.ReviewContext context, RuleOptions options, CancellationToken cancellationToken) =>
-            Task.FromResult(RuleResult.Empty);
+        public Task<ReviewAnalysisResult> ExecuteAsync(AiNetReview.Core.Analysis.ReviewContext context, ReviewAnalysisOptions options, CancellationToken cancellationToken) =>
+            Task.FromResult(ReviewAnalysisResult.Empty);
     }
 }

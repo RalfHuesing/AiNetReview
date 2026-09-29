@@ -101,20 +101,20 @@ public sealed class HostProcessIntegrationTests
         var repositoryPath = repositoryLine["- Repository: `".Length..^1].Replace("\\\\", "\\", StringComparison.Ordinal);
         Assert.True(Path.IsPathFullyQualified(repositoryPath));
         Assert.Contains("- Solution: `AiNetReview.slnx`", indexReport, StringComparison.Ordinal);
-        var ruleReportPath = Path.Combine(outputDirectory, runId!, "rules", "method-control-flow-outliers.md");
+        var analysisReportPath = Path.Combine(outputDirectory, runId!, "analyses", "method-control-flow-outliers.md");
         if (detectedCount > 0)
         {
-            Assert.Contains("[Method Control-Flow Outliers](rules/method-control-flow-outliers.md)", indexReport, StringComparison.Ordinal);
-            Assert.True(File.Exists(ruleReportPath));
-            var ruleReport = await File.ReadAllTextAsync(ruleReportPath);
-            Assert.Contains("# Method Control-Flow Outliers", ruleReport, StringComparison.Ordinal);
-            Assert.Contains("| Source | Signal | Other Locations |", ruleReport, StringComparison.Ordinal);
-            Assert.DoesNotContain("Metrics", ruleReport, StringComparison.Ordinal);
+            Assert.Contains("[Method Control-Flow Outliers](analyses/method-control-flow-outliers.md)", indexReport, StringComparison.Ordinal);
+            Assert.True(File.Exists(analysisReportPath));
+            var analysisReport = await File.ReadAllTextAsync(analysisReportPath);
+            Assert.Contains("# Method Control-Flow Outliers", analysisReport, StringComparison.Ordinal);
+            Assert.Contains("| Source | Signal | Other Locations |", analysisReport, StringComparison.Ordinal);
+            Assert.DoesNotContain("Metrics", analysisReport, StringComparison.Ordinal);
         }
         else
         {
             Assert.Contains("No findings were found.", indexReport, StringComparison.Ordinal);
-            Assert.False(File.Exists(ruleReportPath));
+            Assert.False(File.Exists(analysisReportPath));
         }
 
         var resultingRuns = Directory.GetDirectories(outputDirectory).Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
@@ -177,7 +177,7 @@ public sealed class HostProcessIntegrationTests
     }
 
     [Fact]
-    public async Task ProcessInvocation_WithValidRuleConfigPublishesOneCompleteReport()
+    public async Task ProcessInvocation_WithValidAnalysisConfigPublishesOneCompleteReport()
     {
         using var host = IsolatedHost.Create();
         var projectRoot = await CreateProjectAsync(host.HostDirectory, "public sealed class Sample { }");
@@ -199,7 +199,7 @@ public sealed class HostProcessIntegrationTests
         Assert.True(File.Exists(Path.Combine(projectRoot, indexPath!.Replace('/', Path.DirectorySeparatorChar))));
         Assert.Equal(0, response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
         Assert.Contains("No findings were found.", await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "index.md")), StringComparison.Ordinal);
-        Assert.False(Directory.Exists(Path.Combine(projectRoot, "reports", runId!, "rules")));
+        Assert.False(Directory.Exists(Path.Combine(projectRoot, "reports", runId!, "analyses")));
 
         var logPath = Assert.Single(Directory.GetFiles(Path.Combine(host.HostDirectory, "logs"), "ainetreview-*.log"));
         var logContents = await File.ReadAllTextAsync(logPath);
@@ -240,7 +240,7 @@ public sealed class HostProcessIntegrationTests
         var output = fieldName == "outputDirectory" ? "reports\\u0000invalid" : "reports";
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
         await File.WriteAllTextAsync(configPath,
-            "{\"schemaVersion\":1,\"solution\":\"" + solution + "\",\"outputDirectory\":\"" + output + "\",\"rules\":{\"method-control-flow-outliers\":{}}}");
+            "{\"schemaVersion\":1,\"solution\":\"" + solution + "\",\"outputDirectory\":\"" + output + "\",\"analyses\":{\"method-control-flow-outliers\":{}}}");
 
         using var process = host.Start(host.CreateWorkingDirectory(), "review", "--config", configPath);
         var (stdout, stderr) = await ReadProcessOutputAsync(process);
@@ -320,7 +320,7 @@ public sealed class HostProcessIntegrationTests
     {
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
         await File.WriteAllTextAsync(configPath,
-            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"method-control-flow-outliers\":{}}}");
+            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"method-control-flow-outliers\":{}}}");
         return configPath;
     }
 

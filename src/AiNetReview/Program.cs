@@ -39,7 +39,7 @@ public static class Program
         {
             var services = new ServiceCollection();
             services.AddAiNetReviewServices();
-            services.AddAiNetReviewRules();
+            services.AddAiNetReviewAnalyses();
             services.AddLogging(logging => logging.AddSerilog(Log.Logger, dispose: false));
             await using var provider = services.BuildServiceProvider();
             return await new ReviewCommand().InvokeAsync(

@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Findings;
-using AiNetReview.Core.Rules;
+using AiNetReview.Core.ReviewAnalyses;
 
 /// <summary>Writes and atomically publishes one complete Markdown report set.</summary>
 public sealed class MarkdownReportWriter
@@ -35,13 +35,13 @@ public sealed class MarkdownReportWriter
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(result);
-        var rules = config.Rules.OrderBy(static rule => rule.RuleId, StringComparer.Ordinal).ToArray();
-        if (result.Rules.Count != rules.Length || rules.Any(rule => result.Rules.Count(run => run.RuleId == rule.RuleId) != 1))
+        var analyses = config.Analyses.OrderBy(static analysis => analysis.AnalysisId, StringComparer.Ordinal).ToArray();
+        if (result.Analyses.Count != analyses.Length || analyses.Any(analysis => result.Analyses.Count(run => run.AnalysisId == analysis.AnalysisId) != 1))
         {
-            throw new ArgumentException("Run results must contain exactly one result for every configured rule.", nameof(result));
+            throw new ArgumentException("Run results must contain exactly one result for every configured analysis.", nameof(result));
         }
 
-        var resultById = result.Rules.ToDictionary(static run => run.RuleId, StringComparer.Ordinal);
+        var resultById = result.Analyses.ToDictionary(static run => run.AnalysisId, StringComparer.Ordinal);
         Directory.CreateDirectory(config.ResolvedOutputDirectory);
 
         while (true)
@@ -58,24 +58,24 @@ public sealed class MarkdownReportWriter
             var published = false;
             try
             {
-                foreach (var configuredRule in rules)
+                foreach (var configuredAnalysis in analyses)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var ruleResult = resultById[configuredRule.RuleId];
-                    if (ruleResult.DetectedCount == 0)
+                    var analysisResult = resultById[configuredAnalysis.AnalysisId];
+                    if (analysisResult.DetectedCount == 0)
                     {
                         continue;
                     }
 
-                    var rulePath = Path.Combine(temporaryPath, "rules", configuredRule.RuleId + ".md");
-                    Directory.CreateDirectory(Path.GetDirectoryName(rulePath)!);
-                    await WriteUtf8Async(rulePath, FormatRuleReport(config, configuredRule, ruleResult, Path.GetDirectoryName(rulePath)!), cancellationToken)
+                    var analysisPath = Path.Combine(temporaryPath, "analyses", configuredAnalysis.AnalysisId + ".md");
+                    Directory.CreateDirectory(Path.GetDirectoryName(analysisPath)!);
+                    await WriteUtf8Async(analysisPath, FormatAnalysisReport(config, configuredAnalysis, analysisResult, Path.GetDirectoryName(analysisPath)!), cancellationToken)
                         .ConfigureAwait(false);
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
                 var indexPath = Path.Combine(temporaryPath, "index.md");
-                await WriteUtf8Async(indexPath, FormatIndex(runId, config, rules, resultById), cancellationToken)
+                await WriteUtf8Async(indexPath, FormatIndex(runId, config, analyses, resultById), cancellationToken)
                     .ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (beforePublication is not null)
@@ -131,8 +131,8 @@ public sealed class MarkdownReportWriter
     private static string FormatIndex(
         string runId,
         ReviewConfig config,
-        ConfiguredRule[] rules,
-        System.Collections.Generic.IReadOnlyDictionary<string, RuleRunResult> results)
+        ConfiguredReviewAnalysis[] analyses,
+        System.Collections.Generic.IReadOnlyDictionary<string, ReviewAnalysisRunResult> results)
     {
         var builder = new StringBuilder();
         builder.Append("# AiNetReview – ").Append(runId).Append("\n\n")
@@ -140,34 +140,34 @@ public sealed class MarkdownReportWriter
             .Append("- Repository: `").Append(EscapeInline(Path.GetFullPath(config.ProjectRoot))).Append("`\n")
             .Append("- Solution: `").Append(EscapeInline(config.SolutionPath)).Append("`\n\n");
 
-        var rulesWithFindings = rules.Where(rule => results[rule.RuleId].DetectedCount > 0).ToArray();
-        if (rulesWithFindings.Length == 0)
+        var analysesWithFindings = analyses.Where(analysis => results[analysis.AnalysisId].DetectedCount > 0).ToArray();
+        if (analysesWithFindings.Length == 0)
         {
-            builder.Append(rules.Length == 0
-                ? "No review was performed because all rules are disabled.\n"
+            builder.Append(analyses.Length == 0
+                ? "No review was performed because all analyses are disabled.\n"
                 : "No findings were found.\n");
             return builder.ToString();
         }
 
-        builder.Append("## Rules with open findings\n\n");
-        foreach (var rule in rulesWithFindings)
+        builder.Append("## Analyses with open findings\n\n");
+        foreach (var analysis in analysesWithFindings)
         {
-            builder.Append("- [").Append(EscapeLinkText(rule.Rule.Descriptor.Title)).Append("](rules/")
-                .Append(EncodePathSegment(rule.RuleId)).Append(".md)\n");
+            builder.Append("- [").Append(EscapeLinkText(analysis.Analysis.Descriptor.Title)).Append("](analyses/")
+                .Append(EncodePathSegment(analysis.AnalysisId)).Append(".md)\n");
         }
 
         builder.Append("\n## Working through findings\n\n")
-            .Append("Review each finding against the source code. After fixing it or deciding to ignore it, explain the decision to the user and delete the finding's table row. When a rule has no rows left, delete its report and remove its link here. When all findings are handled, replace these instructions with **All findings addressed**.\n");
+            .Append("Review each finding against the source code. After fixing it or deciding to ignore it, explain the decision to the user and delete the finding's table row. When an analysis has no rows left, delete its report and remove its link here. When all findings are handled, replace these instructions with **All findings addressed**.\n");
         return builder.ToString();
     }
 
-    private static string FormatRuleReport(ReviewConfig config, ConfiguredRule configuredRule, RuleRunResult result, string reportDirectory)
+    private static string FormatAnalysisReport(ReviewConfig config, ConfiguredReviewAnalysis configuredAnalysis, ReviewAnalysisRunResult result, string reportDirectory)
     {
-        var descriptor = configuredRule.Rule.Descriptor;
+        var descriptor = configuredAnalysis.Analysis.Descriptor;
         var builder = new StringBuilder();
         builder.Append("# ").Append(EscapeLinkText(descriptor.Title)).Append("\n\n")
             .Append(EscapeInline(descriptor.Purpose)).Append("\n\n")
-            .Append("Effective options: ").Append(FormatCodeSpan(FormatOptions(configuredRule.EffectiveOptions))).Append("\n\n")
+            .Append("Effective options: ").Append(FormatCodeSpan(FormatOptions(configuredAnalysis.EffectiveOptions))).Append("\n\n")
             .Append("Review questions:\n\n");
         foreach (var question in descriptor.ReviewQuestions)
         {
@@ -196,7 +196,7 @@ public sealed class MarkdownReportWriter
                 builder.Append(" (").Append(EscapeTable(finding.ProjectPath)).Append(')');
             }
 
-            builder.Append(" | ").Append(EscapeTable(FormatSignal(configuredRule.RuleId, finding))).Append(" | ")
+            builder.Append(" | ").Append(EscapeTable(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append(" | ")
                 .Append(FormatAdditionalLocations(config.ProjectRoot, finding, reportDirectory)).Append(" |\n");
         }
 
@@ -214,16 +214,16 @@ public sealed class MarkdownReportWriter
         return linkPath + "#L" + line.ToString(CultureInfo.InvariantCulture);
     }
 
-    private static string FormatSignal(string ruleId, FindingDraft finding)
+    private static string FormatSignal(string analysisId, FindingDraft finding)
     {
-        if (ruleId == "dead-code-candidates")
+        if (analysisId == "dead-code-candidates")
         {
             return finding.Discriminator == "type-candidate"
                 ? "Type without known use"
                 : "Method without known use";
         }
 
-        if (ruleId == "method-control-flow-outliers")
+        if (analysisId == "method-control-flow-outliers")
         {
             var signal = new StringBuilder();
             var decisionCount = Metric(finding, "decisionCount");
@@ -252,7 +252,7 @@ public sealed class MarkdownReportWriter
             return signal.ToString();
         }
 
-        if (ruleId == "duplicate-code-candidates")
+        if (analysisId == "duplicate-code-candidates")
         {
             var similarity = Metric(finding, "similarityScore");
             var minimumSimilarity = Metric(finding, "minimumSimilarityThreshold");
@@ -287,7 +287,7 @@ public sealed class MarkdownReportWriter
             $"[{EscapeLinkText(location.SourcePath)}:{location.Line.ToString(CultureInfo.InvariantCulture)}]({SourceLink(projectRoot, location.SourcePath, location.Line, reportDirectory)})"));
     }
 
-    private static string FormatOptions(RuleOptions options) => "{" + string.Join(
+    private static string FormatOptions(ReviewAnalysisOptions options) => "{" + string.Join(
         ", ", options.Values.OrderBy(static pair => pair.Key, StringComparer.Ordinal)
             .Select(static pair => $"{JsonSerializer.Serialize(pair.Key)}: {FormatJsonValue(pair.Value)}")) + "}";
 

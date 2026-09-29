@@ -1,6 +1,6 @@
 # Ideen für fachliche Review-Signale
 
-Status: Ideensammlung für weitere fachliche Signale, keine verbindliche Spezifikation und kein implementiertes Produktverhalten. Die statistische Ausreißer-Analyse für Methoden wurde bereits als Regel `method-control-flow-outliers` umgesetzt (siehe [Current findings](../../docs/review/findings.md)).
+Status: Ideensammlung für weitere fachliche Signale, keine verbindliche Spezifikation und kein implementiertes Produktverhalten. Die statistische Ausreißer-Analyse für Methoden wurde bereits als Analyse `method-control-flow-outliers` umgesetzt (siehe [Current findings](../../docs/review/findings.md)).
 
 ## Ziel
 
@@ -42,7 +42,7 @@ Auf Projekt- und Modulniveau wäre interessant, ob ein kleiner Teil der Klassen 
 
 ## Ähnliche Implementierungen und Drift
 
-Für agentische Entwicklung besonders relevant ist kopierter oder nachgebauter Code: Ein Agent folgt einem vorhandenen Muster, später ändern sich die Kopien unterschiedlich. Ein Hinweis sollte betroffene Methoden nebeneinander und die konkrete strukturelle Ähnlichkeit zeigen. Reine Textähnlichkeit erzeugt bei trivialen Mappings und Boilerplate viel Rauschen. Diese Analyse wäre eher ein späteres Experiment als die erste fachliche Regel.
+Für agentische Entwicklung besonders relevant ist kopierter oder nachgebauter Code: Ein Agent folgt einem vorhandenen Muster, später ändern sich die Kopien unterschiedlich. Ein Hinweis sollte betroffene Methoden nebeneinander und die konkrete strukturelle Ähnlichkeit zeigen. Reine Textähnlichkeit erzeugt bei trivialen Mappings und Boilerplate viel Rauschen. Diese Analyse wäre eher ein späteres Experiment als die erste fachliche Analyse.
 
 ## Tests und Dokumentation als Kontext
 
@@ -52,7 +52,7 @@ Ein schwer zu ändernder Bereich kann auffallen, weil Tests seine beobachtbaren 
 
 Die bestehende Finding-Architektur vergibt stabile IDs und erlaubt `accepted` oder `false-positive` mit Wiederöffnung bei relevanter Änderung. Auch bei einer Perzentilgrenze ist die Auswahl relativ: Eine unveränderte Methode kann unter die Auswahlgrenze fallen, weil anderswo Code wächst, und später ohne eigene Änderung wieder darüber liegen. Würde jeder ausgewählte Kandidat als Finding gespeichert, könnten `resolved` und `reopened` allein durch Änderungen an anderen Methoden entstehen. Das könnte Entscheidungen und Berichte unnötig unruhig machen.
 
-Für den ersten Versuch erscheint deshalb eine **Momentaufnahme im Bericht** plausibel. Dauerhafte Findings sollten erst entstehen, wenn eine Aussage mit stabiler Identität, klarer Evidenz und sinnvoller Wiederöffnungsbedingung formuliert werden kann. Ob AiNetReview dafür einen zusätzlichen Berichtstyp erhält oder die vorhandenen Regelverträge erweitert werden, ist eine spätere Produktentscheidung; dieses Dokument legt keinen neuen Vertrag fest.
+Für den ersten Versuch erscheint deshalb eine **Momentaufnahme im Bericht** plausibel. Dauerhafte Findings sollten erst entstehen, wenn eine Aussage mit stabiler Identität, klarer Evidenz und sinnvoller Wiederöffnungsbedingung formuliert werden kann. Ob AiNetReview dafür einen zusätzlichen Berichtstyp erhält oder die vorhandenen Analyseverträge erweitert werden, ist eine spätere Produktentscheidung; dieses Dokument legt keinen neuen Vertrag fest.
 
 ## Wie wir den Nutzen prüfen könnten
 

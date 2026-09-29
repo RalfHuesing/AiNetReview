@@ -1,11 +1,11 @@
-namespace AiNetReview.FastTests.Rules;
+namespace AiNetReview.FastTests.ReviewAnalyses;
 
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
-using AiNetReview.Core.Rules;
+using AiNetReview.Core.ReviewAnalyses;
 
-public sealed class RuleDescriptorTests
+public sealed class ReviewAnalysisDescriptorTests
 {
     [Theory]
     [InlineData("../escape")]
@@ -20,38 +20,38 @@ public sealed class RuleDescriptorTests
     [InlineData("nul")]
     [InlineData("com1")]
     [InlineData("lpt9")]
-    [InlineData("rule_id")]
-    [InlineData("rule--id")]
-    [InlineData("-rule")]
-    [InlineData("rule-")]
-    [InlineData("Rule")]
+    [InlineData("analysis_id")]
+    [InlineData("analysis--id")]
+    [InlineData("-analysis")]
+    [InlineData("analysis-")]
+    [InlineData("Review analysis")]
     [InlineData("rulé")]
-    public void Constructor_RejectsRuleIdsThatAreNotSafeFileNames(string ruleId)
+    public void Constructor_RejectsAnalysisIdsThatAreNotSafeFileNames(string analysisId)
     {
-        Assert.Throws<ArgumentException>(() => CreateDescriptor(ruleId: ruleId));
+        Assert.Throws<ArgumentException>(() => CreateDescriptor(analysisId: analysisId));
     }
 
     [Fact]
-    public void Constructor_RejectsRuleIdsWhoseMarkdownFileNameExceedsCommonSegmentLimit()
+    public void Constructor_RejectsAnalysisIdsWhoseMarkdownFileNameExceedsCommonSegmentLimit()
     {
-        Assert.Throws<ArgumentException>(() => CreateDescriptor(ruleId: new string('a', 253)));
+        Assert.Throws<ArgumentException>(() => CreateDescriptor(analysisId: new string('a', 253)));
     }
 
     [Fact]
-    public void Constructor_AcceptsSafeRuleIdAtMaximumMarkdownFileNameLength()
+    public void Constructor_AcceptsSafeAnalysisIdAtMaximumMarkdownFileNameLength()
     {
-        var descriptor = CreateDescriptor(ruleId: new string('a', 252));
+        var descriptor = CreateDescriptor(analysisId: new string('a', 252));
 
-        Assert.Equal(252, descriptor.RuleId.Length);
+        Assert.Equal(252, descriptor.AnalysisId.Length);
     }
 
     [Fact]
-    public void Constructor_RejectsNonPositiveBehaviorVersionAndIncompleteRuleMetadata()
+    public void Constructor_RejectsNonPositiveBehaviorVersionAndIncompleteAnalysisMetadata()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => CreateDescriptor(behaviorVersion: 0));
-        Assert.Throws<ArgumentException>(() => new RuleDescriptor(
-            " test-rule",
-            "Test Rule",
+        Assert.Throws<ArgumentException>(() => new ReviewAnalysisDescriptor(
+            " test-analysis",
+            "Test Review analysis",
             1,
             "Test purpose.",
             "Test measurement.",
@@ -62,7 +62,7 @@ public sealed class RuleDescriptorTests
     }
 
     [Fact]
-    public void Constructor_ProvidesEnabledRuleDefault()
+    public void Constructor_ProvidesEnabledAnalysisDefault()
     {
         Assert.True(CreateDescriptor().DefaultEnabled);
         Assert.False(CreateDescriptor(defaultEnabled: false).DefaultEnabled);
@@ -71,7 +71,7 @@ public sealed class RuleDescriptorTests
     [Fact]
     public void Constructor_RejectsDuplicateOptionNames()
     {
-        var option = RuleOptionDescriptor.String("scenario", "Scenario", "base");
+        var option = ReviewAnalysisOptionDescriptor.String("scenario", "Scenario", "base");
 
         var exception = Assert.Throws<ArgumentException>(() => CreateDescriptor(options: [option, option]));
 
@@ -83,8 +83,8 @@ public sealed class RuleDescriptorTests
     {
         var descriptor = CreateDescriptor(options:
         [
-            RuleOptionDescriptor.String("zeta", "Zeta mode", "last"),
-            RuleOptionDescriptor.String("alpha", "Scenario", "base", static value => value is "base" or "alternate"),
+            ReviewAnalysisOptionDescriptor.String("zeta", "Zeta mode", "last"),
+            ReviewAnalysisOptionDescriptor.String("alpha", "Scenario", "base", static value => value is "base" or "alternate"),
         ]);
 
         var defaults = descriptor.ResolveOptions();
@@ -105,7 +105,7 @@ public sealed class RuleDescriptorTests
     {
         var descriptor = CreateDescriptor(options:
         [
-            RuleOptionDescriptor.String("scenario", "Scenario", "base", static value => value is "base" or "alternate"),
+            ReviewAnalysisOptionDescriptor.String("scenario", "Scenario", "base", static value => value is "base" or "alternate"),
         ]);
 
         Assert.Throws<ArgumentException>(() => descriptor.ResolveOptions(
@@ -130,22 +130,22 @@ public sealed class RuleDescriptorTests
     [Fact]
     public void StringOption_RejectsDefaultOutsideItsValidator()
     {
-        Assert.Throws<ArgumentException>(() => RuleOptionDescriptor.String(
+        Assert.Throws<ArgumentException>(() => ReviewAnalysisOptionDescriptor.String(
             "scenario",
             "Scenario",
             "unsupported",
             static value => value is "base" or "alternate"));
     }
 
-    private static RuleDescriptor CreateDescriptor(
-        string ruleId = "test-rule",
+    private static ReviewAnalysisDescriptor CreateDescriptor(
+        string analysisId = "test-analysis",
         int behaviorVersion = 1,
         string purpose = "Test purpose.",
         IReadOnlyList<string>? reviewQuestions = null,
-        IReadOnlyList<RuleOptionDescriptor>? options = null,
+        IReadOnlyList<ReviewAnalysisOptionDescriptor>? options = null,
         bool defaultEnabled = true) => new(
-            ruleId: ruleId,
-            title: "Test Rule",
+            analysisId: analysisId,
+            title: "Test Review analysis",
             behaviorVersion: behaviorVersion,
             purpose: purpose,
             measurement: "Test measurement.",

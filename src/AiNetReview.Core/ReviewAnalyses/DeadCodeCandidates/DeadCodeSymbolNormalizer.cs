@@ -1,4 +1,4 @@
-namespace AiNetReview.Core.Rules.DeadCodeCandidates;
+namespace AiNetReview.Core.ReviewAnalyses.DeadCodeCandidates;
 
 using Microsoft.CodeAnalysis;
 

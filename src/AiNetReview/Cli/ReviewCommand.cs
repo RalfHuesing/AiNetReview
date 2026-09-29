@@ -158,7 +158,7 @@ public sealed class ReviewCommand
                 }
                 catch (Exception exception)
                 {
-                    logger.LogError(exception, "Review rules did not complete successfully");
+                    logger.LogError(exception, "Review analyses did not complete successfully");
                     await WriteErrorAsync(standardError, "ANALYSIS_FAILED", "Review analysis did not complete successfully.")
                         .ConfigureAwait(false);
                     return AnalysisFailedExitCode;

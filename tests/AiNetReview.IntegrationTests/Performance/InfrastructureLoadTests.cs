@@ -61,7 +61,7 @@ public sealed class InfrastructureLoadTests(ITestOutputHelper output)
         await File.WriteAllTextAsync(solutionPath, solution.ToString());
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
         await File.WriteAllTextAsync(configPath,
-            "{\"schemaVersion\":1,\"solution\":\"AiNetReview.slnx\",\"outputDirectory\":\"reports\",\"rules\":{\"method-control-flow-outliers\":{}}}");
+            "{\"schemaVersion\":1,\"solution\":\"AiNetReview.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"method-control-flow-outliers\":{}}}");
         await RestoreAsync(solutionPath, projectRoot);
 
         using var host = IsolatedHost.Create();

@@ -1,0 +1,10 @@
+---
+description: Keep the root audit configuration aligned with implemented production review analyses.
+globs: '*'
+alwaysApply: true
+---
+
+# Production review analysis configuration
+
+- List every implemented production review analysis in the repository-root `ainetreview.json`, even when a project may choose to disable it. Keep this list synchronized when registering or removing production analyses.
+- Analysis entries support `enabled` as a boolean and default to `true`; do not add analyses that suppress or hide findings from later audits.

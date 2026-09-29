@@ -1,14 +1,14 @@
-namespace AiNetReview.Core.Rules;
+namespace AiNetReview.Core.ReviewAnalyses;
 
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Text.Json;
 
-public sealed class RuleOptions
+public sealed class ReviewAnalysisOptions
 {
     private readonly ReadOnlyDictionary<string, JsonElement> values;
 
-    internal RuleOptions(SortedDictionary<string, JsonElement> values)
+    internal ReviewAnalysisOptions(SortedDictionary<string, JsonElement> values)
     {
         this.values = new ReadOnlyDictionary<string, JsonElement>(values);
     }

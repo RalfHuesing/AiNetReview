@@ -51,15 +51,15 @@ public sealed partial class AuditRepositoryIntegrationTests
         Assert.True(File.Exists(solutionPath), $"Configured solution does not exist: '{solutionPath}'.");
         Assert.Contains(Path.GetExtension(solutionPath), new[] { ".sln", ".slnx" }, StringComparer.OrdinalIgnoreCase);
 
-        var rules = profile.GetProperty("rules");
-        Assert.Equal(JsonValueKind.Object, rules.ValueKind);
-        Assert.NotEmpty(rules.EnumerateObject());
+        var analyses = profile.GetProperty("analyses");
+        Assert.Equal(JsonValueKind.Object, analyses.ValueKind);
+        Assert.NotEmpty(analyses.EnumerateObject());
         var standardConfigJson = JsonSerializer.Serialize(new
         {
             schemaVersion = 1,
             solution,
             outputDirectory = "audit-reporting",
-            rules,
+            analyses,
         });
 
         var outputDirectory = Path.Combine(hostRoot, "audit-reporting", targetName);
@@ -86,7 +86,7 @@ public sealed partial class AuditRepositoryIntegrationTests
             .ToArray();
         Assert.DoesNotContain("findings.json", publishedFiles, StringComparer.Ordinal);
         Assert.All(publishedFiles, path => Assert.True(
-            path == "index.md" || (path.StartsWith("rules/", StringComparison.Ordinal) && path.EndsWith(".md", StringComparison.Ordinal)),
+            path == "index.md" || (path.StartsWith("analyses/", StringComparison.Ordinal) && path.EndsWith(".md", StringComparison.Ordinal)),
             $"Unexpected manual audit artifact: '{path}'."));
         Assert.Contains("index.md", publishedFiles, StringComparer.Ordinal);
     }
@@ -109,14 +109,14 @@ public sealed partial class AuditRepositoryIntegrationTests
     {
         var services = new ServiceCollection();
         services.AddAiNetReviewServices();
-        services.AddAiNetReviewRules();
+        services.AddAiNetReviewAnalyses();
         services.AddLogging();
         return services.BuildServiceProvider();
     }
 
     private static void AssertProfileProperties(JsonElement profile)
     {
-        var expected = new HashSet<string>(["enabled", "repositoryPath", "solution", "rules"], StringComparer.Ordinal);
+        var expected = new HashSet<string>(["enabled", "repositoryPath", "solution", "analyses"], StringComparer.Ordinal);
         var enabledIsOptional = true;
         foreach (var property in profile.EnumerateObject())
         {
@@ -172,13 +172,13 @@ public sealed partial class AuditRepositoryIntegrationTests
     private static void AssertMarkdownLinksResolve(string runDirectory, string repositoryPath)
     {
         var linkPattern = SourceLinkPattern();
-        var rulesDirectory = Path.Combine(runDirectory, "rules");
-        if (!Directory.Exists(rulesDirectory))
+        var analysesDirectory = Path.Combine(runDirectory, "analyses");
+        if (!Directory.Exists(analysesDirectory))
         {
             return;
         }
 
-        foreach (var reportPath in Directory.EnumerateFiles(rulesDirectory, "*.md"))
+        foreach (var reportPath in Directory.EnumerateFiles(analysesDirectory, "*.md"))
         {
             var report = File.ReadAllText(reportPath);
             foreach (Match link in linkPattern.Matches(report))

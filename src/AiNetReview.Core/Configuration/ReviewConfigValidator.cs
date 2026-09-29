@@ -5,18 +5,18 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using AiNetReview.Core.Rules;
+using AiNetReview.Core.ReviewAnalyses;
 
 public sealed class ReviewConfigValidator
 {
     private static readonly HashSet<string> RootProperties = new(StringComparer.Ordinal)
     {
-        "schemaVersion", "solution", "outputDirectory", "rules",
+        "schemaVersion", "solution", "outputDirectory", "analyses",
     };
 
-    private readonly RuleRegistry registry;
+    private readonly ReviewAnalysisRegistry registry;
 
-    public ReviewConfigValidator(RuleRegistry registry)
+    public ReviewConfigValidator(ReviewAnalysisRegistry registry)
     {
         this.registry = registry ?? throw new ArgumentNullException(nameof(registry));
     }
@@ -153,15 +153,15 @@ public sealed class ReviewConfigValidator
 
         var solutionValue = RequiredString(document, "solution");
         var outputValue = RequiredString(document, "outputDirectory");
-        if (!document.TryGetProperty("rules", out var configuredRules))
+        if (!document.TryGetProperty("analyses", out var configuredAnalyses))
         {
-            throw new InvalidReviewInputException("'rules' is required.");
+            throw new InvalidReviewInputException("'analyses' is required.");
         }
 
-        RequireKind(configuredRules, JsonValueKind.Object, "'rules' must be an object.");
-        if (!configuredRules.EnumerateObject().Any())
+        RequireKind(configuredAnalyses, JsonValueKind.Object, "'analyses' must be an object.");
+        if (!configuredAnalyses.EnumerateObject().Any())
         {
-            throw new InvalidReviewInputException("'rules' must contain at least one registered rule.");
+            throw new InvalidReviewInputException("'analyses' must contain at least one registered analysis.");
         }
 
         var solution = ProjectPathResolver.ResolveRelative(root, solutionValue, "solution");
@@ -182,33 +182,33 @@ public sealed class ReviewConfigValidator
             throw new InvalidReviewInputException("Output path must be a directory.");
         }
 
-        var activeRules = new List<ConfiguredRule>();
-        foreach (var configuredRule in configuredRules.EnumerateObject().OrderBy(static item => item.Name, StringComparer.Ordinal))
+        var activeAnalyses = new List<ConfiguredReviewAnalysis>();
+        foreach (var configuredAnalysis in configuredAnalyses.EnumerateObject().OrderBy(static item => item.Name, StringComparer.Ordinal))
         {
-            if (!registry.TryGet(configuredRule.Name, out var rule) || rule is null)
+            if (!registry.TryGet(configuredAnalysis.Name, out var analysis) || analysis is null)
             {
-                throw new InvalidReviewInputException($"Unknown rule ID '{configuredRule.Name}'.");
+                throw new InvalidReviewInputException($"Unknown analysis ID '{configuredAnalysis.Name}'.");
             }
 
-            RequireKind(configuredRule.Value, JsonValueKind.Object, $"Configuration for rule '{configuredRule.Name}' must be an object.");
-            var enabled = rule.Descriptor.DefaultEnabled;
-            if (configuredRule.Value.TryGetProperty("enabled", out var enabledValue))
+            RequireKind(configuredAnalysis.Value, JsonValueKind.Object, $"Configuration for analysis '{configuredAnalysis.Name}' must be an object.");
+            var enabled = analysis.Descriptor.DefaultEnabled;
+            if (configuredAnalysis.Value.TryGetProperty("enabled", out var enabledValue))
             {
                 if (enabledValue.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
                 {
-                    throw new InvalidReviewInputException($"Configuration field 'enabled' for rule '{configuredRule.Name}' must be a boolean.");
+                    throw new InvalidReviewInputException($"Configuration field 'enabled' for analysis '{configuredAnalysis.Name}' must be a boolean.");
                 }
 
                 enabled = enabledValue.GetBoolean();
             }
 
-            var optionValues = configuredRule.Value.EnumerateObject()
+            var optionValues = configuredAnalysis.Value.EnumerateObject()
                 .Where(static option => !string.Equals(option.Name, "enabled", StringComparison.Ordinal))
                 .Select(static option => new KeyValuePair<string, JsonElement>(option.Name, option.Value));
-            RuleOptions options;
+            ReviewAnalysisOptions options;
             try
             {
-                options = rule.Descriptor.ResolveOptions(optionValues);
+                options = analysis.Descriptor.ResolveOptions(optionValues);
             }
             catch (ArgumentException ex)
             {
@@ -217,7 +217,7 @@ public sealed class ReviewConfigValidator
 
             if (enabled)
             {
-                activeRules.Add(new ConfiguredRule(configuredRule.Name, rule, options));
+                activeAnalyses.Add(new ConfiguredReviewAnalysis(configuredAnalysis.Name, analysis, options));
             }
         }
 
@@ -245,7 +245,7 @@ public sealed class ReviewConfigValidator
             ProjectPathResolver.ToRelativeForwardSlashes(root, output),
             solution,
             output,
-            activeRules.AsReadOnly());
+            activeAnalyses.AsReadOnly());
     }
 
     private static string RequiredString(JsonElement document, string name)

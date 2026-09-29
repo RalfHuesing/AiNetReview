@@ -1,4 +1,4 @@
-namespace AiNetReview.Core.Rules;
+namespace AiNetReview.Core.ReviewAnalyses;
 
 using System;
 using System.Collections.Generic;
@@ -6,11 +6,11 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using AiNetReview.Core.Findings;
 
-public sealed class RuleResult
+public sealed class ReviewAnalysisResult
 {
     private readonly ReadOnlyCollection<FindingDraft> findings;
 
-    public RuleResult(IEnumerable<FindingDraft> findings)
+    public ReviewAnalysisResult(IEnumerable<FindingDraft> findings)
     {
         ArgumentNullException.ThrowIfNull(findings);
         var copy = findings.ToArray();
@@ -22,7 +22,7 @@ public sealed class RuleResult
         this.findings = Array.AsReadOnly(copy);
     }
 
-    public static RuleResult Empty { get; } = new(Array.Empty<FindingDraft>());
+    public static ReviewAnalysisResult Empty { get; } = new(Array.Empty<FindingDraft>());
 
     public IReadOnlyList<FindingDraft> Findings => findings;
 }

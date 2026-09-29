@@ -3,21 +3,21 @@ namespace AiNetReview.Core.Configuration;
 using System;
 using System.IO;
 using System.Text.Json;
-using AiNetReview.Core.Rules;
+using AiNetReview.Core.ReviewAnalyses;
 
-/// <summary>Generates the schema version 1 configuration populated with registered rule defaults.</summary>
+/// <summary>Generates the schema version 1 configuration populated with registered analysis defaults.</summary>
 public sealed class DefaultReviewConfigGenerator
 {
     private static readonly JsonWriterOptions WriterOptions = new() { Indented = true };
 
-    private readonly RuleRegistry registry;
+    private readonly ReviewAnalysisRegistry registry;
 
-    public DefaultReviewConfigGenerator(RuleRegistry registry)
+    public DefaultReviewConfigGenerator(ReviewAnalysisRegistry registry)
     {
         this.registry = registry ?? throw new ArgumentNullException(nameof(registry));
-        if (registry.Rules.Count == 0)
+        if (registry.Analyses.Count == 0)
         {
-            throw new ArgumentException("At least one rule must be registered to generate a valid review configuration.", nameof(registry));
+            throw new ArgumentException("At least one analysis must be registered to generate a valid review configuration.", nameof(registry));
         }
     }
 
@@ -43,13 +43,13 @@ public sealed class DefaultReviewConfigGenerator
             writer.WriteNumber("schemaVersion", 1);
             writer.WriteString("solution", solutionPath);
             writer.WriteString("outputDirectory", "audit-reporting");
-            writer.WritePropertyName("rules");
+            writer.WritePropertyName("analyses");
             writer.WriteStartObject();
 
-            foreach (var rule in registry.Rules)
+            foreach (var analysis in registry.Analyses)
             {
-                var descriptor = rule.Descriptor;
-                writer.WritePropertyName(descriptor.RuleId);
+                var descriptor = analysis.Descriptor;
+                writer.WritePropertyName(descriptor.AnalysisId);
                 writer.WriteStartObject();
                 writer.WriteBoolean("enabled", descriptor.DefaultEnabled);
                 foreach (var option in descriptor.Options)

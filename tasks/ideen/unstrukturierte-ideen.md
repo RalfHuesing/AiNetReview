@@ -1,7 +1,7 @@
 Deine Rolle: .agents\agent-workflow\01-konzept-planung.md
 
 Denke bitte mit, 360 Grad View im Sinne der Anwendung.
-Wir werden noch mehr Rules machen, ich will das Fundament solide haben.
+Wir werden noch mehr Review-Analysen machen, ich will das Fundament solide haben.
 
 Untenstehend meine unsortierten Ideen.
 Du erstellst unser tasks\ ein verzeichnis mit passendem Namen und darin überarbeiten wir iterativ und interaktiv das Konzept.md.
@@ -9,14 +9,14 @@ Du erstellst unser tasks\ ein verzeichnis mit passendem Namen und darin überarb
 
 Ideen:
 
-Eine Quelle kann mehrere Rules treffen.
+Eine Quelle kann mehrere Review-Analysen treffen.
 In jedem Finding muss das ersichtlich sein.
-Beispiel: foo.cs:468 auch in rule-bar.md und ...
+Beispiel: foo.cs:468 auch in analyses/bar.md und ...
 
 
 Finding MD files werden durch Tool aufrufe bearbeitet nicht durch Agenten.
 Jeder Finding Eintrag bekommt eine eindeutige ID.
-Beispiel: id4585, foo.cs:568, ... Red: rule-bar.md:7645, ...
+Beispiel: id4585, foo.cs:568, ... Red: analyses/bar.md:7645, ...
 
 Edit via exe mit Parameter:
 "Fixed id6546, id7654"
@@ -37,7 +37,7 @@ Beschreibt den .exe Parameter edit flow,
 Konkrete Beispiele.
 Hat eine Handlungsanweisung allgemein wie: "das sind Signale, analysiere im Sinne der Anwendung, 360 Grad View, keine workarounds,.."
 
-Jede Rule muss darf erstmal nicht direkt MD Text Erzeugen, das muss gesammelt werden. Weil wir vielleicht erst am Ende feststellen wo das Symbol noch bei einer anderen Rule Auftritt.
+Jede Review-Analyse muss darf erstmal nicht direkt MD Text Erzeugen, das muss gesammelt werden. Weil wir vielleicht erst am Ende feststellen wo das Symbol noch bei einer anderen Review-Analyse Auftritt.
 Es ergeben sich eventuell Hotspots?
 Foo.Bar() tritt an zig stellen auf = Hotspot?
 Danach sortieren?

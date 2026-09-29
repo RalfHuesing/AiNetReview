@@ -145,7 +145,7 @@ public sealed class ReviewSourceClassifierTests
         var context = new ReviewContext(workspace.CurrentSolution, root.DirectoryPath);
 
         var exception = await Assert.ThrowsAsync<AnalysisFailedException>(() => new CurrentFindingValidator()
-            .ValidateAndSortAsync("example-rule", context, Array.Empty<FindingDraft>()));
+            .ValidateAndSortAsync("example-analysis", context, Array.Empty<FindingDraft>()));
 
         Assert.Contains("outside the project root", exception.Message, StringComparison.OrdinalIgnoreCase);
     }

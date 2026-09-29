@@ -1,14 +1,14 @@
-namespace AiNetReview.FastTests.Rules;
+namespace AiNetReview.FastTests.ReviewAnalyses;
 
 using System;
 using System.IO;
 using System.Threading;
 using AiNetReview.Core.Analysis;
-using AiNetReview.Core.Rules.MethodControlFlowOutliers;
+using AiNetReview.Core.ReviewAnalyses.MethodControlFlowOutliers;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 
-public sealed class MethodControlFlowOutliersRuleTests
+public sealed class MethodControlFlowOutliersAnalysisTests
 {
     [Fact]
     public async Task ExecuteAsync_UsesNearestRankAndReportsEveryTieAtCutoff()
@@ -50,9 +50,9 @@ public sealed class MethodControlFlowOutliersRuleTests
             }
             """;
         using var fixture = CreateContext(source);
-        var rule = new MethodControlFlowOutliersRule();
+        var analysis = new MethodControlFlowOutliersAnalysis();
 
-        var result = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
 
         Assert.Equal(2, result.Findings.Count);
         Assert.All(result.Findings, finding =>
@@ -100,9 +100,9 @@ public sealed class MethodControlFlowOutliersRuleTests
             """;
         var source = template.Replace("__LONG_COMMENT__", new string('x', 220), StringComparison.Ordinal);
         using var fixture = CreateContext(source);
-        var rule = new MethodControlFlowOutliersRule();
+        var analysis = new MethodControlFlowOutliersAnalysis();
 
-        var result = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
 
         var finding = Assert.Single(result.Findings);
         var expectedDeclaration = "public void ValidateDocument(string configurationJson, string resolvedProjectFilePath, int requestVersion, string cancellationTokenText)";
@@ -146,9 +146,9 @@ public sealed class MethodControlFlowOutliersRuleTests
             }
             """;
         using var fixture = CreateContext(source);
-        var rule = new MethodControlFlowOutliersRule();
+        var analysis = new MethodControlFlowOutliersAnalysis();
 
-        var result = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
 
         var finding = Assert.Single(result.Findings);
         Assert.Equal(13, finding.Metrics["decisionCount"]);
@@ -179,9 +179,9 @@ public sealed class MethodControlFlowOutliersRuleTests
             }
             """;
         using var fixture = CreateContext(source);
-        var rule = new MethodControlFlowOutliersRule();
+        var analysis = new MethodControlFlowOutliersAnalysis();
 
-        var result = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
 
         var finding = Assert.Single(result.Findings);
         Assert.Equal(9, finding.Metrics["decisionCount"]);
@@ -205,9 +205,9 @@ public sealed class MethodControlFlowOutliersRuleTests
             }
             """;
         using var fixture = CreateContext(source, generatedSource: "namespace Sample; public class GeneratedFile { public void Noise() { if(true) { if(true) { if(true) { if(true) { } } } } }");
-        var rule = new MethodControlFlowOutliersRule();
+        var analysis = new MethodControlFlowOutliersAnalysis();
 
-        var result = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
 
         var finding = Assert.Single(result.Findings);
         Assert.Contains("Expression", finding.SubjectId, StringComparison.Ordinal);
@@ -221,9 +221,9 @@ public sealed class MethodControlFlowOutliersRuleTests
     public async Task ExecuteAsync_ReturnsNoFindingsForProjectWithoutExecutableMethods()
     {
         using var fixture = CreateContext("namespace Sample; public interface IExample { void Run(); }");
-        var rule = new MethodControlFlowOutliersRule();
+        var analysis = new MethodControlFlowOutliersAnalysis();
 
-        var result = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
 
         Assert.Empty(result.Findings);
     }
@@ -249,9 +249,9 @@ public sealed class MethodControlFlowOutliersRuleTests
             }
             """;
         using var fixture = CreateContext(source);
-        var rule = new MethodControlFlowOutliersRule();
+        var analysis = new MethodControlFlowOutliersAnalysis();
 
-        var result = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
 
         Assert.Empty(result.Findings);
     }
@@ -279,9 +279,9 @@ public sealed class MethodControlFlowOutliersRuleTests
             }
             """;
         using var fixture = CreateContext(source);
-        var rule = new MethodControlFlowOutliersRule();
+        var analysis = new MethodControlFlowOutliersAnalysis();
 
-        var result = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
 
         var finding = Assert.Single(result.Findings);
         Assert.Equal(4, finding.Metrics["decisionCount"]);
@@ -314,9 +314,9 @@ public sealed class MethodControlFlowOutliersRuleTests
             }
             """;
         using var fixture = CreateContext(source, projectName: "Example.Tests");
-        var rule = new MethodControlFlowOutliersRule();
+        var analysis = new MethodControlFlowOutliersAnalysis();
 
-        var result = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
 
         Assert.Empty(result.Findings);
     }
@@ -340,9 +340,9 @@ public sealed class MethodControlFlowOutliersRuleTests
             "namespace Sample; public class Ordinary { public void Run() {} }",
             generatedSource: header + generatedMethod,
             generatedFileName: fileName);
-        var rule = new MethodControlFlowOutliersRule();
+        var analysis = new MethodControlFlowOutliersAnalysis();
 
-        var result = await rule.ExecuteAsync(fixture.Context, rule.Descriptor.ResolveOptions(), CancellationToken.None);
+        var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
 
         Assert.Empty(result.Findings);
     }
@@ -350,7 +350,7 @@ public sealed class MethodControlFlowOutliersRuleTests
     [Fact]
     public void Descriptor_RejectsPercentilesOutsideIntegerRange()
     {
-        var descriptor = new MethodControlFlowOutliersRule().Descriptor;
+        var descriptor = new MethodControlFlowOutliersAnalysis().Descriptor;
         Assert.Throws<ArgumentException>(() => descriptor.ResolveOptions([new("percentile", System.Text.Json.JsonSerializer.SerializeToElement(49))]));
         Assert.Throws<ArgumentException>(() => descriptor.ResolveOptions([new("percentile", System.Text.Json.JsonSerializer.SerializeToElement(100))]));
         Assert.Throws<ArgumentException>(() => descriptor.ResolveOptions([new("percentile", System.Text.Json.JsonSerializer.SerializeToElement(90.5))]));
@@ -364,13 +364,13 @@ public sealed class MethodControlFlowOutliersRuleTests
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new MethodControlFlowOutliersRule().ExecuteAsync(
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new MethodControlFlowOutliersAnalysis().ExecuteAsync(
             fixture.Context,
-            new MethodControlFlowOutliersRule().Descriptor.ResolveOptions(),
+            new MethodControlFlowOutliersAnalysis().Descriptor.ResolveOptions(),
             cancellation.Token));
     }
 
-    private static RuleFixture CreateContext(
+    private static AnalysisFixture CreateContext(
         string source,
         string? generatedSource = null,
         string generatedFileName = "Noise.g.cs",
@@ -413,10 +413,10 @@ public sealed class MethodControlFlowOutliersRuleTests
                 loader: TextLoader.From(TextAndVersion.Create(SourceText.From(generatedSource), VersionStamp.Create()))));
         }
 
-        return new RuleFixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+        return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
     }
 
-    private sealed class RuleFixture(AdhocWorkspace workspace, ReviewContext context) : IDisposable
+    private sealed class AnalysisFixture(AdhocWorkspace workspace, ReviewContext context) : IDisposable
     {
         public ReviewContext Context { get; } = context;
 
