@@ -15,7 +15,7 @@ AiNetReview soll weitere fachliche Auswertungen aufnehmen können, ohne dass der
 - Ein Bericht trennt bereits die Einheit mit Zweck und Review-Fragen von einzelnen `FindingDraft`-Fundstellen; die Tabelle nennt die Beobachtung an einer Fundstelle `Signal`.
 - Die Repository-Anweisungen unter `.agents/rules/` sind tatsächlich verbindliche Arbeitsregeln. Produktterminologie und Agentenanweisungen sollten nicht verwechselt werden.
 
-## Begriffsmodell – Vorschlag zur Entscheidung
+## Begriffsmodell
 
 | Ebene | Empfohlener Begriff | Bedeutung |
 | --- | --- | --- |
@@ -24,7 +24,49 @@ AiNetReview soll weitere fachliche Auswertungen aufnehmen können, ohne dass der
 | Beobachtung an der Fundstelle | **Signal** (`signal`) | Beschreibt, weshalb die Stelle zur Prüfung vorgeschlagen wird; ist kein Schweregrad und keine Handlungsanweisung. |
 | Entscheidung nach Kontextprüfung | **Review-Entscheidung** | Änderung oder begründete Akzeptanz liegt beim prüfenden Menschen bzw. Agenten mit Nutzerkontext. |
 
-**Begründung:** „Rule“ passt zum technischen Muster einer ausführbaren Auswertung, klingt für Nutzer und Agenten aber nach einer verbindlichen Norm. „Hint“ ist zu unverbindlich und kann wie ein beiläufiger Tipp wirken. „Signal“ beschreibt den beobachteten Anlass gut, verwechselt als Name der konfigurierbaren Einheit jedoch Ursache und Ergebnis. „Check“ kann ein Bestehen oder Scheitern nahelegen. „Review-Analyse“ benennt die Tätigkeit neutral und lässt sowohl statistische Ausreißer als auch künftige Kontextanalysen zu.
+**Begründung:** „Rule“ passt zum technischen Muster einer ausführbaren Auswertung, klingt für Nutzer und Agenten aber nach einer verbindlichen Norm. „Hint“ ist zu unverbindlich und kann wie ein beiläufiger Tipp wirken. „Signal“ beschreibt den beobachteten Anlass gut, verwechselt als Name der konfigurierbaren Einheit jedoch Ursache und Ergebnis. „Check“ kann ein Bestehen oder Scheitern nahelegen. „Review-Analyse“ benennt die Tätigkeit neutral und lässt sowohl statistische Ausreißer als auch künftige Kontextanalysen zu. Dieser Begriff ist als Arbeitsentscheidung angenommen; die genaue Kompatibilität der Konfiguration bleibt offen.
+
+## Alt → Neu: Namen und Bedeutung
+
+| Bisher | Zielname | Ort / Bemerkung |
+| --- | --- | --- |
+| `AiNetReview.Core.Rules` | `AiNetReview.Core.ReviewAnalyses` | Namespace und Ordner für ausführbare Produktanalysen; `Core.Analysis` für Lade-/Laufinfrastruktur bleibt eigenständig. |
+| `IReviewRule` | `IReviewAnalysis` | Schnittstelle der ausführbaren Einheit. |
+| `RuleDescriptor` | `ReviewAnalysisDescriptor` | Metadaten und Review-Fragen. |
+| `RuleOptionDescriptor` | `ReviewAnalysisOptionDescriptor` | Definition einer Konfigurationsoption. |
+| `RuleOptions` | `ReviewAnalysisOptions` | Effektive Optionen eines Laufs. |
+| `RuleResult` | `ReviewAnalysisResult` | Fundstellen einer ausgeführten Analyse. |
+| `RuleRegistry` | `ReviewAnalysisRegistry` | Explizit registrierte Analysen. |
+| `MethodControlFlowOutliersRule` | `MethodControlFlowOutliersAnalysis` | Erste Produktionsanalyse; Ordner bleibt fachlich benannt. |
+| `DeadCodeCandidatesRule` | `DeadCodeCandidatesAnalysis` | Zweite Produktionsanalyse. |
+| `DuplicateCodeCandidatesRule` | `DuplicateCodeCandidatesAnalysis` | Dritte Produktionsanalyse. |
+| `ConfiguredRule` | `ConfiguredReviewAnalysis` | Validierte, aktive Analyse samt Optionen. |
+| `RuleRunResult` | `ReviewAnalysisRunResult` | Ergebnis einer Analyse innerhalb eines Laufs. |
+| `RuleId`, `ruleId` | `AnalysisId`, `analysisId` | Deskriptor, Konfiguration, Laufresultat, Fundstellenvalidierung und lokale Variablen. Die **Werte** der drei produktiven IDs bleiben gleich. |
+| `ReviewConfig.Rules`, `ReviewRunResult.Rules`, `RuleRegistry.Rules` | jeweils `Analyses` | Sammlungen ausführbarer Analysen. |
+| `AddAiNetReviewRules` | `AddAiNetReviewAnalyses` | Registrierung im Host und in Tests. |
+| `FixtureFindingRule`, `ReportRule` und weitere Test-Dummys | `FixtureFindingAnalysis`, `ReportAnalysis` usw. | Testnamen und Testordner ebenfalls umbenennen. |
+| JSON `rules` | JSON `analyses` | Öffentliche Projektkonfiguration und manuelle Audit-Profile; Schema-/Bestandsdatei-Frage unten. |
+| Berichtspfad `rules/<id>.md` | `analyses/<id>.md` | Neu erzeugte Berichte, Links und Berichtstests. Historisch erzeugte Berichte bleiben unverändert. |
+| „Rules with open findings“, „all rules are disabled“ | „Analyses with open findings“, „all analyses are disabled“ | Berichtstexte und zugehörige Tests. `Signal` als Spaltenüberschrift bleibt erhalten. |
+| `docs/development/adding-rules.md` | `docs/development/adding-review-analyses.md` | Anleitung samt Link im Dokumentationsindex. |
+
+`FindingDraft`, `FindingEvidence`, `CurrentFindingValidator`, `ReviewRunner`, `ReviewRunResult` und `MarkdownReportWriter` behalten ihren Namen: Sie bezeichnen Fundstellen oder den gesamten Review-Lauf, keine einzelne „Rule“. Ihre `Rule...`-Parameter, Eigenschaften, Meldungen und Hilfsmethoden werden trotzdem umbenannt.
+
+## Vollständige Änderungsflächen für die spätere Umsetzung
+
+Die Liste beschreibt die betroffenen Flächen, keine Arbeit in diesem Konzeptschritt. Eine Suche über das gesamte Repository nach Produktverwendungen von `rule`, `Rule`, `rules/` und `ruleId` ist die abschließende Vollständigkeitskontrolle. Treffer, die die **verbindlichen Agentenregeln** oder die **echten AiNetLinter-Regeln** meinen, bleiben bewusst erhalten.
+
+1. **Core-Typen und Dateipfade:** `src/AiNetReview.Core/Rules/**` einschließlich aller drei Produktionsanalysen und ihrer internen Dead-Code-Helfer; Namespaces, `using`, Typen, Parameter, Fehlermeldungen und Deskriptor-Properties. Die fachlichen IDs und ihre Auswahlsemantik bleiben stabil.
+2. **Core-Lauf und Konfiguration:** `src/AiNetReview.Core/Analysis/{ReviewRunner,SolutionLoader,LoadedSolution,ReviewSourceClassifier}.cs`, `src/AiNetReview.Core/Findings/CurrentFindingValidator.cs`, `src/AiNetReview.Core/Configuration/{ReviewConfig,ReviewConfigValidator,DefaultReviewConfigGenerator}.cs` und `src/AiNetReview.Core/Reporting/MarkdownReportWriter.cs`. Dazu gehören Registrierungszugriffe, bedingtes Laden von Markup, Identitätsschlüssel, JSON-Validierung und -Erzeugung, Dateipfade, Indextext, Optionen und Fehlertexte.
+3. **Host:** `src/AiNetReview/{Program.cs,Bootstrap/ServiceRegistration.cs,Cli/ReviewCommand.cs}`; Registrierung und Protokolltexte.
+4. **Gespeicherte Konfiguration:** `ainetreview.json`, alle `audit-targets/*.json`-Profile und die in Tests eingebetteten JSON-Beispiele. Die Audit-Profile sind derzeit lokal und Git-ignoriert; ihr Format wird trotzdem ausdrücklich berücksichtigt.
+5. **Tests und Fixtures:** alle produktbezogenen Tests unter `tests/AiNetReview.FastTests/**` und `tests/AiNetReview.IntegrationTests/**`, besonders die bisherigen `Rules/`-Tests, `RuleServiceRegistrationTests`, `FixtureRules/`, Konfigurations- und Generator-Tests, `ReviewRunnerTests`, Host-/Zero-Config-/Audit-Tests sowie Markdown-Publikations- und Linktests. Test-Dateinamen, Namespaces, Fixture-Typen, Beispiel-IDs, Erwartungstexte und `rules/`-Pfade werden mitgezogen. Die manuellen Audit-Profile selbst lösen keine reguläre Testsuite aus.
+6. **Aktuelle Produktdokumentation und Einstieg:** `README.md`, `docs/README.md`, `docs/architecture/{overview,dependencies}.md`, `docs/configuration/file-format.md`, `docs/interfaces/cli.md`, `docs/review/findings.md`, `docs/development/{adding-rules,build-and-tests}.md`; Inhaltsverweise und Beispiele werden konsistent.
+7. **Repo-Anweisungen und Aufgabenbestand:** In `.agents/rules/{03-product-boundaries,08-production-rule-configuration}.mdc` werden nur Aussagen über **Produktanalysen** angepasst; beim Umbenennen von `08-...` werden `.agents/rules/README.md` und Verweise aktualisiert. `.agents/rules/` als Ort verbindlicher Agentenregeln bleibt. Produktbezüge in `tasks/ideen/{erste-fachliche-review-signale,wenige-starke-audit-signale,ainetlinter-regeln}.md` sowie `tasks/integrations-vereinfachung/Konzept.md` werden auf die neue Terminologie geprüft. Bezeichnungen und Zitate der externen AiNetLinter-Regeln bleiben erhalten.
+8. **Veröffentlichte Berichte:** Der Generator verwendet künftig `analyses/` und neue Überschriften; bereits publizierte Läufe werden nicht nachträglich geändert oder überschrieben. Quelllinks und Indexlinks neuer Läufe müssen zusammenpassen.
+
+Es gibt derzeit keine `Rule`-Bezeichnung in den drei produktiven ID-Werten `method-control-flow-outliers`, `dead-code-candidates` und `duplicate-code-candidates`; ein Umbenennen dieser IDs wäre ein eigener Identitätsbruch ohne terminologischen Nutzen.
 
 ## Scope
 
@@ -32,8 +74,8 @@ AiNetReview soll weitere fachliche Auswertungen aufnehmen können, ohne dass der
 
 - Einen konsistenten Produktwortschatz für konfigurierbare Auswertung, einzelne Fundstelle, beobachtetes Signal und anschließende Review-Entscheidung festlegen.
 - Den Bedeutungsrahmen für weitere Review-Analysen beschreiben: Eine Fundstelle braucht nachvollziehbare Evidenz und eine konkrete Review-Frage; sie ist für sich weder Defektbeweis noch Refactoring-Auftrag oder Build-Fehler.
-- Die gewählte Benennung an den berührten Produktflächen konsistent machen. Welche Flächen dazu gehören, bleibt bis zur Entscheidung über die Umbenennung offen.
-- Den bestehenden Konfigurations- und Berichtvertrag bei einer möglichen Umbenennung ausdrücklich behandeln, damit vorhandene Projekte und Review-Abläufe nicht unbemerkt brechen.
+- Die Produktbenennung an allen oben aufgeführten Flächen ändern: Code, JSON-Vertrag, neue Berichte, Tests, aktuelle Dokumentation und produktbezogene Repo-Anweisungen. Keine dauerhafte Mischung aus `Rule` und `ReviewAnalysis` für denselben Produktbegriff.
+- Die Kompatibilität vorhandener Schema-v1-Dateien ausdrücklich festlegen und testen. Neue Konfigurationen verwenden `analyses` und eine dazu passende Schema-Version; alte Dateien dürfen nicht stillschweigend mit anderer Bedeutung interpretiert werden.
 
 ### Nicht
 
@@ -45,11 +87,12 @@ AiNetReview soll weitere fachliche Auswertungen aufnehmen können, ohne dass der
 ## Verifikation
 
 - Der definierte Wortschatz lässt sich auf alle drei vorhandenen Produktanalysen und auf einen Lauf ohne Fundstellen widerspruchsfrei anwenden.
-- Konfiguration, öffentliche Texte, Berichte, Dokumentation und interne Typnamen sind hinsichtlich gewählter Benennung und Kompatibilität ausdrücklich abgegrenzt.
+- Konfiguration, öffentliche Texte, Berichte, Dokumentation und interne Typnamen verwenden die neue Benennung; die einzige mögliche Ausnahme ist ein ausdrücklich beschlossener, isolierter Leser für alte Schema-v1-Dateien.
 - Ein neuer Review-Agent kann aus dem Konzept erkennen, welche Aussage eine Fundstelle erlaubt und welche Entscheidung Kontextprüfung verlangt.
+- Tests prüfen Konfigurationsgenerierung/-validierung, die gewählte Schema-v1-Behandlung, Registrierung, alle drei Analysen, Berichtspfade/-links und die beiden Leerfälle (aktive Analyse ohne Fundstellen; keine aktive Analyse).
+- Eine vollständige Repository-Suche nach alten Produktbegriffen erklärt jeden verbleibenden Treffer als echte Agentenregel, AiNetLinter-Bezug, historischen Bericht oder beschlossene Kompatibilitätsschicht.
 
 ## Arbeitsgedächtnis (nur Draft)
 
-- **Empfehlung:** „Review-Analyse“ für die ausführbare Einheit, „Fundstelle/Finding“ für das einzelne Ergebnis und „Signal“ für die Beobachtung. „Rule“ bleibt den verbindlichen Agentenanweisungen vorbehalten.
-- **Offene Entscheidung 1:** Ist „Review-Analyse“ der gewünschte Begriff, oder soll die konfigurierbare Einheit weiter „Rule“ heißen? Kosten der Beibehaltung: Der Produktwortschatz trägt weiter eine Norm-Assoziation, die den Berichtsaussagen widerspricht.
-- **Offene Entscheidung 2:** Soll die gewählte Produktterminologie nur in sichtbaren Texten und Dokumentation gelten oder auch API-/Code-Namen, JSON-Schlüssel `rules` und Berichtspfad `rules/` erfassen? Ein vollständiger Wechsel braucht einen ausdrücklich festgelegten Kompatibilitätsvertrag; eine reine Textänderung lässt technische Altbegriffe bestehen.
+- **Arbeitsentscheidung:** Der Produktbegriff „Review-Analyse“ wird durchgängig verwendet, auch in API-/Code-Namen, JSON und neu erzeugten Berichtspfaden. „Rule“ bleibt für verbindliche Agentenanweisungen und echte AiNetLinter-Regeln.
+- **Offene Entscheidung:** Neue Dateien sollten `schemaVersion: 2` und `analyses` verwenden. Empfehlung: Alte Schema-v1-Dateien mit `rules` über einen eng begrenzten Legacy-Leser weiter akzeptieren; der Generator schreibt nur v2, und `rules` ist in v2 unzulässig. Das bewahrt vorhandene Nutzerkonfigurationen, kostet aber einen dauerhaft zu testenden Lesepfad. Alternative: v1 mit klarer Migrationsmeldung ablehnen; das beseitigt den Legacy-Code, zwingt vorhandene Projekte und lokale Audit-Profile zur Umstellung.
