@@ -1,61 +1,98 @@
 ---
-status: draft
+status: ready
 ---
 
-# Größen als Review-Signal
+# Codegrößen als Review-Signal
 
 ## Intention
 
-Ein Review soll auffällig große C#-Methoden, Typen und Dateien sichtbar machen, damit ein Mensch oder Agent ihre Verständlichkeit, Änderbarkeit und den nötigen Werkzeugkontext prüfen kann. Ein Treffer ist eine begründete Prüfaufforderung, kein Qualitätsurteil und kein Auftrag, Code allein für einen kleineren Messwert zu zerschneiden.
+`code-size-candidates` soll ungewöhnlich umfangreiche ausführbare C#-Member und Klassen sowie sehr große C#-Dateien zur Prüfung zeigen. Der Bericht erklärt den gemessenen Umfang und den Auslösegrund. Ein Treffer ist weder ein Qualitätsurteil noch ein Auftrag, Code allein wegen seiner Größe zu zerlegen.
 
-## Ist-Stand und Abgrenzung
+## Abhängigkeit und Produktgrenze
 
-- `method-control-flow-outliers` vergleicht bereits Entscheidungszahl und maximale Entscheidungsverschachtelung innerhalb eines Produktionsprojekts. `sourceSpanLines` ist dort nur Kontext und kein Auswahlkriterium. Die Analyse verwendet Perzentil und Mindestwerte; ein einzelner großer `switch` reicht nicht allein für einen Treffer.
-- Der Bericht zeigt knappe Review-Signale, aber keine Rohmetriken oder langen Begründungen. Die neue Analyse muss ihre auslösenden Größen und den Prüfgrund im sichtbaren Signal verständlich machen.
-- AiNetLinter zählt für Methoden Codezeilen ohne Kommentare und Leerzeilen und setzt feste Limits. Das ist eine technische Referenz für die Messung, kein zu übernehmender Grenzwert. Seine `AIContextFootprint`-Metrik schätzt transitive Zeilen, aber weder ein Dateilimit noch eine belegte Grenze für LLM-Verlässlichkeit folgt daraus.
-- [OpenAIs Apply-Patch-Dokumentation](https://developers.openai.com/api/docs/guides/tools-apply-patch) beschreibt gezielte Diffs und Werkzeugzugriff zur selektiven Dateierkundung. Die [LongCodeU-Studie](https://aclanthology.org/2025.acl-long.1324/) findet Schwierigkeiten beim Verstehen langen Codes und besonders bei Beziehungen zwischen Codeeinheiten. Beides stützt die Prüfung von Kontextkosten, aber keinen festen Grenzwert für C#-Dateien oder Codex-Edits.
+Die Umsetzung beginnt erst, nachdem [`core-code-metriken`](../core-code-metriken/Konzept.md) mit seiner [Roadmap](../core-code-metriken/roadmap.md) abgeschlossen ist. Diese Vorarbeit liefert `CodeLineMetrics` und `ControlFlowMetrics` unter `AiNetReview.Core.Analysis`. Die Größenanalyse verwendet beide Core-Messungen; sie implementiert deren Zählregeln nicht erneut. Fehlt der abgeschlossene Core-Vertrag oder weicht seine Implementierung davon ab, wird dieser Konflikt vor der Größenanalyse behoben, nicht mit einer lokalen Ersatzmetrik umgangen.
 
-## Empfohlener Ansatz
+`code-size-candidates` ist genau **eine** registrierte `IReviewAnalysis` mit Descriptor-Titel `Code Size Candidates`, Behavior-Version 1 und Default `enabled: true` im bestehenden `review`-Befehl. `method-control-flow-outliers` bleibt als eigenständige Analyse mit unverändertem Verhalten, Descriptor und Konfigurationsvertrag bestehen. Das Ein- oder Ausschalten der Größenanalyse ändert deren Ergebnisse nicht. Beide Analysen können dieselbe gewöhnliche Methode melden; die bestehende symbolbasierte Beziehung im Report zeigt dann beide Prüfhinweise.
 
-Die neue Analyse heißt **`code-size-candidates`** und läuft im bestehenden `review`-Befehl; sie ist kein separates Werkzeug oder CLI-Kommando. Sie liefert drei getrennt benannte Kandidatenarten: Methode, Typ und Datei. Jede Art hat eine nachvollziehbare Messung und Auswahl; es gibt keinen gemeinsamen Qualitäts-Score. Nur obere Ausreißer sind relevant. Bei Methoden und Typen kann ein hohes Perzentil innerhalb eines Produktionsprojekts Kandidaten filtern; eine Mindestgröße verhindert triviale Treffer in kleinen oder insgesamt kleinen Projekten. Ein sehr großer Wert kann unabhängig von der relativen Stellung auffallen. Für Dateien ist nur dieser Extrempfad vorgesehen. Gleiche Werte an der Grenze werden gleich behandelt.
+Die Analyse betrachtet ausschließlich geladene Produktions-C#-Projekte. Sie verwendet `ReviewSourceClassifier` für Testprojekte, generierte Dokumente und generierte Symbole. Messungen erfolgen aus dem geladenen Roslyn-Snapshot, nicht aus erneut gelesenen Dateien. Treffer führen weder zu Buildfehlern noch zu automatischen Änderungen.
 
-Als Größenmaß für Methoden und Typen bieten sich unterschiedliche, nicht leere Codezeilen mit C#-Tokens an; so ändern Kommentare und Leerzeilen die Auswahl nicht. Bei einem Typ werden `partial`-Teile zusammengerechnet und geschachtelte Typen getrennt betrachtet. Für Dateien sind physische Zeilen und UTF-8-Bytes der geladenen Quelldatei sinnvoll, weil auch große Kommentare, Literale oder wenige extrem lange Zeilen den Bearbeitungskontext belasten können. Diese Maße dürfen im Bericht nicht als gleiche Einheit vermischt werden.
+## Kandidaten und Messung
 
-Für Methoden wird der Umfang mit Entscheidungszahl und Verschachtelung kombiniert: Erhöhte Kontrollflusslast kann einen moderat großen Methodenumfang interessant machen; bei flachem Ablauf reicht nur ein extremer Umfang allein. Ein einfacher 200-Zeilen-Mapper wird nicht schon deshalb gemeldet, weil er relativ lang ist; 200 Zeilen verzweigte Fachlogik können dagegen einen Treffer auslösen. Auch eine lange Methode kann testbar sein; der Treffer fragt nach prüfbaren Pfaden und Verantwortlichkeiten. Die bestehende Kontrollflussanalyse bleibt als eigenes Signal erhalten und darf durch das Aktivieren oder Deaktivieren der Größenanalyse nicht verändert werden. Überschneidungen sollen als zwei begründete Prüfhinweise erkennbar sein.
+### Ausführbare Member
 
-Typgröße meint den eigenen deklarierten Code eines Typs, auch über `partial`-Dateien hinweg; Dateigröße meint die physische Quelldatei. Eine Datei erzeugt nur bei sehr großem Umfang einen eigenen Treffer; gewöhnliche relative Dateiausreißer bleiben Kontext für Methoden und Typen. Ein großer Typ kann Verantwortlichkeiten bündeln, eine sehr große Datei kann Navigation und manche Werkzeugaufrufe erschweren. Beides ist kontextabhängig: Ein gezielter Edit in einer großen Datei kann weiterhin problemlos sein. Dateigröße allein belegt weder einen Defekt noch einen konkreten LLM-Fehler. Untere Ausreißer werden nicht gemeldet; kleine, fokussierte Einheiten sind kein Größenproblem.
+Kandidaten sind explizit deklarierte gewöhnliche Methoden, Instanz- und statische Konstruktoren, Accessors, Operatoren, Konvertierungsoperatoren sowie Properties und Indexer mit eigenem Expression-Body. Ein Property/Indexer mit Accessor-Liste ist **kein** zusätzlicher aggregierter Kandidat; seine ausführbaren Accessors sind Kandidaten. Deklarationen ohne Body oder Expression-Body, Destruktoren und implizit erzeugte Symbole sind ausgeschlossen. Von einer partiellen Methode zählt nur die implementierende Deklaration. Lokale Funktionen, Lambdas und anonyme Methoden erhalten keinen eigenen Treffer.
 
-## Technischer Zuschnitt
+`CodeLineMetrics.CountExecutableDeclaration` liefert `memberCodeLines`. Es zählt Token-Startzeilen der ganzen ausführbaren Deklaration einschließlich Signatur, Attribute und Klammern; Leerzeilen und Trivia zählen nicht. Lokale Funktionen und Lambdas zählen zum Umfang des umgebenden Members. `ControlFlowMetrics.Measure` erhält nur dessen Body oder Expression-Body-Ausdruck und liefert `DecisionCount`, `DecisionConstructCount` und `MaxDecisionNesting`. Seine Messung überspringt lokale Funktionen und Lambdas. Diese unterschiedliche Behandlung ist Teil des Vertrags: Umfang eingeschlossener Funktionen kann einen Extremgrößen-Treffer auslösen, ihr Kontrollfluss macht den umgebenden Member aber nicht zum verzweigten Kandidaten.
 
-Ein `IReviewAnalysis`-Einstieg bündelt Registrierung, Konfiguration und Ergebnis der Analyse. Die Messung von Methoden, Typen und Dateien soll intern in kleinen, fachlich abgegrenzten Komponenten liegen; Auswahl und Aufbau der Findings sind davon getrennte Verantwortlichkeiten. Gemeinsame Logik wird nur dort geteilt, wo sie tatsächlich identisch ist, etwa für die Perzentilberechnung. So bleibt es eine Produktanalyse, ohne alle Messungen, Auswahlpfade und Berichtsdaten in eine große Klasse zu legen. Die genaue Zahl und Benennung interner Klassen ist kein Produktvertrag.
+Ein Member gilt für diese Analyse als verzweigt, wenn `DecisionCount >= 8` **und** `DecisionConstructCount >= 2`, oder wenn `MaxDecisionNesting >= 4`. Ein großer einzelner flacher `switch` erfüllt die Entscheidungsbedingung deshalb nicht allein. Dies ist die Entscheidungsmetrik der Core-Vorarbeit, keine kognitive Komplexitätszahl und keine Aussage über Testbarkeit.
+
+### Klassen
+
+Kandidaten sind explizite Klassen und Record-Klassen, auch geschachtelte und `partial` deklarierte. Structs, Record-Structs, Interfaces, Enums und Delegates sind keine Typkandidaten. `CodeLineMetrics.CountOwnTypePart` zählt die Token-Startzeilen jedes nicht generierten Deklarationsteils ohne die Deklarationen geschachtelter Typen oder Delegates. `typeCodeLines` ist die Summe dieser Teilwerte für dasselbe Roslyn-Typsymbol **innerhalb eines Projekts**. Jeder geschachtelte Klassentyp wird eigenständig gemessen. Ein Typ mit generiertem Symbol wird ganz ausgeschlossen; generierte Dokumente liefern keine Teile.
+
+### Dateien
+
+Jedes nicht generierte `.cs`-Dokument eines Produktionsprojekts ist ein Dateikandidat. `fileLines` ist `SourceText.Lines.Count` einschließlich einer von `SourceText` gezählten letzten leeren Zeile. `fileUtf8Bytes` ist die UTF-8-Bytezahl des geladenen `SourceText` ohne BOM. Mehrzeilige Literale, Kommentare und Leerraum zählen hier vollständig. Dieselbe physische Datei kann bei Einbindung in mehrere Produktionsprojekte einmal je Projekt erscheinen. Ein Dokument ohne eine einzige Zeile mit einem Nicht-Leerraum-Zeichen wird nicht gemeldet, weil die bestehende Finding-Validierung eine nicht leere Quelltext-Evidenz verlangt.
+
+## Auswahl
+
+Für jedes Produktionsprojekt werden die Größen aller berechtigten ausführbaren Member sowie aller berechtigten Klassen jeweils in einer eigenen Gruppe verglichen. Das nächste-Rang-Perzentil `P` ist der aufsteigend sortierte Wert an der einsbasierten Position `ceil(P / 100 × Gruppengröße)`. Bei leerer Gruppe gibt es keinen relativen Kandidaten. Bei einer Gruppe von einem Element gilt dieses Element als Perzentilwert; die absolute Untergrenze bleibt erforderlich. Gleichstände am Perzentilwert werden vollständig eingeschlossen. Untere Ausreißer werden nicht gemeldet.
+
+Ein Member erzeugt **einen** Treffer, wenn mindestens einer dieser unabhängigen Pfade erfüllt ist:
+
+1. **Länge plus Kontrollfluss:** `memberCodeLines >= minMemberCodeLines`, `memberCodeLines >= Member-Perzentilwert` und die obige Verzweigungsbedingung ist erfüllt.
+2. **Extreme Länge:** `memberCodeLines >= extremeMemberCodeLines`, unabhängig von Kontrollfluss und Perzentil.
+
+Ein flacher 200-Codezeilen-Mapper erfüllt mit den Defaults keinen der beiden Pfade. Eine 200-Codezeilen-Methode mit hinreichendem Kontrollfluss kann den ersten Pfad erfüllen, sofern sie den Projekt-Perzentilwert erreicht. Werden beide Pfade erfüllt, bleibt es ein Treffer mit beiden Auslösegründen.
+
+Eine Klasse erzeugt **einen** Treffer, wenn `typeCodeLines >= minTypeCodeLines` und `typeCodeLines >= Klassen-Perzentilwert`, oder wenn `typeCodeLines >= extremeTypeCodeLines`. Beide Gründe können gemeinsam vorliegen.
+
+Eine Datei erzeugt **einen** Treffer, wenn `fileLines >= extremeFileLines` **oder** `fileUtf8Bytes >= extremeFileUtf8Bytes`. Für Dateien wird kein Perzentil berechnet. Physische Dateigröße ist ein Hinweis auf Navigations- und Kontextaufwand, kein Beleg für einen Defekt oder einen Fehler eines LLM-Werkzeugs.
 
 ## Konfiguration
 
-Die Analyse braucht konfigurierbare Auswahlparameter, weil Projektgrößen und gewünschte Empfindlichkeit variieren. Der bestehende Konfigurationsmechanismus mit deklarierten Defaults und Validierung gilt auch hier. Nur Parameter aufnehmen, die eine fachliche Auswahlentscheidung verändern; keine Gewichte für einen künstlichen Gesamtscore und keine separate Aktivierung je Kandidatenart. Die Defaults sollen ohne projektspezifische Konfiguration brauchbare, seltene Prüfkandidaten liefern. Konkrete Optionen, Wertebereiche und Defaultwerte werden vor `ready` festgelegt und anhand repräsentativer Projekte auf Treffermenge und Grenzfälle geprüft.
+Die folgenden Analyseoptionen sind ganzzahlige JSON-Werte; andere JSON-Typen und Werte außerhalb der Bereiche werden durch den bestehenden Konfigurationsmechanismus abgewiesen. `enabled` ist das bestehende Standardfeld und hat den Default `true`. Die beiden Pfade je Kandidatenart sind unabhängig; zwischen Untergrenze und Extremwert gibt es deshalb absichtlich keine zusätzliche Ordnungsbedingung.
+
+| Option | Default | Gültiger Bereich | Wirkung |
+| --- | ---: | ---: | --- |
+| `percentile` | 90 | 50–99 | Gemeinsames nächstes-Rang-Perzentil für die getrennten Member- und Klassengruppen. |
+| `minMemberCodeLines` | 80 | 1–2.147.483.647 | Absolute Untergrenze nur für den relativen Member-Pfad. |
+| `extremeMemberCodeLines` | 300 | 1–2.147.483.647 | Unabhängiger Extrempfad für Member. |
+| `minTypeCodeLines` | 300 | 1–2.147.483.647 | Absolute Untergrenze nur für den relativen Klassen-Pfad. |
+| `extremeTypeCodeLines` | 800 | 1–2.147.483.647 | Unabhängiger Extrempfad für Klassen. |
+| `extremeFileLines` | 1000 | 1–2.147.483.647 | Erster unabhängiger Dateipfad. |
+| `extremeFileUtf8Bytes` | 131072 | 1–2.147.483.647 | Zweiter unabhängiger Dateipfad. |
+
+Die Defaultwerte sind Auswahlgrenzen für Review-Kandidaten, keine zulässigen Höchstgrößen. Der Descriptor ist die Quelle der generierten Defaults. Die Repository-Konfiguration `ainetreview.json` führt die neue Produktionsanalyse mit denselben Werten auf. Es gibt keine weiteren Analyseoptionen, keine Gewichte eines Gesamtscores und keine separate Aktivierung je Kandidatenart.
+
+## Findings und Bericht
+
+Ein Treffer nennt Kandidatenart, gemessenen Umfang, den jeweils wirksamen Grenzwert oder Perzentilwert und jeden erfüllten Auslösepfad. Bei Membern nennt er zusätzlich Entscheidungszahl, Zahl der Entscheidungskonstrukte und maximale Verschachtelung; diese Werte bleiben erklärender Kontext, wenn allein die Extremgröße auslöst. Die drei Fragen im englischen Bericht lauten für Member „Is this executable body cohesive, and are its paths and tests easy to review?“, für Klassen „Do the members of this class serve one cohesive responsibility?“ und für Dateien „Can relevant code in this file be located and edited with focused context?“ Kein Text fordert allein wegen eines Treffers zum Aufteilen auf.
+
+Member- und Klassen-Findings verwenden als `SubjectId` `DocumentationCommentId.CreateDeclarationId(symbol)`, ersatzweise `symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)`, wie die bestehende Kontrollflussanalyse. Ihre `Discriminator`-Werte sind `member-size` und `type-size`. Member-Findings nehmen die Deklarationsstelle und eine Evidenz am Namen beziehungsweise am Accessor- oder Operator-Keyword. Ein Klassen-Finding verwendet als repräsentative Stelle den nach projekt-relativem Pfad und Startzeile ersten nicht generierten Deklarationsteil und je Teil eine Evidenz am Deklarationsnamen. Es bleibt ein Single-Symbol-Finding mit genau einem `RelatedSymbol`; sämtliche Teil-Dateien stehen in `Evidence`, damit eine Änderung an irgendeinem Teil den Treffer in `changed-files/` auswählt. Datei-Findings haben `Discriminator` `file-size`, `SubjectId` als Konkatenation von `file:` und projekt-relativem Quellpfad und die erste Zeile mit einem Nicht-Leerraum-Zeichen als repräsentative Stelle und Evidenz. Alle Evidenz-Snippets stammen aus derselben geladenen Quelltextzeile und genügen `ReviewRunner`s Validierung.
+
+Der Markdown-Bericht erhält für `code-size-candidates` einen eigenen knappen Signaltext mit den obigen Zahlen und der zur Kandidatenart passenden Frage. Er druckt keine langen Rationale- oder Code-Snippets. Findings, Evidenz und Bericht bleiben deterministisch sortiert. Bei deaktivierter Analyse oder null Treffern gelten die vorhandenen Regeln für Reportdateien und Indizes.
+
+## Technischer Zuschnitt
+
+Ein `IReviewAnalysis`-Einstieg koordiniert die Analyse. Messung der drei Kandidatenarten, Auswahl und Aufbau der Findings bleiben getrennte Verantwortlichkeiten; gemeinsame Logik wird nur für identische Operationen geteilt. Die konkrete Zahl und Benennung privater Klassen ist kein Produktvertrag. Es entsteht weder eine Klasse, die alle Messungen und Berichtspfade zugleich enthält, noch eine separate öffentlich registrierte Analyse pro Kandidatenart.
 
 ## Scope
 
 ### Muss
 
-- Eine zusätzliche, nicht buildbrechende Review-Analyse für auffälligen Methoden-, Typ- und Dateiumfang in produktivem, nicht generiertem C#-Code.
-- Stabile Analyse-ID `code-size-candidates` im bestehenden `review`-Ablauf und ein interner Zuschnitt ohne zentrale Klasse, die Messung, Auswahl und Findings aller Kandidatenarten zugleich verantwortet.
-- Deterministische Messung und Auswahl mit erklärter Bezugsgruppe, absoluten Mindestgrößen und einer Behandlung sehr großer Einheiten; keine pauschale Obergrenze als Refactoring-Pflicht.
-- Methodenauswahl, die einfachen langen Ablauf anders behandelt als langen verzweigten Ablauf, ohne die bestehende Kontrollflussanalyse zu ersetzen.
-- Bericht pro Treffer mit Kandidatenart, gemessenem Umfang, Vergleichsgrund und einer passenden Review-Frage. Bei Dateien ist die Frage auf Navigation und Bearbeitungskontext gerichtet, bei Typen auf Verantwortung und Kohäsion, bei Methoden auf Ablauf und Testbarkeit im konkreten Fall.
-- Bei einem Typ über mehrere `partial`-Dateien müssen alle beitragenden Quelldateien als Fundstellen erkennbar sein, damit eine Änderung an einem beliebigen Teil den Treffer in `changed-files/` sichtbar macht.
-- Verifikation an synthetischen Grenzfällen und realen Produktionsprojekten: lange flache Mapper, lange verzweigte Methoden, große Typen über `partial`-Dateien, große Dateien mit mehreren Typen, kleine Projekte, Gleichstände sowie ausgeschlossene Tests und generierter Code. Prüfen, ob Treffer zu nützlichen Review-Fragen führen und keine massenhaften mechanischen Schnittvorschläge erzeugen.
+- Den obigen Mess-, Auswahl-, Konfigurations- und Berichtvertrag als genau eine Produktionsanalyse implementieren, in der Produktionsregistrierung und im Repository-`ainetreview.json` aufnehmen und die betroffenen `docs/`-Seiten aktualisieren.
+- Die Core-Vorarbeit ausschließlich als abgeschlossene Abhängigkeit nutzen und die bestehende Kontrollflussanalyse unverändert lassen.
+- Automatisierte Tests für Deklarationsarten und Ausschlüsse, Token- und Dateimaße, `partial`-Aggregation, kleine und leere Gruppen, Gleichstände, beide Auslösepfade, Grenzwerte und ungültige Konfiguration, Finding-Identität, Evidenz aus dem Snapshot, `changed-files/`-Selektion und sichtbaren Markdown-Text bereitstellen.
+- Die Defaults an AiNetReview und dem read-only betrachteten AiNetLinter als manuellen Audit auswerten. Zahl und Arten der Treffer festhalten und stichprobenartig prüfen, ob die Begründungen die tatsächlich auslösenden Pfade zeigen; diese Beobachtung ändert die festgelegten Defaults nicht stillschweigend.
 
 ### Nicht
 
-- Automatisches Aufteilen oder Refactoring, Buildfehler oder die Behauptung, ein Größenwert beweise schlechte Qualität, Untestbarkeit oder einen LLM-Fehler.
-- Meldung ungewöhnlich kleiner Methoden, Typen oder Dateien.
-- Übernahme fester AiNetLinter-Limits oder der transitiven `AIContextFootprint`-Metrik als Qualitätsmaßstab.
-- Eine Diagnose „God Class“ allein aus dem Umfang eines Typs; Größe belegt fehlende Kohäsion nicht.
+- Buildfehler, automatische Codeänderung, pauschale Refactoring-Anweisung oder eine Diagnose „God Class“ allein wegen Typumfang.
+- Treffer für Testprojekte, generierten Code, ungewöhnlich kleine Einheiten, lokale Funktionen oder Lambdas als eigene Subjekte.
+- Übernahme von AiNetLinter-Grenzen, einer transitiven `AIContextFootprint`-Metrik, einer allgemeinen kognitiven Komplexitätszahl oder einem zusammengesetzten Qualitäts-Score.
+- Änderung von `method-control-flow-outliers`, Core-Messregeln, Report-Publikationsstruktur oder CLI-Befehlen.
 
-## Arbeitsgedächtnis (nur Draft)
+## Verifikation
 
-- **Entschieden:** Eine neue gemeinsame Größenanalyse deckt Methode, Typ und Datei ab; `method-control-flow-outliers` bleibt eine eigene, unveränderte Analyse. Einfache lange Methoden werden nur bei extremer Größe als eigener Größen-Treffer gemeldet; relative Länge allein reicht nicht. Dateien werden ebenfalls nur bei sehr großem Umfang eigenständig gemeldet; gewöhnliche relative Dateiausreißer sind Kontext.
-- **Noch zu kalibrieren:** konkrete Größenmaße, Vergleichsgruppen und numerische Mindest-/Extremwerte an realen Projekten. Besonders ein Perzentil ohne Untergrenze würde in kleinen Projekten triviale Treffer produzieren; ein absoluter Grenzwert allein provoziert mechanische Schnitte. Die Auswahlregeln müssen vor `ready` feststehen.
-- **Konfiguration offen:** Die Notwendigkeit konfigurierbarer Auswahlparameter ist entschieden. Ihre Namen, Wertebereiche und Defaults müssen vor `ready` mit den Auswahlregeln feststehen; ein unnötig breites Optionsschema würde die Analyse schwerer verständlich machen.
-- **Noch zu definieren:** genaue C#-Deklarationsarten für den Methoden- und Typumfang sowie die Behandlung von Dokumenten mit `partial`-Typen, damit die Umsetzung nicht raten muss.
-- **Vorläufige Annahme zur Deklarationsart:** Methoden, Konstruktoren und Accessors als eigene Kandidaten; lokale Funktionen und Lambdas als Teil des umgebenden Members. Klassen und Record-Klassen als Typkandidaten, einschließlich aller `partial`-Teile. Die Nutzerantwort dazu steht noch aus.
+Die Tests prüfen Grenzwerte jeweils unmittelbar darunter, genau darauf und darüber; Perzentile mit einem und vielen Elementen sowie Gleichständen; flache Mapper gegen verzweigte Fachlogik; zusammengefasste `partial`-Klassen einschließlich einer Änderung an einem nicht repräsentativen Teil; Dateigröße durch Zeilen und separat durch UTF-8-Bytes einschließlich mehrzeiliger Literale; ungültige Optionswerte und die unveränderte bestehende Kontrollflussanalyse. Betroffene FastTests und IntegrationTests, `dotnet test AiNetReview.slnx`, `dotnet build AiNetReview.slnx` ohne Warnungen und `git diff --check` laufen vor Abschluss. Ein manueller Audit protokolliert die Trefferzahl und Beispiele aus AiNetReview und AiNetLinter; dessen Verzeichnis bleibt unverändert. Die Umsetzung folgt den Repository-Regeln zu Dokumentation und atomaren Commits.
