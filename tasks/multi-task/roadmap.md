@@ -10,7 +10,7 @@ Bei einer dokumentierten harten Blockade bleibt die betreffende Checkbox offen. 
 
 ## A. Gemeinsame Core-Bausteine
 
-- [ ] **Core-Task abgeschlossen** — Aggregat aller folgenden Core-Punkte; erst nach abgeschlossener [Core-Roadmap](../core-code-metriken/roadmap.md), verifizierten APIs, Schlussaudit und dokumentierten Commits schließen.
+- [x] **Core-Task abgeschlossen** — Aggregat aller folgenden Core-Punkte; erst nach abgeschlossener [Core-Roadmap](../core-code-metriken/roadmap.md), verifizierten APIs, Schlussaudit und dokumentierten Commits schließen.
   - [x] **A1 — Kontrollflussmessung extrahieren** — [Core-Roadmap, Punkt 1](../core-code-metriken/roadmap.md) vollständig ausführen und abnehmen.
   - [x] **A1-Audit — bestehendes Analyseverhalten prüfen**
     - Intention: Die verhaltensgleiche Extraktion prüfen, bevor weitere Verbraucher auf der API aufbauen.
@@ -19,7 +19,7 @@ Bei einer dokumentierten harten Blockade bleibt die betreffende Checkbox offen. 
     - Abnahme: Kein offener Pflichtbefund zur Extraktion; akzeptierte Restbefunde und verwendete Korrekturrunden sind dokumentiert, der geprüfte Commit ist benannt.
   - [x] **A2 — Codezeilenmessung ergänzen** — [Core-Roadmap, Punkt 2](../core-code-metriken/roadmap.md) vollständig ausführen und abnehmen.
   - [x] **A3 — Test-Roots klassifizieren** — [Core-Roadmap, Punkt 3](../core-code-metriken/roadmap.md) vollständig ausführen und abnehmen.
-  - [ ] **A4 — Core-Schlussaudit** — [Core-Roadmap, Punkt 4](../core-code-metriken/roadmap.md) mit einem unabhängigen Audit-Agenten ausführen; volle Gates und alle Core-Verträge prüfen. Falls die in [Status.md](Status.md) belegten vorbestehenden Integrationsfehler noch auftreten, gezielt die zugrunde liegende Ausnahme ermitteln und einen reproduzierbaren Defekt nur mit Rot-vor-Grün-Test beheben; keine bloßen Wiederholungsläufe. Ohne begründeten neuen Ansatz den Blocker dokumentieren und A4 offen lassen. Die Zahl der Korrekturrunden aus A1-Audit zählt zum Core-Limit. Audit-Ergebnis und etwaige Korrekturen dokumentieren und committen.
+  - [x] **A4 — Core-Schlussaudit** — [Core-Roadmap, Punkt 4](../core-code-metriken/roadmap.md) mit einem unabhängigen Audit-Agenten ausführen; volle Gates und alle Core-Verträge prüfen. Falls die in [Status.md](Status.md) belegten vorbestehenden Integrationsfehler noch auftreten, gezielt die zugrunde liegende Ausnahme ermitteln und einen reproduzierbaren Defekt nur mit Rot-vor-Grün-Test beheben; keine bloßen Wiederholungsläufe. Ohne begründeten neuen Ansatz den Blocker dokumentieren und A4 offen lassen. Die Zahl der Korrekturrunden aus A1-Audit zählt zum Core-Limit. Audit-Ergebnis und etwaige Korrekturen dokumentieren und committen.
 
 ## B. Fehlende Testevidenz
 

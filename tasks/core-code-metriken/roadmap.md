@@ -20,7 +20,7 @@ The contract is [Konzept.md](Konzept.md). Complete the points in order. Each imp
   - Not: Call-graph traversal, test-data execution, dynamic skip evaluation, new Core framework dependencies, or registration of `missing-test-evidence-candidates`.
   - Acceptance: Metadata-referenced FastTests cover every recognized framework root, derived and interface attributes, MSTest class requirements, parameterized methods as one root, global versus per-case skips, dynamic skip cases, lookalike source attributes, ordinary helpers, and production projects. Run affected FastTests, the build gate, the documentation check, and `git diff --check` before committing.
 
-- [ ] **4. Final audit**
+- [x] **4. Final audit**
   - Intention: Confirm that the completed Core foundation matches the ready concept and has not changed existing review behavior.
   - Scope: Review the three APIs, tests, outlier-analysis regression, dependency boundary, relevant `docs/` pages, and commits against every contract and scope limit in [Konzept.md](Konzept.md). Run the complete normal FastTests and IntegrationTests scripts, excluding the separately invoked manual Audit and Performance categories, plus the build gate and `git diff --check`; record concrete gaps for correction if needed.
   - Not: Implementing either follow-on review analysis, adding speculative shared abstractions, or changing selection thresholds.
