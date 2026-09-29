@@ -112,6 +112,24 @@ public sealed class CurrentFindingValidator
                 }
             }
 
+            if (finding.RelatedSymbols is null || finding.RelatedSymbols.Count == 0)
+            {
+                throw Invalid("Each finding must identify at least one source symbol.");
+            }
+
+            foreach (var symbol in finding.RelatedSymbols)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (symbol is null
+                    || string.IsNullOrWhiteSpace(symbol.SymbolId)
+                    || !TryGetProjectOwnedSource(symbol.ProjectPath, symbol.SourcePath, sourceDocuments, projectPaths, out var symbolSource))
+                {
+                    throw Invalid("Finding related symbols must identify a loaded C# source declaration in their project.");
+                }
+
+                ValidateLine(symbol.Line, symbolSource.Text.Lines.Count, "Finding related symbol line");
+            }
+
             var key = new FindingKey(analysisId, finding.ProjectPath, finding.SourcePath, finding.SubjectId, finding.Discriminator);
             if (!uniqueKeys.Add(key))
             {

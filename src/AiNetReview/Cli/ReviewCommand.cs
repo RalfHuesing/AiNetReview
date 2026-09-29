@@ -1,6 +1,7 @@
 namespace AiNetReview.Cli;
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
@@ -163,11 +164,29 @@ public sealed class ReviewCommand
 
             using (loaded)
             {
+                IReadOnlyDictionary<string, string>? baselineFiles;
+                try
+                {
+                    baselineFiles = await services.GetRequiredService<BaselineReader>()
+                        .ReadAsync(config.ResolvedOutputDirectory, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    logger.LogError(exception, "Source baseline could not be read");
+                    await WriteErrorAsync(standardError, "ANALYSIS_FAILED", "Source baseline could not be read.")
+                        .ConfigureAwait(false);
+                    return AnalysisFailedExitCode;
+                }
+
                 ReviewRunResult result;
                 try
                 {
                     result = await services.GetRequiredService<ReviewRunner>()
-                        .RunAsync(config, loaded, cancellationToken).ConfigureAwait(false);
+                        .RunAsync(config, loaded, cancellationToken, baselineFiles).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {

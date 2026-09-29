@@ -38,7 +38,7 @@ public sealed class BaselineWriter
 
         var baselinePath = Path.Combine(config.ResolvedOutputDirectory, "baseline.json");
         var temporaryPath = Path.Combine(config.ResolvedOutputDirectory, $".baseline-{Guid.NewGuid():N}.tmp");
-        var document = new BaselineDocument(1, loadedSolution.SourceFiles);
+        var document = new SourceBaselineDocument(1, loadedSolution.SourceFiles);
         var published = false;
         try
         {
@@ -69,6 +69,4 @@ public sealed class BaselineWriter
             }
         }
     }
-
-    private sealed record BaselineDocument(int SchemaVersion, System.Collections.Generic.IReadOnlyList<SourceFileSnapshot> Files);
 }

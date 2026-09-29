@@ -87,7 +87,8 @@ public sealed class DuplicateCodeCandidatesAnalysis : IReviewAnalysis
                     ["similarityScore"] = cluster.Score,
                     ["minimumSimilarityThreshold"] = threshold,
                 },
-                evidence));
+                evidence,
+                cluster.Members.Select(static member => new FindingSymbol(member.ProjectPath, member.SourcePath, member.Identity, member.Line))));
         }
 
         return new ReviewAnalysisResult(findings);

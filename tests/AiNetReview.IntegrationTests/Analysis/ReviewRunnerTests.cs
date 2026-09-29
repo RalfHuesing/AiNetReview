@@ -125,6 +125,74 @@ public sealed class ReviewRunnerTests
         Assert.Same(finding, Assert.Single(Assert.Single(result.Analyses).Result.Findings));
     }
 
+    [Fact]
+    public async Task RunAsync_UsesCompleteSnapshotForFileSelectionAndCrossAnalysisSymbolLinks()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, includeSecondProject: true);
+        var sharedSymbol = new FindingSymbol("Sample/Sample.csproj", "Sample/FixtureCases.cs", "M:Sample.FixtureCases.FixtureCaseA", 4);
+        var otherSymbol = new FindingSymbol("Other/Other.csproj", "Other/Other.cs", "M:Other.Other.Value", 1);
+        var alphaFinding = new FindingDraft(
+            sharedSymbol.ProjectPath, sharedSymbol.SourcePath, sharedSymbol.SymbolId, "flow", 4, "Shared symbol.",
+            new Dictionary<string, double>(), [new FindingEvidence(sharedSymbol.SourcePath, 4, "Method", "Shared", "FixtureCaseA")]);
+        var betaFinding = new FindingDraft(
+            sharedSymbol.ProjectPath, sharedSymbol.SourcePath, sharedSymbol.SymbolId, "dead", 4, "Shared symbol.",
+            new Dictionary<string, double>(), [new FindingEvidence(sharedSymbol.SourcePath, 4, "Method", "Shared", "FixtureCaseA")]);
+        var unrelatedFinding = CreateFinding("Sample/FixtureCases.cs", "M:Sample.FixtureCases.Other", 5, "FixtureCaseB");
+        var clusterFinding = new FindingDraft(
+            sharedSymbol.ProjectPath, sharedSymbol.SourcePath, "cluster:shared-and-other", "cluster", 4, "Cross-project cluster.",
+            new Dictionary<string, double>(),
+            [
+                new FindingEvidence(sharedSymbol.SourcePath, 4, "Member", "Shared member", "FixtureCaseA"),
+                new FindingEvidence(otherSymbol.SourcePath, 1, "Member", "Other member", "LoadedOtherValue"),
+            ],
+            [sharedSymbol, otherSymbol]);
+        var config = CreateConfig(root, [
+            new TestFindingAnalysis("alpha-analysis", [alphaFinding]),
+            new TestFindingAnalysis("beta-analysis", [betaFinding]),
+            new TestFindingAnalysis("other-analysis", [unrelatedFinding]),
+            new TestFindingAnalysis("cluster-analysis", [clusterFinding]),
+        ]);
+        using var loaded = await new SolutionLoader().LoadAsync(config);
+        var runner = new ReviewRunner();
+        var unchangedBaseline = loaded.SourceFiles.ToDictionary(static file => file.Path, static file => file.Sha256, StringComparer.Ordinal);
+        var completeRun = await runner.RunAsync(config, loaded, baselineFiles: unchangedBaseline);
+        var withoutBaseline = await runner.RunAsync(config, loaded);
+
+        Assert.Equal(4, completeRun.DetectedCount);
+        Assert.Equal(4, completeRun.Findings.Count);
+        Assert.All(completeRun.Findings, static finding => Assert.Empty(finding.ChangedSourcePaths));
+        Assert.Equal(completeRun.Analyses.SelectMany(static analysis => analysis.Result.Findings).Select(static finding => finding.SubjectId),
+            withoutBaseline.Analyses.SelectMany(static analysis => analysis.Result.Findings).Select(static finding => finding.SubjectId));
+        Assert.All(withoutBaseline.Findings, static finding => Assert.NotEmpty(finding.ChangedSourcePaths));
+
+        var alphaReview = Assert.Single(completeRun.Findings.Where(static item => item.AnalysisId == "alpha-analysis"));
+        Assert.Equal(new[] { "beta-analysis", "cluster-analysis" }, alphaReview.RelatedFindings.Select(static item => item.AnalysisId));
+        var clusterReference = Assert.Single(alphaReview.RelatedFindings.Where(static item => item.AnalysisId == "cluster-analysis"));
+        Assert.Equal("Sample/FixtureCases.cs", clusterReference.SymbolSourcePath);
+        Assert.Equal(sharedSymbol.SymbolId, clusterReference.SymbolId);
+        Assert.Equal(sharedSymbol.Line, clusterReference.SymbolLine);
+        var unrelatedReview = Assert.Single(completeRun.Findings.Where(static item => item.AnalysisId == "other-analysis"));
+        Assert.Empty(unrelatedReview.RelatedFindings);
+        var clusterReview = Assert.Single(completeRun.Findings.Where(static item => item.AnalysisId == "cluster-analysis"));
+        Assert.Equal(new[] { "Other/Other.cs", "Sample/FixtureCases.cs" }, clusterReview.SourcePaths);
+        Assert.Equal(new[] { "alpha-analysis", "beta-analysis" }, clusterReview.RelatedFindings.Select(static item => item.AnalysisId));
+
+        var otherPath = Assert.Single(loaded.SourceFiles.Where(static file => file.Path == "Other/Other.cs")).Path;
+        unchangedBaseline[otherPath] = new string('0', 64);
+        var changedRun = await runner.RunAsync(config, loaded, baselineFiles: unchangedBaseline);
+        var selected = changedRun.Findings.Where(static item => item.IsChanged).ToArray();
+        Assert.Equal(new[] { "cluster-analysis" }, selected.Select(static item => item.AnalysisId));
+        Assert.Equal(new[] { "Other/Other.cs" }, Assert.Single(selected).ChangedSourcePaths);
+        Assert.Equal(4, changedRun.DetectedCount);
+
+        var samplePath = Assert.Single(loaded.SourceFiles.Where(static file => file.Path == "Sample/FixtureCases.cs")).Path;
+        unchangedBaseline[otherPath] = loaded.SourceFiles.Single(static file => file.Path == "Other/Other.cs").Sha256;
+        unchangedBaseline[samplePath] = new string('0', 64);
+        var sameFileChangedRun = await runner.RunAsync(config, loaded, baselineFiles: unchangedBaseline);
+        Assert.Equal(4, sameFileChangedRun.Findings.Count(static item => item.IsChanged));
+    }
+
     [Theory]
     [InlineData("Unknown/Unknown.cs", 1, "Missing")]
     [InlineData("Sample/../Sample/FixtureCases.cs", 4, "FixtureCaseA")]

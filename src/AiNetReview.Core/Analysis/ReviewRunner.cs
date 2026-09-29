@@ -18,7 +18,8 @@ public sealed class ReviewRunner
     public async Task<ReviewRunResult> RunAsync(
         ReviewConfig config,
         LoadedSolution loadedSolution,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyDictionary<string, string>? baselineFiles = null)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(loadedSolution);
@@ -67,7 +68,10 @@ public sealed class ReviewRunner
             results.Add(new ReviewAnalysisRunResult(configuredAnalysis.AnalysisId, new ReviewAnalysisResult(findings)));
         }
 
-        return new ReviewRunResult(Array.AsReadOnly(results.ToArray()));
+        return new ReviewRunResult(Array.AsReadOnly(results.ToArray()))
+        {
+            Findings = ReviewFindingBuilder.Build(results, loadedSolution.SourceFiles, baselineFiles),
+        };
     }
 
     private static StringComparer PathComparer => OperatingSystem.IsWindows()
@@ -83,4 +87,7 @@ public sealed record ReviewAnalysisRunResult(string AnalysisId, ReviewAnalysisRe
 public sealed record ReviewRunResult(IReadOnlyList<ReviewAnalysisRunResult> Analyses)
 {
     public int DetectedCount => Analyses.Sum(static analysis => analysis.DetectedCount);
+
+    /// <summary>Per-finding source, comparison, and cross-analysis relationships for report generation.</summary>
+    public IReadOnlyList<ReviewFinding> Findings { get; init; } = Array.Empty<ReviewFinding>();
 }

@@ -8,7 +8,7 @@ Verbindlicher Produktvertrag: [Konzept](Konzept.md). Jeder Punkt ist ein abgesch
   - Nicht: Findings speichern, einen Berichtslauf voraussetzen, Git zur Laufzeit verwenden oder die Review-Analysen verändern.
   - Abnahme: Automatisierte Tests belegen Baseline-Erzeugung ohne Audit, identische Hashes für denselben Quell-Snapshot in beiden Aufrufwegen, Dateien ohne Findings, erneutes Erzeugen nach Änderung/Löschung sowie Erhalt der alten Datei bei Fehlern. Betroffene CLI- und Konfigurationsdokumentation entspricht dem implementierten Stand; erforderliche Projekt-Gates laufen vor dem Commit.
 
-- [ ] **2 — Vollständige Ergebnisse, Dateifilter und Beziehungen**
+- [x] **2 — Vollständige Ergebnisse, Dateifilter und Beziehungen**
   - Intention: Ein Audit erzeugt aus denselben vollständigen Analyseergebnissen die ungefilterte und die dateigefilterte Sicht.
   - Scope: Alle aktiven Analysen unabhängig von der Baseline ausführen und validieren. Für jedes Finding die beteiligten Quelldateien bestimmen, einschließlich aller Mitglieder eines Duplicate-Code-Clusters; Dateihashes pro Lauf nur einmal berechnen. Bei fehlender Baseline alles, sonst Findings mit mindestens einer neuen oder geänderten beteiligten Datei für `changed-files/` auswählen. Zusammengehörige Symbole über Analysen und Cluster hinweg vor dem Rendern erkennen und konkrete Querverweise bereitstellen. `all-findings/` behält auch Befunde in unveränderten Dateien, die durch Änderungen anderswo entstanden sind.
   - Nicht: Entscheidungen pro Finding persistieren, einen allgemeinen Wirkungsgraphen zur Erkennung indirekter Änderungen bauen oder mehrere eigenständige Signale zu einem Defekturteil verschmelzen.

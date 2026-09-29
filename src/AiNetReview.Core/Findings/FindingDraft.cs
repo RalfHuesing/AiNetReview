@@ -14,7 +14,8 @@ public sealed class FindingDraft
         int startLine,
         string rationale,
         IReadOnlyDictionary<string, double> metrics,
-        IEnumerable<FindingEvidence> evidence)
+        IEnumerable<FindingEvidence> evidence,
+        IEnumerable<FindingSymbol>? relatedSymbols = null)
     {
         ProjectPath = projectPath;
         SourcePath = sourcePath;
@@ -24,6 +25,12 @@ public sealed class FindingDraft
         Rationale = rationale;
         Metrics = new ReadOnlyDictionary<string, double>(new SortedDictionary<string, double>(metrics.ToDictionary(static pair => pair.Key, static pair => pair.Value), System.StringComparer.Ordinal));
         Evidence = Array.AsReadOnly(evidence.ToArray());
+        RelatedSymbols = Array.AsReadOnly((relatedSymbols ?? [new FindingSymbol(projectPath, sourcePath, subjectId, startLine)])
+            .Distinct()
+            .OrderBy(static symbol => symbol.ProjectPath, System.StringComparer.Ordinal)
+            .ThenBy(static symbol => symbol.SourcePath, System.StringComparer.Ordinal)
+            .ThenBy(static symbol => symbol.SymbolId, System.StringComparer.Ordinal)
+            .ToArray());
     }
 
     public string ProjectPath { get; }
@@ -42,6 +49,11 @@ public sealed class FindingDraft
 
     public IReadOnlyList<FindingEvidence> Evidence { get; }
 
+    /// <summary>Source symbols represented by this finding, including members represented by a cluster.</summary>
+    public IReadOnlyList<FindingSymbol> RelatedSymbols { get; }
+
 }
 
 public sealed record FindingEvidence(string SourcePath, int Line, string Label, string Detail, string Snippet);
+
+public sealed record FindingSymbol(string ProjectPath, string SourcePath, string SymbolId, int Line);
