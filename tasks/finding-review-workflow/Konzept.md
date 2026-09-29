@@ -1,5 +1,5 @@
 ---
-status: draft
+status: ready
 ---
 
 # Dateibasierter Audit-Vergleich
@@ -14,7 +14,7 @@ Mehrere Review-Analysen sollen bei wiederholten Audits ein vollständiges Gesamt
 - Der konfigurierte `outputDirectory` liegt im Projektbereich und ist standardmäßig `audit-reporting`. Dieses Repository ignoriert `audit-reporting/` per `.gitignore`; andere Audit-Ziele können einen anderen Ausgabepfad wählen. Der Produktlauf benötigt kein Git.
 - `dead-code-candidates` bewertet Verwendungen in der gesamten geladenen Lösung; `method-control-flow-outliers` benutzt eine relative Projektauswahl. Ein neuer Befund kann daher in einer unveränderten Datei entstehen, nachdem sich andere Dateien geändert haben.
 
-## Empfohlenes Modell (Draft)
+## Modell
 
 1. **Analysen bleiben baselineblind.** Jede aktive Analyse gibt in jedem erfolgreichen Audit alle aktuellen Findings strukturiert an die zentrale Laufstufe zurück. Erst nach vollständiger Validierung werden Zusammenhänge zwischen Analysen bestimmt, Dateihashes berechnet und die beiden Berichtsansichten erstellt. Die Analysen erzeugen kein Markdown und keine Hashes.
 2. **Baseline ist ein Dateistand.** Eine gemeinsame `baseline.json` liegt direkt im aufgelösten Ausgabeverzeichnis, neben den Laufverzeichnissen. Sie enthält für jede im konfigurierten Projekt analysierbare Quelldatei deren normalisierten Projektpfad und SHA-256, auch wenn die Datei keine Findings hat. Baseline-Erzeugung und Audit benutzen denselben Dateiumfang und dieselbe Hash-Bildung. Die zentrale Laufstufe berechnet jeden Dateihash nur einmal pro Aufruf. Fehlt die Baseline, gelten alle Dateien als neu. Der nächste Baseline-Aufruf ersetzt den gesamten gespeicherten Dateistand, einschließlich der Bereinigung inzwischen gelöschter Dateien.
