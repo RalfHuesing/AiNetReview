@@ -6,7 +6,7 @@
 - B2a baut einen deterministischen semantischen Graphen aus allen geladenen C#-Projekten und source-generated Dokumenten. Nicht-generierte Testmethoden werden ausschließlich über `TestFrameworkClassifier.IsActiveTestRoot` zu Roots. Graphkanten decken Invocations, Konstruktoren, Property-Getter/-Setter, Event-Add/-Remove sowie benutzerdefinierte Operatoren und Konversionen ab. Aufrufe innerhalb von Lambdas und lokalen Funktionen werden der äußeren Methode zugerechnet. Private Methoden, Cross-Project-Methoden und generierte Zwischenmethoden bleiben im Graph.
 - Method groups, unaufgelöste Bindings und virtuelle/Interface-Aufrufe werden als Unsicherheitseingaben festgehalten; der Graph fügt keine Laufzeitziele hinzu. Nicht verfügbare erforderliche Compilation- und SemanticModel-Werte lösen `AnalysisFailedException` aus.
 - Verifikation: fokussierte `MissingTestEvidenceSemanticGraphBuilderTests` **6/6 bestanden**; vollständige FastTests **225/225 bestanden**; `pwsh -File ./scripts/build.ps1` **0 Warnungen, 0 Fehler**; `git diff --check` bestanden. `docs/architecture/dependencies.md`, `docs/development/adding-review-analyses.md` und `docs/README.md` geprüft; B2a ist ein noch nicht integrierter Analysebaustein, daher war keine aktuelle Produktdokumentation zu ändern.
-- B2a-Commit: `feat(test-analysis): build semantic test-path graph` (atomarer B2a-Slice; Hash wird durch den Git-Commitverlauf belegt).
+- B2a-Commit: `395468d3b55cf56ad5dd0a581f25cada6b25f2a9` (`feat(test-analysis): build semantic test-path graph`, atomarer B2a-Slice).
 - Nächster Punkt: **B2b — Testpfade klassifizieren**. B2, der Testabdeckungs-Task und dessen Audit bleiben offen.
 
 ## Historische Vorabprüfung vom 29.09.2026
