@@ -1,6 +1,6 @@
 # Roadmap: Review-Analyse Non-ASCII Identifiers (`non-ascii-identifiers`)
 
-- [ ] **Punkt 1 — Core-Analyse `NonAsciiIdentifiersAnalysis` und FastTests implementieren**
+- [x] **Punkt 1 — Core-Analyse `NonAsciiIdentifiersAnalysis` und FastTests implementieren**
   - Intention: Implementierung von `NonAsciiIdentifiersAnalysis` (`IReviewAnalysis`) in `AiNetReview.Core` mit `ReviewAnalysisDescriptor` (`analysisId`: `"non-ascii-identifiers"`, `defaultEnabled: true`, keine Optionen), Syntax-Prüfung für Namespaces, Typen, Typ-Mitglieder, Parameter und lokale Funktionen/Variablen, Verbatim-Handling (`@`), Erzeugung deterministischer `FindingDraft`-Objekte und Ignorieren von Testprojekten sowie generierten Dateien via `ReviewSourceClassifier`.
   - Nicht: Keine Host-Registrierung oder Doku-Änderungen in diesem Schritt.
   - Abnahme: `NonAsciiIdentifiersAnalysisTests` in `AiNetReview.FastTests` prüft alle Bezeichner-Typen, Sonderzeichen/Umlaute, Verbatim-Bezeichner und Ausschlussfilter erfolgreich.
