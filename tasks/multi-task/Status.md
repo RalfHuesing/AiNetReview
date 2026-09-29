@@ -16,7 +16,17 @@ Auf Nutzerwunsch wurden die zwei zuvor auffälligen Integrationstests probeweise
 
 ## Nächster Punkt
 
-[A2 — Codezeilenmessung ergänzen](roadmap.md) ist die nächste ausführbare Checkbox.
+[A3 — Test-Roots klassifizieren](roadmap.md) ist die nächste ausführbare Checkbox.
+
+## A2 — Tokenbasierte Codezeilenmessung
+
+- Ausgangsstand vor Edits: `HEAD 671f4e3eb3fe299d17c8f69f14221dd2ebd1256a`, Arbeitsbaum sauber.
+- Implementiert `CodeLineMetrics` mit Token-Startzeilen, ausführbaren Deklarationen samt Body-/Accessor-Regeln und eigenen Typteilzeilen ohne geschachtelte Typen oder Delegates. Lokale Funktionen und Lambdas bleiben Teil der umgebenden Deklarationsmessung.
+- Contracttests in `CodeLineMetricsTests` prüfen Trivia, Direktiven, Blockklammern, mehrzeilige Literale, fehlende Tokens/EOF, alle unterstützten Deklarationsformen, bodylose und partielle Methoden, Accessors, lokale Funktionen/Lambdas sowie getrennte und gemeinsame Zeilen geschachtelter Typen.
+- Dokumentationsabgleich: `docs/README.md`, `docs/development/adding-review-analyses.md` und `docs/architecture/dependencies.md` geprüft. A2 ergänzt keine Review-Analyse oder Projektabhängigkeit; keine Current-State-Seite musste geändert werden.
+- Verifikation: fokussierte Contracttests 11/11 und `scripts/test-fast.ps1` 212/212 bestanden; `scripts/build.ps1` mit 0 Warnungen und 0 Fehlern bestanden; `git diff --check` bestanden.
+- A2-Dateien: `src/AiNetReview.Core/Analysis/CodeLineMetrics.cs`, `tests/AiNetReview.FastTests/Analysis/CodeLineMetricsTests.cs`, beide Core-Roadmaps und dieses Statusdokument.
+- A2-Commit: wird nach dem Commit ergänzt.
 
 ## A1 — Kontrollflussmessung extrahiert
 

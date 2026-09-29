@@ -8,7 +8,7 @@ The contract is [Konzept.md](Konzept.md). Complete the points in order. Each imp
   - Not: New counted syntax, a different decision model, or additional candidate kinds in the existing analysis.
   - Acceptance: Focused FastTests cover every decision form, depth and tie rule, empty bodies, invalid input, and nested-function exclusions from the concept. Existing analysis tests and targeted regression cases verify unchanged candidate identities, metrics, and evidence. Run affected FastTests, IntegrationTests, the build gate, the documentation check, and `git diff --check` before committing.
 
-- [ ] **2. Add token-based code-line measurements**
+- [x] **2. Add token-based code-line measurements**
   - Intention: Provide one deterministic line-counting rule for the future size analysis.
   - Scope: Implement the three `CodeLineMetrics` operations from the concept: generic token-start lines, executable declarations with the no-body rule, and own type-part lines excluding nested types and delegates. Keep partial-type aggregation and file-size measurement with the future consumer.
   - Not: Size thresholds, candidate selection, `BranchTrivialityDetector`, file-byte measurements, or changes to review findings.
