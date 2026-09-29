@@ -4,15 +4,9 @@ Verbindlich ist [Konzept.md](Konzept.md). Jede ausführbare Umsetzung-Checkbox o
 
 Es läuft immer nur **ein** Agent. Orchestrator: `gpt-6-sol/high`; Umsetzung und Korrektur: `gpt-6-luna/high`; Audit: `gpt-6-sol/medium`. Audits melden belegte Findings; nur ein danach gestarteter Implementierungs-Agent ändert Code. Nach jedem Fix folgt ein erneuter unabhängiger Audit. Höchstens drei Review–Fix-Runden je Fach-Task insgesamt und drei beim Gesamtaudit; ohne begründeten neuen Ansatz endet ein blockierter Task früher. Diese Nutzervorgabe gilt hier auch dort, wo eine Fach-Roadmap oder der allgemeine Schritt-3-Workflow nur einen Korrekturpass nennt. Alle Ergebnisse, Restbefunde, Gates und Commit-Hashes stehen knapp in `Status.md`; kein Agentenprotokoll anlegen.
 
+Für einen Umsetzungspunkt laufen die **betroffenen** Tests und die von seiner Fach-Roadmap geforderten Gates. Die vollständigen normalen FastTests- und IntegrationTests-Skripte laufen bei den ausdrücklich genannten Integrations- und Schlussabnahmen, nicht nach jedem Leaf aus Gewohnheit. Ein roter vollständiger Lauf wird anhand des betroffenen Tests untersucht; derselbe Gesamtlauf wird nicht bloß in der Hoffnung auf Grün wiederholt. Tests werden weder per `#if false` noch per Filter aus einer vorgeschriebenen Abnahme entfernt.
+
 Bei einer dokumentierten harten Blockade bleibt die betreffende Checkbox offen. Der Orchestrator nimmt danach die erste **erreichbare** offene Checkbox: Ein nicht abgeschlossener Core-Task verhindert beide Folgetasks; eine nur auf Testabdeckung begrenzte Blockade verhindert die Größenanalyse nicht. Ein fehlgeschlagener Agentenlauf wird nicht ohne geänderten Ansatz wiederholt. Die Fachkonzepte und Repository-Regeln bleiben maßgeblich; keine Produktanforderung wird hier neu entschieden.
-
-## 0. Ausgangs-Gates
-
-- [ ] **P0 — Vorbestehende Integrationsfehler klären**
-  - Intention: Die späteren Task-Audits sollen nicht an einem schon vor A1 instabilen Gate hängen bleiben.
-  - Scope: Die in [Status.md](Status.md) belegten Hostprozess- und Reportpublikationsfehler in einer fokussierten Diagnose untersuchen und die zugrunde liegende Ausnahme ermitteln. Einen reproduzierbaren Repository-Defekt mit einem zunächst fehlgeschlagenen Vertragstest in höchstens einem separaten atomaren Korrektur-Slice beheben; danach die normalen FastTests- und IntegrationTests-Skripte sowie den Build prüfen. Bei einem bloß umgebungsbedingten Fehler Ursache und belastbaren Gegencheck festhalten. Bleibt derselbe Fehler ohne neue konkrete Hypothese bestehen, die Blockade dokumentieren und stoppen; keine Testlauf-Schleife.
-  - Nicht: Fehlende Tests überspringen, Gates abschwächen, Audit-/Performance-Kategorien als Standardlauf starten oder die Fachanalysen vorziehen.
-  - Abnahme: Der fokussierte Gegencheck und je ein vollständiger normaler FastTests- und IntegrationTests-Lauf sowie der Build bestehen nach der geklärten Ursache; ein reproduzierbarer Defekt hat einen Rot-vor-Grün-Test. Andernfalls bleibt P0 mit konkreter Ursache offen. Sind die fehlgeschlagenen Tests nachweislich unabhängig von A1–A3 und bestehen deren betroffene Tests, dürfen diese Core-Slices sequenziell weitergehen; bei einer relevanten Gate-Störung sofort blockieren. A4 und damit die Core-Abnahme bleiben bis zu grünen normalen Gates offen. Diagnose, Prüfergebnisse und etwaiger Commit stehen in `Status.md`.
 
 ## A. Gemeinsame Core-Bausteine
 
@@ -25,7 +19,7 @@ Bei einer dokumentierten harten Blockade bleibt die betreffende Checkbox offen. 
     - Abnahme: Kein offener Pflichtbefund zur Extraktion; akzeptierte Restbefunde und verwendete Korrekturrunden sind dokumentiert, der geprüfte Commit ist benannt.
   - [ ] **A2 — Codezeilenmessung ergänzen** — [Core-Roadmap, Punkt 2](../core-code-metriken/roadmap.md) vollständig ausführen und abnehmen.
   - [ ] **A3 — Test-Roots klassifizieren** — [Core-Roadmap, Punkt 3](../core-code-metriken/roadmap.md) vollständig ausführen und abnehmen.
-  - [ ] **A4 — Core-Schlussaudit** — [Core-Roadmap, Punkt 4](../core-code-metriken/roadmap.md) mit einem unabhängigen Audit-Agenten ausführen; volle Gates und alle Core-Verträge prüfen. Die Zahl der Korrekturrunden aus A1-Audit zählt zum Core-Limit. Audit-Ergebnis und etwaige Korrekturen dokumentieren und committen.
+  - [ ] **A4 — Core-Schlussaudit** — [Core-Roadmap, Punkt 4](../core-code-metriken/roadmap.md) mit einem unabhängigen Audit-Agenten ausführen; volle Gates und alle Core-Verträge prüfen. Falls die in [Status.md](Status.md) belegten vorbestehenden Integrationsfehler noch auftreten, gezielt die zugrunde liegende Ausnahme ermitteln und einen reproduzierbaren Defekt nur mit Rot-vor-Grün-Test beheben; keine bloßen Wiederholungsläufe. Ohne begründeten neuen Ansatz den Blocker dokumentieren und A4 offen lassen. Die Zahl der Korrekturrunden aus A1-Audit zählt zum Core-Limit. Audit-Ergebnis und etwaige Korrekturen dokumentieren und committen.
 
 ## B. Fehlende Testevidenz
 
