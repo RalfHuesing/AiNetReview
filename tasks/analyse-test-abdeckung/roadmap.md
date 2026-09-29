@@ -23,7 +23,7 @@ The contract is [Konzept.md](Konzept.md). [Shared code measurements and test roo
     - Not: Findings, report publication, reflection resolution, runtime branch claims, or reimplementing 2a's semantic bindings.
     - Acceptance: Focused tests cover direct test-helper, indirect production-chain, private, cyclic and generated-code paths; direct precedence, shortest-path ties, no path from an unexecuted helper, and affected/global uncertainty without false attribution. Run affected FastTests and the build gate, review docs, update this checkbox and commit. Then verify and close aggregate point 2.
 
-- [ ] **3. Review-analysis findings and options**
+- [x] **3. Review-analysis findings and options**
   - Intention: Turn zero-path and sufficiently complex indirect-only functions into distinctly labeled review findings.
   - Scope: Implement `missing-test-evidence-candidates` behavior version 1 using points 1–2, with descriptor defaults and validation for the four positive integer thresholds, category selection, symbol identity, evidence, numeric metrics, compact signals, indirect-path data, review questions, and deterministic ordering. Keep the analysis unregistered until point 4 so it cannot publish with the old changed-files behavior.
   - Not: Build diagnostics, test generation, minimum test counts, suppressions, or changes to other analysis thresholds.

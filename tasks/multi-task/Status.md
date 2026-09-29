@@ -1,6 +1,13 @@
 # Laufstand: Drei Review-Tasks
 
-## Aktueller Stand — B2-Nachaudit abgenommen, B3 als Nächstes (30.09.2026)
+## Aktueller Stand — B3 abgenommen, B4 als Nächstes (30.09.2026)
+
+- B3 implementiert `missing-test-evidence-candidates` als Core-Analyse mit Behavior-Version 1, exakt vier positiven Int32-Optionen und Konzept-Defaults. Sie bleibt bis B4 unregistriert; Host, changed-files-Auswahl, Berichtsansichten, Beispielkonfiguration und aktuelle Produktdokumentation wurden nicht verändert.
+- Findings unterscheiden `no-static-test-path` und `indirect-test-path-only`. Direkte Pfade unterdrücken Findings; indirekte Kandidaten müssen zusätzlich beide Gates erfüllen. Metriken enthalten Rohwerte und alle effektiven Schwellen. Signale nennen Kategorie und Unsicherheit; indirekte Findings enthalten einen kürzesten aufgelösten Pfad mit Symbol-IDs und Quellpositionen. Validator-kompatible Deklarations-/Pfad-Evidenz und Review-Fragen sind enthalten.
+- Verifikation: fokussierte `MissingTestEvidence`-FastTests **19/19 bestanden**; vollständige FastTests **235/235 bestanden**, keine Skips; `pwsh -File ./scripts/build.ps1` **0 Warnungen, 0 Fehler**; `git diff --check` bestanden. Doku-Abgleich: keine `docs/`-Änderung nötig, da die Analyse absichtlich nicht registriert ist.
+- Slice-Commit: `feat(test-analysis): add missing-test-evidence findings and options`. Keine IntegrationTests ausgeführt; sie sind für die unregistrierte Analyse nicht B3-Gate. Kein offener B3-Pflichtbefund. Nächste ausführbare Checkbox: **B4 — Host-Registrierung, Baseline-Auswahl und Ist-Stand-Dokumentation**.
+
+## B2-Nachaudit abgenommen, B3 gestartet (30.09.2026)
 
 - Unabhängiger B2-Nachaudit prüfte B1 `1fc8480`, B2a `395468d`, B2b `948c369`, Erst-Audit `00f004e` und Korrektur `29f35b6f22b520e79863b9a59c3d9f8c0a822de0`. Alle drei Pflichtbefunde sind behoben: Der expression-bodied Indexer-Getter wird als Kandidat mit gemeinsamem `ControlFlowMetrics` gemessen; expression-bodied Property- und Indexer-Getter sind Graphknoten mit ausgehenden Aufrufen; Property- und Event-Accessor-Zugriffe laufen über `AddCall` und erfassen mögliche virtuelle/Interface-Dispatches als Unsicherheit. Die statisch gebundenen Ziele bleiben die einzigen aufgelösten Kanten.
 - Stichprobe des B1/B2-Gesamtvertrags: Die Kandidatenauswahl filtert Produktionsprojekte, generierte Dokumente und Symbole und wendet beide OR-Schwellenpaare mit der zusätzlichen Nichttrivialitätsbedingung an. Roots kommen allein aus `TestFrameworkClassifier`; Graph und Klassifikation decken direkte Test-Helper-Pfade, indirekte Produktionsketten, direkten Vorrang, ordinale kürzeste Pfade, Zyklen, private und generierte Zwischenknoten sowie affected/globale Unsicherheit aus erreichbaren Quellen ab. Methodengruppen und unaufgelöste oder virtuelle Aufrufe erzeugen keine erfundenen Laufzeitpfade. Keine Registrierung oder Behauptung von Laufzeitabdeckung.
