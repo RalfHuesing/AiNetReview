@@ -27,6 +27,9 @@ Auf Nutzerwunsch wurden die zwei zuvor auffälligen Integrationstests probeweise
 - Verifikation: fokussierte Contracttests 11/11 und `scripts/test-fast.ps1` 212/212 bestanden; `scripts/build.ps1` mit 0 Warnungen und 0 Fehlern bestanden; `git diff --check` bestanden.
 - A2-Dateien: `src/AiNetReview.Core/Analysis/CodeLineMetrics.cs`, `tests/AiNetReview.FastTests/Analysis/CodeLineMetricsTests.cs`, beide Core-Roadmaps und dieses Statusdokument.
 - A2-Commit: `feb1a6d2b2fc3362e11ea70dc806ec0b7d8de2f3` (`feat(core): add token-based code line metrics`).
+- Nachstichprobe: Konzept Abschnitt 2 verlangt, dass bei Property-/Indexer-Accessorliste nur die einzelnen Accessors ausführbare Einheiten sind. `CountExecutableDeclaration` gibt für Property/Indexer ohne eigenen Expression-Body jetzt 0 zurück; Accessors werden bei direkter Übergabe gezählt. Die Contracttests belegen beide Fälle.
+- Korrektur-Gates: fokussierte Contracttests 11/11 und vollständige FastTests 212/212 bestanden; `scripts/build.ps1` mit 0 Warnungen und 0 Fehlern bestanden; `git diff --check` bestanden. Doku-Suche bestätigt, dass die aktuelle `docs/` keine Beschreibung dieser Core-API enthält; keine Current-State-Seite musste geändert werden.
+- A2-Korrekturcommit: `b88b26214a0a97483158f8769061d3fbc1a81fa1` (`fix(core): measure property accessors individually`).
 
 ## A1 — Kontrollflussmessung extrahiert
 
