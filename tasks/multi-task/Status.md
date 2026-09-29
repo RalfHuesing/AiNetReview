@@ -27,6 +27,7 @@ Auf Nutzerwunsch wurden die zwei zuvor auffälligen Integrationstests probeweise
 - Dokumentationsabgleich: `docs/README.md`, `docs/development/adding-review-analyses.md` und `docs/architecture/dependencies.md` geprüft. Sie dokumentieren keinen aktiven Test-Root-Vertrag; die bestehende Projektklassifikation bleibt korrekt, daher keine Änderung unter `docs/`.
 - Verifikation: `TestFrameworkClassifierTests` 4/4 und vollständige FastTests 216/216 bestanden; `scripts/build.ps1` mit 0 Warnungen und 0 Fehlern bestanden; `git diff --check` bestanden. Keine IntegrationTests verwenden diesen noch nicht integrierten Core-Einstieg.
 - Keine Framework-Pakete oder AiNetLinter-Abhängigkeit in Core hinzugefügt; keine Callgraph- oder Folgetask-Analyse begonnen.
+- A3-Commit: `6526b5d` (`feat(core): classify active test roots`).
 - Nächster Schritt: A4 Core-Schlussaudit. Der vorbestehende flüchtige IntegrationTests-Befund bleibt offen und verhindert weiterhin die Core-Abnahme bis zum normalen Integration-Gate.
 
 ## A2 — Tokenbasierte Codezeilenmessung
