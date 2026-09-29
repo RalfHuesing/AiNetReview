@@ -113,7 +113,7 @@ public sealed class CodeLineMetricsTests
     }
 
     [Fact]
-    public void CountExecutableDeclaration_MeasuresPropertyAccessorsSeparately()
+    public void CountExecutableDeclaration_MeasuresPropertyAccessorsOnlyWhenPassedDirectly()
     {
         const string source = """
             class C
@@ -130,7 +130,7 @@ public sealed class CodeLineMetricsTests
             """;
         var property = Parse(source).DescendantNodes().OfType<PropertyDeclarationSyntax>().Single();
 
-        Assert.Equal(4, CodeLineMetrics.CountExecutableDeclaration(property));
+        Assert.Equal(0, CodeLineMetrics.CountExecutableDeclaration(property));
         Assert.Equal(4, CodeLineMetrics.CountExecutableDeclaration(property.AccessorList!.Accessors[0]));
         Assert.Equal(0, CodeLineMetrics.CountExecutableDeclaration(property.AccessorList.Accessors[1]));
     }
@@ -156,7 +156,9 @@ public sealed class CodeLineMetricsTests
         Assert.Equal(1, CodeLineMetrics.CountExecutableDeclaration(constructor));
         Assert.Equal(1, CodeLineMetrics.CountExecutableDeclaration(op));
         Assert.Equal(1, CodeLineMetrics.CountExecutableDeclaration(conversion));
-        Assert.Equal(2, CodeLineMetrics.CountExecutableDeclaration(indexer));
+        Assert.Equal(0, CodeLineMetrics.CountExecutableDeclaration(indexer));
+        Assert.Equal(1, CodeLineMetrics.CountExecutableDeclaration(indexer.AccessorList!.Accessors[0]));
+        Assert.Equal(1, CodeLineMetrics.CountExecutableDeclaration(indexer.AccessorList.Accessors[1]));
     }
 
     [Fact]

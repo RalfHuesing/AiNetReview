@@ -54,26 +54,12 @@ public static class CodeLineMetrics
 
     private static int CountProperty(PropertyDeclarationSyntax property)
     {
-        if (property.ExpressionBody is not null)
-        {
-            return CountTokenStartLines(property);
-        }
-
-        return property.AccessorList is null
-            ? 0
-            : property.AccessorList.Accessors.Sum(CountExecutableDeclaration);
+        return property.ExpressionBody is null ? 0 : CountTokenStartLines(property);
     }
 
     private static int CountIndexer(IndexerDeclarationSyntax indexer)
     {
-        if (indexer.ExpressionBody is not null)
-        {
-            return CountTokenStartLines(indexer);
-        }
-
-        return indexer.AccessorList is null
-            ? 0
-            : indexer.AccessorList.Accessors.Sum(CountExecutableDeclaration);
+        return indexer.ExpressionBody is null ? 0 : CountTokenStartLines(indexer);
     }
 
     private static bool HasBody(BlockSyntax? body, ArrowExpressionClauseSyntax? expressionBody) =>
