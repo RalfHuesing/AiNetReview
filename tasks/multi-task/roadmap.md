@@ -46,7 +46,7 @@ Start nur nach geschlossenem Core-Aggregat und Prüfung von `ControlFlowMetrics.
 - [ ] **Größen-Task abgeschlossen** — Aggregat aller folgenden Punkte; nur bei erfüllter Fach-Roadmap samt realer Stichprobe schließen.
   - [x] **C1 — Membergrößen messen** — [Größen-Roadmap, Punkt 1](../analyse-groessen/roadmap.md) vollständig ausführen und abnehmen.
   - [x] **C2 — Klassen und Dateien messen** — [Größen-Roadmap, Punkt 2](../analyse-groessen/roadmap.md) vollständig ausführen und abnehmen.
-  - [ ] **C2-Audit — Aggregation und Dateimaße prüfen**
+  - [x] **C2-Audit — Aggregation und Dateimaße prüfen**
     - Intention: Fehler bei `partial`-Teilen, verschachtelten Typen und Dateigrenzen vor der Registrierung entdecken.
     - Scope: Unabhängig Mess-APIs, Kandidaten, Auswahlpfade, Evidenz und `changed-files/` gegen [Größen-Konzept](../analyse-groessen/Konzept.md), C1/C2-Code und Tests prüfen; Findings und gegebenenfalls sequenzielle Fix-/Nachaudit-Runden in `Status.md` festhalten.
     - Nicht: Core-Metriken oder festgelegte Schwellenwerte still ändern.
