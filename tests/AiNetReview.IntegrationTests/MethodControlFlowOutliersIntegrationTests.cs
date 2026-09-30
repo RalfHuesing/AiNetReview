@@ -82,6 +82,10 @@ public sealed class MethodControlFlowOutliersIntegrationTests
         var report = await File.ReadAllTextAsync(reportPath);
         Assert.Contains("8 decisions across", report, StringComparison.Ordinal);
         Assert.Contains("(cutoff 8)", report, StringComparison.Ordinal);
+        Assert.Contains("each switch section or switch-expression arm once", report, StringComparison.Ordinal);
+        Assert.Contains("each entire switch once", report, StringComparison.Ordinal);
+        Assert.Contains("`&&`, `||`, and `??` do not add decisions", report, StringComparison.Ordinal);
+        Assert.Contains("these measures are not cyclomatic complexity", report, StringComparison.Ordinal);
         Assert.DoesNotContain("sourceSpanLines", report, StringComparison.Ordinal);
         Assert.Contains("Total findings: 1", report, StringComparison.Ordinal);
         Assert.Contains("#### File: Sample/Class1.cs (1 findings)", report, StringComparison.Ordinal);

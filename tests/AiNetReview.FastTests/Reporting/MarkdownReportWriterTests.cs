@@ -386,8 +386,8 @@ public sealed class MarkdownReportWriterTests
         ])
         {
             Findings = [
-                new ReviewFinding(analysis.Descriptor.AnalysisId, noPath, ["Sample/NoPath.cs"], [], []),
-                new ReviewFinding(analysis.Descriptor.AnalysisId, indirect, ["Sample/Indirect.cs", "Sample/Api.cs", "Sample.Tests/Tests.cs"], [], []),
+                new ReviewFinding(analysis.Descriptor.AnalysisId, noPath, ["Sample/NoPath.cs"], [], ["Sample/NoPath.cs"]),
+                new ReviewFinding(analysis.Descriptor.AnalysisId, indirect, ["Sample/Indirect.cs", "Sample/Api.cs", "Sample.Tests/Tests.cs"], [], ["Sample.Tests/Tests.cs"]),
                 new ReviewFinding(otherAnalysis.Descriptor.AnalysisId, otherFinding, ["Sample/Other.cs"], [], []),
             ],
             HasCSharpSnapshotChanges = false,
@@ -401,6 +401,10 @@ public sealed class MarkdownReportWriterTests
 
         Assert.Contains("no static test path; 3 decisions, nesting 2; attribution uncertain", allFindings, StringComparison.Ordinal);
         Assert.Contains("indirect test path only; 5 decisions, nesting 3", allFindings, StringComparison.Ordinal);
+        Assert.Contains("The `attribution uncertain` marker means the static test association may be incomplete", allFindings, StringComparison.Ordinal);
+        Assert.Contains("It does not assess test assertion quality.", allFindings, StringComparison.Ordinal);
+        Assert.Contains("each switch section or switch-expression arm once", allFindings, StringComparison.Ordinal);
+        Assert.Contains("`&&`, `||`, and `??` do not add decisions", allFindings, StringComparison.Ordinal);
         Assert.Contains("Shortest resolved test path:", allFindings, StringComparison.Ordinal);
         Assert.Contains("M:Sample.Tests.Tests.CallsApi (Sample.Tests/Tests.cs:3)", allFindings, StringComparison.Ordinal);
         Assert.Contains("M:Sample.GeneratedIntermediate.Run (Sample/Generated/Worker.g.cs:2)", allFindings, StringComparison.Ordinal);
@@ -419,11 +423,22 @@ public sealed class MarkdownReportWriterTests
         var selectedIndex = await File.ReadAllTextAsync(Path.Combine(changedSnapshotDirectory, "changed-files", "index.md"));
         Assert.Contains("no static test path", selected, StringComparison.Ordinal);
         Assert.Contains("indirect test path only", selected, StringComparison.Ordinal);
+        Assert.Contains("Changed-files selection is snapshot-wide because changes to test roots or the call graph can alter associations in unchanged production files.", selected, StringComparison.Ordinal);
+        Assert.Contains("Without a baseline, every current source file is treated as new.", selected, StringComparison.Ordinal);
+        Assert.Contains("#### File: Sample/NoPath.cs (1 findings; source new or changed)", selected, StringComparison.Ordinal);
+        Assert.Contains("#### File: Sample/Indirect.cs (1 findings; source unchanged; included snapshot-wide)", selected, StringComparison.Ordinal);
         Assert.DoesNotContain("Other Analysis", selectedIndex, StringComparison.Ordinal);
 
-        var withoutBaselineReport = await new MarkdownReportWriter().WriteAsync(config, result with { HasCSharpSnapshotChanges = null });
+        var withoutBaselineFindings = result.Findings.Select(static finding => finding with { ChangedSourcePaths = finding.SourcePaths }).ToArray();
+        var withoutBaselineReport = await new MarkdownReportWriter().WriteAsync(config, result with
+        {
+            Findings = withoutBaselineFindings,
+            HasCSharpSnapshotChanges = null,
+        });
         var withoutBaselineDirectory = Path.Combine(config.ResolvedOutputDirectory, withoutBaselineReport.RunId);
-        Assert.True(File.Exists(Path.Combine(withoutBaselineDirectory, "changed-files", "missing-test-evidence-candidates.md")));
+        var withoutBaseline = await File.ReadAllTextAsync(Path.Combine(withoutBaselineDirectory, "changed-files", "missing-test-evidence-candidates.md"));
+        Assert.Contains("#### File: Sample/NoPath.cs (1 findings; source new or changed)", withoutBaseline, StringComparison.Ordinal);
+        Assert.Contains("#### File: Sample/Indirect.cs (1 findings; source new or changed)", withoutBaseline, StringComparison.Ordinal);
     }
 
     [Fact]

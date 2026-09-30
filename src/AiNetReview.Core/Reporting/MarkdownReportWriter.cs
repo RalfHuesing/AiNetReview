@@ -373,9 +373,18 @@ public sealed class MarkdownReportWriter
             builder.Append("- ").Append(EscapeInline(question)).Append('\n');
         }
 
+        if (configuredAnalysis.AnalysisId is "method-control-flow-outliers" or "code-size-candidates" or "missing-test-evidence-candidates")
+        {
+            builder.Append("\nControl-flow counting: `decisionCount` counts each `if`, conditional expression, loop, and `catch` once, and each switch section or switch-expression arm once. `decisionConstructCount` counts each `if`, conditional expression, loop, and `catch` once and each entire switch once. Nesting is the maximum depth of counted decisions (`else if` chains stay at the same depth). Operators such as `&&`, `||`, and `??` do not add decisions; these measures are not cyclomatic complexity.\n");
+        }
+
         if (configuredAnalysis.AnalysisId == "missing-test-evidence-candidates")
         {
-            builder.Append("\nThis is static test-path evidence from the loaded snapshot, not runtime coverage. Reflection, dependency injection, external test projects, dynamic dispatch, branch execution, and custom test discovery can hide associations.\n");
+            builder.Append("\nThis is static test-path evidence from the loaded snapshot, not runtime coverage. The `attribution uncertain` marker means the static test association may be incomplete; it can result from reachable unresolved bindings, method groups, or virtual/interface dispatch, and may propagate to downstream methods over known calls. It does not assess test assertion quality. Reflection, dependency injection, external test projects, dynamic dispatch, branch execution, and custom test discovery can hide associations.\n");
+            if (viewDirectory == "changed-files")
+            {
+                builder.Append("\nChanged-files selection is snapshot-wide because changes to test roots or the call graph can alter associations in unchanged production files. Without a baseline, every current source file is treated as new. With a baseline, any added, changed, or deleted C# path selects all current findings; an unchanged C# snapshot selects none. The source status in each file heading describes only that representative file relative to the baseline; an unchanged status does not mean unaffected.\n");
+            }
         }
 
         var groups = findings
@@ -409,7 +418,13 @@ public sealed class MarkdownReportWriter
             foreach (var group in projectGroup)
             {
                 builder.Append("#### File: ").Append(EscapeInline(group.SourcePath)).Append(" (")
-                    .Append(group.Findings.Length.ToString(CultureInfo.InvariantCulture)).Append(" findings)\n\n");
+                    .Append(group.Findings.Length.ToString(CultureInfo.InvariantCulture)).Append(" findings");
+                if (viewDirectory == "changed-files" && configuredAnalysis.AnalysisId == "missing-test-evidence-candidates")
+                {
+                    builder.Append("; ").Append(GetMissingTestSourceStatus(group.Findings, group.SourcePath));
+                }
+
+                builder.Append(")\n\n");
                 foreach (var reviewFinding in group.Findings)
                 {
                     var finding = reviewFinding.Finding;
@@ -479,6 +494,13 @@ public sealed class MarkdownReportWriter
         }
 
         return builder.ToString();
+    }
+
+    private static string GetMissingTestSourceStatus(IReadOnlyList<ReviewFinding> findings, string sourcePath)
+    {
+        var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var sourceChanged = findings.Any(finding => finding.ChangedSourcePaths.Contains(sourcePath, pathComparer));
+        return sourceChanged ? "source new or changed" : "source unchanged; included snapshot-wide";
     }
 
     private static string FormatRelated(
@@ -610,7 +632,7 @@ public sealed class MarkdownReportWriter
                     .Append(FormatNumber(Metric(finding, "maxDecisionNesting")));
                 if (Metric(finding, "relativePathSelected") > 0)
                 {
-                    signal.Append("; relative length-and-control-flow path (minimum ")
+                    signal.Append("; relative length-and-control-flow criterion (minimum ")
                         .Append(FormatNumber(Metric(finding, "minMemberCodeLines"))).Append(", P")
                         .Append(FormatNumber(Metric(finding, "percentile"))).Append(" value ")
                         .Append(FormatNumber(Metric(finding, "memberPercentileValue"))).Append(')');
@@ -618,7 +640,7 @@ public sealed class MarkdownReportWriter
 
                 if (Metric(finding, "extremePathSelected") > 0)
                 {
-                    signal.Append("; extreme length path (threshold ")
+                    signal.Append("; extreme member-size threshold (")
                         .Append(FormatNumber(Metric(finding, "extremeMemberCodeLines"))).Append(')');
                 }
 
@@ -632,7 +654,7 @@ public sealed class MarkdownReportWriter
                     .Append(FormatNumber(Metric(finding, "typePartCount"))).Append(" declaration parts");
                 if (Metric(finding, "relativePathSelected") > 0)
                 {
-                    signal.Append("; relative type-size path (minimum ")
+                    signal.Append("; relative type-size criterion (minimum ")
                         .Append(FormatNumber(Metric(finding, "minTypeCodeLines"))).Append(", P")
                         .Append(FormatNumber(Metric(finding, "percentile"))).Append(" value ")
                         .Append(FormatNumber(Metric(finding, "typePercentileValue"))).Append(')');
@@ -640,7 +662,7 @@ public sealed class MarkdownReportWriter
 
                 if (Metric(finding, "extremePathSelected") > 0)
                 {
-                    signal.Append("; extreme type-size path (threshold ")
+                    signal.Append("; extreme type-size threshold (")
                         .Append(FormatNumber(Metric(finding, "extremeTypeCodeLines"))).Append(')');
                 }
 
@@ -654,13 +676,13 @@ public sealed class MarkdownReportWriter
                     .Append(FormatNumber(Metric(finding, "fileUtf8Bytes"))).Append(" UTF-8 bytes");
                 if (Metric(finding, "lineCountPathSelected") > 0)
                 {
-                    signal.Append("; line-count path (threshold ")
+                    signal.Append("; line-count threshold (")
                         .Append(FormatNumber(Metric(finding, "extremeFileLines"))).Append(')');
                 }
 
                 if (Metric(finding, "byteCountPathSelected") > 0)
                 {
-                    signal.Append("; UTF-8 byte path (threshold ")
+                    signal.Append("; UTF-8 byte-count threshold (")
                         .Append(FormatNumber(Metric(finding, "extremeFileUtf8Bytes"))).Append(')');
                 }
 

@@ -220,7 +220,9 @@ public sealed class HostProcessIntegrationTests
             Assert.Contains("# Method Control-Flow Outliers", analysisReport, StringComparison.Ordinal);
             Assert.Contains("## Findings", analysisReport, StringComparison.Ordinal);
             Assert.Contains("CodeLineMetrics.cs", analysisReport, StringComparison.Ordinal);
-            Assert.DoesNotContain("decisionCount", analysisReport, StringComparison.Ordinal);
+            Assert.Contains("Control-flow counting: `decisionCount`", analysisReport, StringComparison.Ordinal);
+            var findingsSection = analysisReport[analysisReport.IndexOf("## Findings", StringComparison.Ordinal)..];
+            Assert.DoesNotContain("decisionCount", findingsSection, StringComparison.Ordinal);
         }
         else
         {

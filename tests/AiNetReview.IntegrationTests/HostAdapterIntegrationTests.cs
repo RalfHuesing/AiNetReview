@@ -357,8 +357,12 @@ public sealed class HostAdapterIntegrationTests
         Assert.Contains("no static test path", allReport, StringComparison.Ordinal);
         Assert.Contains("indirect test path only", allReport, StringComparison.Ordinal);
         Assert.Contains("Shortest resolved test path:", allReport, StringComparison.Ordinal);
+        Assert.Contains("attribution uncertain` marker means the static test association may be incomplete", allReport, StringComparison.Ordinal);
+        Assert.Contains("It does not assess test assertion quality.", allReport, StringComparison.Ordinal);
+        Assert.Contains("Changed-files selection is snapshot-wide because changes to test roots or the call graph can alter associations in unchanged production files. Without a baseline, every current source file is treated as new. With a baseline, any added, changed, or deleted C# path selects all current findings; an unchanged C# snapshot selects none. The source status in each file heading describes only that representative file relative to the baseline; an unchanged status does not mean unaffected.", changedReport, StringComparison.Ordinal);
+        Assert.Contains("source new or changed", changedReport, StringComparison.Ordinal);
         AssertViewPolicies(allReport, changedReport);
-        Assert.Equal(NormalizeForChangedView(allReport), changedReport);
+        Assert.Equal(allReport, NormalizeNoBaselineChangedView(changedReport));
         Assert.Contains("any C# path was added, changed, or deleted", index, StringComparison.Ordinal);
 
         var baseline = await InvokeProductionCommandAsync(["baseline", projectRoot]);
@@ -380,12 +384,24 @@ public sealed class HostAdapterIntegrationTests
         var nonCSharpDirectory = Path.Combine(projectRoot, "reports", nonCSharpResponse.RootElement.GetProperty("runId").GetString()!);
         Assert.False(File.Exists(Path.Combine(nonCSharpDirectory, "changed-files", "missing-test-evidence-candidates.md")));
 
+        await File.AppendAllTextAsync(Path.Combine(testsDirectory, "ApiTests.cs"), " // changed test-only C# path");
+        var testOnlyChanged = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, testOnlyChanged.ExitCode);
+        using var testOnlyResponse = JsonDocument.Parse(testOnlyChanged.Output);
+        var testOnlyDirectory = Path.Combine(projectRoot, "reports", testOnlyResponse.RootElement.GetProperty("runId").GetString()!);
+        var testOnlyReportPath = Path.Combine(testOnlyDirectory, "changed-files", "missing-test-evidence-candidates.md");
+        Assert.True(File.Exists(testOnlyReportPath));
+        Assert.Contains("source unchanged; included snapshot-wide", await File.ReadAllTextAsync(testOnlyReportPath), StringComparison.Ordinal);
+
+        await InvokeProductionCommandAsync(["baseline", projectRoot]);
         await File.WriteAllTextAsync(extraPath, "namespace Sample; public sealed class Extra { }");
         var added = await InvokeProductionCommandAsync(["review", projectRoot]);
         Assert.Equal(0, added.ExitCode);
         using var addedResponse = JsonDocument.Parse(added.Output);
         var addedDirectory = Path.Combine(projectRoot, "reports", addedResponse.RootElement.GetProperty("runId").GetString()!);
         Assert.True(File.Exists(Path.Combine(addedDirectory, "changed-files", "missing-test-evidence-candidates.md")));
+        Assert.Contains("source unchanged; included snapshot-wide",
+            await File.ReadAllTextAsync(Path.Combine(addedDirectory, "changed-files", "missing-test-evidence-candidates.md")), StringComparison.Ordinal);
 
         await InvokeProductionCommandAsync(["baseline", projectRoot]);
         await File.AppendAllTextAsync(apiPath, " // changed C# snapshot path");
@@ -402,6 +418,8 @@ public sealed class HostAdapterIntegrationTests
         using var deletedResponse = JsonDocument.Parse(deleted.Output);
         var deletedDirectory = Path.Combine(projectRoot, "reports", deletedResponse.RootElement.GetProperty("runId").GetString()!);
         Assert.True(File.Exists(Path.Combine(deletedDirectory, "changed-files", "missing-test-evidence-candidates.md")));
+        Assert.Contains("source unchanged; included snapshot-wide",
+            await File.ReadAllTextAsync(Path.Combine(deletedDirectory, "changed-files", "missing-test-evidence-candidates.md")), StringComparison.Ordinal);
 
         var publishedRuns = Directory.GetDirectories(Path.Combine(projectRoot, "reports"), "20*", SearchOption.TopDirectoryOnly).Length;
         await File.WriteAllTextAsync(configPath,
@@ -831,6 +849,23 @@ public sealed class HostAdapterIntegrationTests
         "Review policy: These potential signals do not require changes. This is the reference-only `all-findings/` view; inspect or report it only when the user explicitly requests a full repository audit. See the [root index's Review guidance](../index.md#review-guidance).",
         "Review policy: These potential signals do not require changes. Use `changed-files/` as the primary review set; see the [root index's Review guidance](../index.md#review-guidance).",
         StringComparison.Ordinal);
+
+    private static string NormalizeNoBaselineChangedView(string report)
+    {
+        var normalized = report.Replace(
+                "Review policy: These potential signals do not require changes. Use `changed-files/` as the primary review set; see the [root index's Review guidance](../index.md#review-guidance).",
+                "Review policy: These potential signals do not require changes. This is the reference-only `all-findings/` view; inspect or report it only when the user explicitly requests a full repository audit. See the [root index's Review guidance](../index.md#review-guidance).",
+                StringComparison.Ordinal)
+            .Replace("; source new or changed)", ")", StringComparison.Ordinal);
+        var paragraphStart = normalized.IndexOf("\n\nChanged-files selection is snapshot-wide", StringComparison.Ordinal);
+        if (paragraphStart < 0)
+        {
+            return normalized;
+        }
+
+        var nextSection = normalized.IndexOf("\n\n## Summary", paragraphStart, StringComparison.Ordinal);
+        return nextSection < 0 ? normalized : normalized.Remove(paragraphStart, nextSection - paragraphStart);
+    }
 
     private static void AssertMarkdownLinksResolve(string runDirectory)
     {
