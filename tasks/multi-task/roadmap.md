@@ -43,7 +43,7 @@ Start nur nach geschlossenem Core-Aggregat und Prüfung von `ControlFlowMetrics.
 
 Start nur nach geschlossenem Core-Aggregat und Prüfung von `ControlFlowMetrics.Measure` und `CodeLineMetrics` im Code. Eine dokumentierte B-Blockade ändert diese Voraussetzung nicht.
 
-- [ ] **Größen-Task abgeschlossen** — Aggregat aller folgenden Punkte; nur bei erfüllter Fach-Roadmap samt realer Stichprobe schließen.
+- [x] **Größen-Task abgeschlossen** — Aggregat aller folgenden Punkte; nur bei erfüllter Fach-Roadmap samt realer Stichprobe schließen.
   - [x] **C1 — Membergrößen messen** — [Größen-Roadmap, Punkt 1](../analyse-groessen/roadmap.md) vollständig ausführen und abnehmen.
   - [x] **C2 — Klassen und Dateien messen** — [Größen-Roadmap, Punkt 2](../analyse-groessen/roadmap.md) vollständig ausführen und abnehmen.
   - [x] **C2-Audit — Aggregation und Dateimaße prüfen**
@@ -52,7 +52,7 @@ Start nur nach geschlossenem Core-Aggregat und Prüfung von `ControlFlowMetrics.
     - Nicht: Core-Metriken oder festgelegte Schwellenwerte still ändern.
     - Abnahme: Kein offener Pflichtbefund zu C1/C2; geprüfte Commits, akzeptierte Restbefunde und verbrauchte Runden sind dokumentiert.
   - [x] **C3 — Analyse und Bericht integrieren** — [Größen-Roadmap, Punkt 3](../analyse-groessen/roadmap.md) vollständig ausführen und abnehmen.
-  - [ ] **C4 — Größen-Schlussaudit und Stichprobe** — [Größen-Roadmap, Punkt 4](../analyse-groessen/roadmap.md) mit einem unabhängigen Audit-Agenten ausführen; volle Gates und die read-only Stichprobe an AiNetReview und AiNetLinter prüfen. Vor der Stichprobe sicherstellen, dass das tatsächlich verwendete lokale Audit-Profil aktiviert ist und `code-size-candidates` mit den Konzept-Defaults enthält; falls nötig ein temporäres Profil im AiNetReview-Repository verwenden, ohne das AiNetLinter-Repository oder bestehende lokale Profile zu ändern. Ein wegen `enabled: false` übersprungener Lauf ist kein Nachweis. Die Runden aus C2-Audit zählen zum Task-Limit. Audit-Ergebnis und etwaige Korrekturen dokumentieren und committen.
+  - [x] **C4 — Größen-Schlussaudit und Stichprobe** — [Größen-Roadmap, Punkt 4](../analyse-groessen/roadmap.md) mit einem unabhängigen Audit-Agenten ausführen; volle Gates und die read-only Stichprobe an AiNetReview und AiNetLinter prüfen. Vor der Stichprobe sicherstellen, dass das tatsächlich verwendete lokale Audit-Profil aktiviert ist und `code-size-candidates` mit den Konzept-Defaults enthält; falls nötig ein temporäres Profil im AiNetReview-Repository verwenden, ohne das AiNetLinter-Repository oder bestehende lokale Profile zu ändern. Ein wegen `enabled: false` übersprungener Lauf ist kein Nachweis. Die Runden aus C2-Audit zählen zum Task-Limit. Audit-Ergebnis und etwaige Korrekturen dokumentieren und committen.
 
 ## Gesamtabnahme
 

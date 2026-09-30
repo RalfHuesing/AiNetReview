@@ -1,9 +1,9 @@
 # Laufstand: Drei Review-Tasks
 
-## C4 — closing audit open (2026-09-30)
+## C4 — closing audit accepted (2026-09-30)
 
 - Independent C4 review found no size-analysis production-code deviation. Full normal gates after C3: FastTests **259/259**, IntegrationTests **97/97**, no skips; build **0 warnings/0 errors**. Active manual audits with exact concept defaults produced AiNetReview **13 member, 5 class, 0 file** findings and read-only AiNetLinter **1 member, 36 class, 0 file** findings; run IDs, trigger examples, and verification are in [the size audit](../analyse-groessen/audit.md). Existing disabled local profiles were not changed.
-- The documentation correction replaces the order-dependent “first analysis” reference with the explicit `method-control-flow-outliers` ID. The surrounding description was checked against its descriptor and implementation; the percentile, decision and nesting thresholds, and tie behavior remain accurate. Correction commit: `docs(review): clarify control-flow analysis reference`. The finding is ready for an independent C4 follow-up audit against the correction commit. Fach-Roadmap 4, Multi C4, and the size aggregate remain open pending that audit. The historical intermittent `Directory.Move` `IOException` remains the accepted residual finding.
+- Independent follow-up audit accepted correction `d70ec5c` (`docs(review): clarify control-flow analysis reference`). The explicit `method-control-flow-outliers` referent and surrounding thresholds match its descriptor and selection code; the correction changed no production code or tests. The two published manual reports confirm the documented run IDs, counts, and trigger examples. No required C4 finding remains. Fach-Roadmap 4, Multi C4, and the size-task aggregate are closed; C2 used two correction rounds and C4 one. The historical intermittent `Directory.Move` `IOException` remains the accepted residual finding. Next executable checkbox: **task-wide final audit**. Full evidence is in [the size audit](../analyse-groessen/audit.md); the closure commit is this documentation-only slice.
 
 ## C3 — Analyse und Bericht integriert (30.09.2026)
 

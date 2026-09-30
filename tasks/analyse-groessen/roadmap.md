@@ -20,7 +20,7 @@ Verbindlicher Vertrag: [Konzept.md](Konzept.md). Die Punkte werden in Reihenfolg
   - Nicht: Neues CLI-Kommando, separate öffentliche Analysen je Kandidatenart, automatische Refactorings, Builddiagnosen oder Änderungen an `method-control-flow-outliers`.
   - Abnahme: End-to-End-Integrationstests prüfen Default- und benutzerdefinierte Konfiguration einschließlich ungültiger Werte, sichtbare Berichte für jede Kandidatenart, Mehrfachauslösegründe, `partial`-Änderung in `changed-files/`, keine Analyse-Datei bei null Treffern oder deaktivierter Analyse und unveränderte Ergebnisse der Kontrollflussanalyse. Betroffene Tests, vor Taskabschluss die vollständigen normalen FastTests- und IntegrationTests-Skripte, `dotnet build AiNetReview.slnx` ohne Warnungen, Dokumentationsabgleich und `git diff --check` sind erfolgreich. Die manuellen Audit- und Performance-Tests laufen nur bei ihrer eigenen Abnahme.
 
-- [ ] **4. Schlussaudit und reale Stichprobe**
+- [x] **4. Schlussaudit und reale Stichprobe**
   - Intention: Vertragstreue, Treffernutzen und Repository-Grenzen nach der Integration unabhängig prüfen.
   - Scope: Konzept gegen Code, Tests, Konfiguration, Bericht und Dokumentation abgleichen. Einen manuellen Audit mit Defaults für AiNetReview und AiNetLinter durchführen, Trefferzahl je Kandidatenart und einige Auslösegründe im Abschlussnachweis dieses Punkts festhalten; AiNetLinter bleibt read-only. Prüfen, dass die Core-Messungen wiederverwendet werden und kein Finding einen Schnitt allein zur Zahlensenkung fordert.
   - Nicht: Schwellenwerte still ändern, AiNetLinter-Dateien bearbeiten, Performance-Gates ohne konkreten Anlass laufen lassen.
