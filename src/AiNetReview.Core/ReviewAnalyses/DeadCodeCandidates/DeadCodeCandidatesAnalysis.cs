@@ -38,7 +38,7 @@ public sealed class DeadCodeCandidatesAnalysis : IReviewAnalysis
     public ReviewAnalysisDescriptor Descriptor { get; } = new(
         "dead-code-candidates",
         "Dead Code Candidates",
-        1,
+        2,
         "Flags types and methods without known direct or recognized indirect use in the loaded solution.",
         "A candidate has no known direct semantic reference or recognized indirect binding in production, test, generated C#, or captured markup. This is a review signal, not proof that the declaration is unused.",
         [
@@ -75,6 +75,7 @@ public sealed class DeadCodeCandidatesAnalysis : IReviewAnalysis
             var compilation = await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false)
                 ?? throw new AnalysisFailedException($"Compilation could not be created for project '{project.Name}'.");
             var entryPoint = compilation.GetEntryPoint(cancellationToken);
+            var entryPointTypes = GetCompilerEntryPointTypeChain(entryPoint);
             var declarations = await CollectDeclarationsAsync(context, project, cancellationToken).ConfigureAwait(false);
 
             var methodsByType = new Dictionary<INamedTypeSymbol, List<Declaration>>(SymbolEqualityComparer.Default);
@@ -103,7 +104,8 @@ public sealed class DeadCodeCandidatesAnalysis : IReviewAnalysis
                     || indirectUsage.HasUncertainty(type.Symbol)
                     || methods.Any(method => referenceIndex.GetCoverage(method.Symbol).HasUnresolvedBindings
                         || indirectUsage.HasUncertainty(method.Symbol));
-                if (!typeHasExternalUse && !typeHasUncertainty && !IsApiProtected(type.Symbol, apiSurface))
+                if (!entryPointTypes.Contains((INamedTypeSymbol)type.Symbol)
+                    && !typeHasExternalUse && !typeHasUncertainty && !IsApiProtected(type.Symbol, apiSurface))
                 {
                     findings.Add(CreateFinding(type, "type-candidate"));
                     continue;
@@ -296,6 +298,19 @@ public sealed class DeadCodeCandidatesAnalysis : IReviewAnalysis
 
     private static bool IsCompilerEntryPoint(IMethodSymbol method, IMethodSymbol? entryPoint) =>
         entryPoint is not null && SymbolEqualityComparer.Default.Equals(method, entryPoint);
+
+    private static HashSet<INamedTypeSymbol> GetCompilerEntryPointTypeChain(IMethodSymbol? entryPoint)
+    {
+        var containingTypes = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        for (var containingType = entryPoint?.ContainingType;
+             containingType is not null;
+             containingType = containingType.ContainingType)
+        {
+            containingTypes.Add(containingType);
+        }
+
+        return containingTypes;
+    }
 
     private static bool IsInterfaceImplementation(IMethodSymbol method)
     {

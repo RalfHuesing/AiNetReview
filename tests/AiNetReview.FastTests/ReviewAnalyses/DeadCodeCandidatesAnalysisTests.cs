@@ -107,6 +107,127 @@ public sealed class DeadCodeCandidatesAnalysisTests
             result.Findings.Select(static finding => finding.SubjectId));
     }
 
+    [Theory]
+    [InlineData("external_library")]
+    [InlineData("closed_solution")]
+    public async Task ExecuteAsync_ProtectsInternalExecutableEntryPointTypeButStillChecksItsMethods(string apiSurface)
+    {
+        using var fixture = CreateFixture(OutputKind.ConsoleApplication, ("Product", "Product", """
+            internal static class Bootstrap
+            {
+                public static int Main() => 0;
+                private static void UnusedHelper() { }
+            }
+            internal sealed class UnusedType { }
+            """, null));
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var options = analysis.Descriptor.ResolveOptions([
+            new("apiSurface", JsonSerializer.SerializeToElement(apiSurface)),
+        ]);
+
+        var result = await analysis.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+
+        Assert.DoesNotContain(result.Findings, static finding => finding.Discriminator == "type-candidate"
+            && finding.SubjectId.Contains("Bootstrap", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Bootstrap.Main", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("UnusedHelper", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("UnusedType", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("external_library")]
+    [InlineData("closed_solution")]
+    public async Task ExecuteAsync_ProtectsOnlyConfiguredStartupTypeAndContainingChain(string apiSurface)
+    {
+        using var fixture = CreateFixture(OutputKind.ConsoleApplication, "Outer.SelectedStartup", ("Product", "Product", """
+            using System.Threading.Tasks;
+            internal partial class Outer
+            {
+                internal static class SelectedStartup
+                {
+                    public static async Task<int> Main()
+                    {
+                        await Task.Yield();
+                        return 0;
+                    }
+                    private static void UnusedHelper() { }
+                }
+
+                internal static class OtherStartup
+                {
+                    public static int Main() => 1;
+                }
+            }
+            internal static class Consumer
+            {
+                private static System.Type KeepOtherTypeReferenced() => typeof(Outer.OtherStartup);
+            }
+            internal partial class Outer { private void UnusedOuterHelper() { } }
+            """, null));
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var options = analysis.Descriptor.ResolveOptions([
+            new("apiSurface", JsonSerializer.SerializeToElement(apiSurface)),
+        ]);
+
+        var result = await analysis.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+
+        Assert.DoesNotContain(result.Findings, static finding => finding.Discriminator == "type-candidate"
+            && finding.SubjectId == "T:Outer");
+        Assert.DoesNotContain(result.Findings, static finding => finding.Discriminator == "type-candidate"
+            && finding.SubjectId == "T:Outer.SelectedStartup");
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("SelectedStartup.Main", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("OtherStartup.Main", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("UnusedHelper", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("UnusedOuterHelper", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("external_library")]
+    [InlineData("closed_solution")]
+    public async Task ExecuteAsync_ProtectsExplicitPartialProgramForTopLevelStatements(string apiSurface)
+    {
+        using var fixture = CreateFixture(OutputKind.ConsoleApplication, ("Product", "Product", """
+            using System;
+            Console.WriteLine("run");
+            partial class Program
+            {
+                private static void UnusedHelper() { }
+            }
+            """, null));
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var options = analysis.Descriptor.ResolveOptions([
+            new("apiSurface", JsonSerializer.SerializeToElement(apiSurface)),
+        ]);
+
+        var result = await analysis.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+
+        Assert.DoesNotContain(result.Findings, static finding => finding.Discriminator == "type-candidate"
+            && finding.SubjectId.Contains("Program", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("UnusedHelper", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("external_library")]
+    [InlineData("closed_solution")]
+    public async Task ExecuteAsync_DoesNotProtectLibraryMainByName(string apiSurface)
+    {
+        using var fixture = CreateFixture(("Product", "Product", """
+            internal static class Bootstrap
+            {
+                public static int Main() => 0;
+            }
+            """, null));
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var options = analysis.Descriptor.ResolveOptions([
+            new("apiSurface", JsonSerializer.SerializeToElement(apiSurface)),
+        ]);
+
+        var result = await analysis.ExecuteAsync(fixture.Context, options, CancellationToken.None);
+
+        Assert.Contains(result.Findings, static finding => finding.Discriminator == "type-candidate"
+            && finding.SubjectId == "T:Bootstrap");
+    }
+
     [Fact]
     public async Task ExecuteAsync_UsesExternalLibraryApiPolicyByDefaultAndClosedSolutionIncludesPublicSurface()
     {
@@ -222,6 +343,7 @@ public sealed class DeadCodeCandidatesAnalysisTests
     {
         var descriptor = new DeadCodeCandidatesAnalysis().Descriptor;
 
+        Assert.Equal(2, descriptor.BehaviorVersion);
         Assert.Equal("external_library", descriptor.ResolveOptions()["apiSurface"].GetString());
         Assert.Empty(descriptor.ResolveOptions()["entryPointAttributes"].EnumerateArray());
         Assert.Equal("closed_solution", descriptor.ResolveOptions([
@@ -431,6 +553,17 @@ public sealed class DeadCodeCandidatesAnalysisTests
     }
 
     private static AnalysisFixture CreateFixture(params (string Name, string Assembly, string Source, string? FileName)[] projects)
+        => CreateFixture(OutputKind.DynamicallyLinkedLibrary, projects);
+
+    private static AnalysisFixture CreateFixture(
+        OutputKind outputKind,
+        params (string Name, string Assembly, string Source, string? FileName)[] projects)
+        => CreateFixture(outputKind, mainTypeName: null, projects);
+
+    private static AnalysisFixture CreateFixture(
+        OutputKind outputKind,
+        string? mainTypeName,
+        params (string Name, string Assembly, string Source, string? FileName)[] projects)
     {
         var workspace = new AdhocWorkspace();
         var root = TestTempDirectory.Create();
@@ -444,7 +577,7 @@ public sealed class DeadCodeCandidatesAnalysisTests
                 spec.Assembly,
                 LanguageNames.CSharp,
                 filePath: Path.Combine(root.DirectoryPath, spec.Name + ".csproj"),
-                compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+                compilationOptions: new CSharpCompilationOptions(outputKind, mainTypeName: mainTypeName),
                 parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
                 metadataReferences: PlatformReferences().Append(
                     MetadataReference.CreateFromFile(typeof(Microsoft.JSInterop.JSInvokableAttribute).Assembly.Location))));

@@ -10,7 +10,7 @@ The concept's non-goals apply to every item. There is no JSON finding export, ne
 
 ## Ordered work
 
-- [ ] **1. Correct compiler-entry-point protection**
+- [x] **1. Correct compiler-entry-point protection**
   - **Intention:** Remove the known dead-code false positive while preserving legitimate unused-member findings.
   - **Scope:** Implement the complete [compiler-entry-point contract](Konzept.md#compiler-entry-point-correction) in `DeadCodeCandidatesAnalysis`, including the containing-type chain, continued ordinary-method examination, and behavior-version increment. Start with a failing internal executable-entry-point regression using executable compilation options; use the [reference cases](Konzept.md#minimal-reference-cases) as positive/negative contracts.
   - **Non-goals:** No naming-based `Program` exception, exemptions for unrelated members/types, new analysis, changed API modes, or report changes.
