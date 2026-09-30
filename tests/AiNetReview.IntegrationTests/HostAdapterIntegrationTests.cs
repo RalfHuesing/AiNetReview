@@ -850,15 +850,15 @@ public sealed class HostAdapterIntegrationTests
     }
 
     private static string NormalizeForChangedView(string report) => report.Replace(
-        "Review policy: These potential signals do not require changes. This is the reference-only `all-findings/` view; inspect or report it only when the user explicitly requests a full repository audit. See the [root index's Review guidance](../index.md#review-guidance).",
-        "Review policy: These potential signals do not require changes. Use `changed-files/` as the primary review set; see the [root index's Review guidance](../index.md#review-guidance).",
+        "Review policy: In the commissioned scope, investigate every finding and justify its classification; a signal alone does not require a change. This is the reference-only `all-findings/` view; inspect or report it only when the user explicitly requests a full repository audit. See the [root index's Review guidance](../index.md#review-guidance).",
+        "Review policy: In the commissioned scope, investigate every finding and justify its classification; a signal alone does not require a change. Use `changed-files/` as the primary review set; see the [root index's Review guidance](../index.md#review-guidance).",
         StringComparison.Ordinal);
 
     private static string NormalizeNoBaselineChangedView(string report)
     {
         var normalized = report.Replace(
-                "Review policy: These potential signals do not require changes. Use `changed-files/` as the primary review set; see the [root index's Review guidance](../index.md#review-guidance).",
-                "Review policy: These potential signals do not require changes. This is the reference-only `all-findings/` view; inspect or report it only when the user explicitly requests a full repository audit. See the [root index's Review guidance](../index.md#review-guidance).",
+                "Review policy: In the commissioned scope, investigate every finding and justify its classification; a signal alone does not require a change. Use `changed-files/` as the primary review set; see the [root index's Review guidance](../index.md#review-guidance).",
+                "Review policy: In the commissioned scope, investigate every finding and justify its classification; a signal alone does not require a change. This is the reference-only `all-findings/` view; inspect or report it only when the user explicitly requests a full repository audit. See the [root index's Review guidance](../index.md#review-guidance).",
                 StringComparison.Ordinal)
             .Replace("; source new or changed)", ")", StringComparison.Ordinal);
         var paragraphStart = normalized.IndexOf("\n\nChanged-files selection is snapshot-wide", StringComparison.Ordinal);

@@ -186,7 +186,7 @@ public sealed class MarkdownReportWriterTests
         Assert.DoesNotContain("| Project | Source file | Findings |", analysisReport, StringComparison.Ordinal);
         Assert.Contains("- `C:Sample`", analysisReport, StringComparison.Ordinal);
         Assert.Contains("- `C:Other`", analysisReport, StringComparison.Ordinal);
-        Assert.Contains("Review policy: These potential signals do not require changes. Use `changed-files/` as the primary review set;", changedReport, StringComparison.Ordinal);
+        Assert.Contains("Review policy: In the commissioned scope, investigate every finding and justify its classification; a signal alone does not require a change. Use `changed-files/` as the primary review set;", changedReport, StringComparison.Ordinal);
         Assert.Contains("[root index's Review guidance](../index.md#review-guidance)", changedReport, StringComparison.Ordinal);
     }
 
@@ -253,7 +253,12 @@ public sealed class MarkdownReportWriterTests
         Assert.DoesNotContain("\\{", markdown, StringComparison.Ordinal);
         var index = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "index.md"));
         Assert.Contains("Review guidance", index, StringComparison.Ordinal);
-        Assert.Contains("All findings may validly result in no changes.", index, StringComparison.Ordinal);
+        Assert.Contains("Investigate every finding in the commissioned working set", index, StringComparison.Ordinal);
+        Assert.Contains("Related findings may be evaluated together.", index, StringComparison.Ordinal);
+        Assert.Contains("Do not dismiss a signal solely because it is heuristic or its attribution is uncertain.", index, StringComparison.Ordinal);
+        Assert.Contains("Justify each classification with concrete evidence: false positive, acceptable design, needs clarification, or actionable.", index, StringComparison.Ordinal);
+        Assert.Contains("A signal alone does not require a change; changes must follow from this assessment.", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("All findings may validly result in no changes.", index, StringComparison.Ordinal);
         Assert.Contains("An accurate signal can describe an acceptable design; distinguish that from a false positive.", index, StringComparison.Ordinal);
         Assert.DoesNotContain("First remove only clear false positives", index, StringComparison.Ordinal);
         Assert.True(index.IndexOf("## Review guidance", StringComparison.Ordinal) < index.IndexOf("## Analysis reports", StringComparison.Ordinal));
@@ -337,8 +342,8 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("This is the reference-only `all-findings/` view; inspect or report it only when the user explicitly requests a full repository audit.", allFindings, StringComparison.Ordinal);
         Assert.Contains("Use `changed-files/` as the primary review set;", changedFiles, StringComparison.Ordinal);
         Assert.Equal(allFindings.Replace(
-            "Review policy: These potential signals do not require changes. This is the reference-only `all-findings/` view; inspect or report it only when the user explicitly requests a full repository audit. See the [root index's Review guidance](../index.md#review-guidance).",
-            "Review policy: These potential signals do not require changes. Use `changed-files/` as the primary review set; see the [root index's Review guidance](../index.md#review-guidance).",
+            "Review policy: In the commissioned scope, investigate every finding and justify its classification; a signal alone does not require a change. This is the reference-only `all-findings/` view; inspect or report it only when the user explicitly requests a full repository audit. See the [root index's Review guidance](../index.md#review-guidance).",
+            "Review policy: In the commissioned scope, investigate every finding and justify its classification; a signal alone does not require a change. Use `changed-files/` as the primary review set; see the [root index's Review guidance](../index.md#review-guidance).",
             StringComparison.Ordinal), changedFiles);
         Assert.Contains("Total findings: 1", allFindings, StringComparison.Ordinal);
         Assert.Contains("#### File: ZApi.cs (1 findings)", allFindings, StringComparison.Ordinal);
