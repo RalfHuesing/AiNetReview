@@ -1,8 +1,15 @@
 # Laufstand: Drei Review-Tasks
 
+## Report-Publikation — flüchtige Windows-Dateisperre abgefangen (30.09.2026)
+
+- Gezielte Reproduktion im `MarkdownReportWriterPublicationTests`-Writer-Hook: Der fertig geschriebene temporäre `index.md` blieb mit `FileShare.None` geöffnet. Windows ließ deshalb `Directory.Move(temporaryPath, finalPath)` mit `System.IO.IOException` und `HResult 0x80070005` (`ERROR_ACCESS_DENIED`) scheitern; Stacktrace und Fehlerstelle entsprachen dem historischen Befund. Vor der Änderung scheiterte dieser neue Test genau dort.
+- `MarkdownReportWriter` wiederholt ausschließlich den finalen Verzeichnis-Rename für Win32 `ERROR_ACCESS_DENIED`, `ERROR_SHARING_VIOLATION` und `ERROR_LOCK_VIOLATION`, mit vier abbrechbaren Verzögerungen (20/40/80/160 ms). Andere Fehler werden unverändert weitergegeben; eine echte Zielnamenskollision verwendet weiterhin den vorhandenen neuen-Run-ID-Pfad. Der kontrollierte Lock wurde nach 90 ms freigegeben und der Report danach vollständig publiziert.
+- Verifikation nach Korrektur: `MarkdownReportWriterPublicationTests` **4/4**; die drei gezielten historischen Hosttests **3/3**; vollständige IntegrationTests **98/98**, FastTests **259/259**, alle ohne Skips; `scripts/build.ps1` **0 Warnungen/0 Fehler**; `git diff --check` bestanden.
+- Das Experiment belegt, dass ein kurzlebiger Handle-Lock den historischen Fehlermechanismus erzeugt; es beweist nicht nachträglich, welches konkrete externe Handle bei den alten Läufen beteiligt war. AiNetLinter blieb unverändert.
+
 ## Gesamtabschluss und unabhängiger Endaudit (30.09.2026)
 
-- Abgeschlossen: Core A1–A4, Testabdeckung B1–B5, Größenanalyse C1–C4 und alle Zwischen- und Fach-Audits. Die Gesamt-Checkbox ist geschlossen; es gibt keinen offenen Umsetzungspunkt und keinen offenen Pflichtbefund. Der Endaudit brauchte keine Korrekturrunde.
+- Abgeschlossen: Core A1–A4, Testabdeckung B1–B5, Größenanalyse C1–C4 und alle Zwischen- und Fach-Audits. Die Gesamt-Checkbox ist geschlossen; es gibt keinen offenen Umsetzungspunkt und keinen offenen Pflichtbefund. Der Endaudit brauchte keine Korrekturrunde. Der zuvor akzeptierte Report-Publikationsrestbefund wurde mit dem oben dokumentierten Windows-Lock-Retry behoben.
 - Core-Commits: `10f1ada`, `bf70072`, `feb1a6d`, `b88b262`, `6526b5d`; Core-Audit und Testkorrektur: `af69079`, `1afc28e`, `b39b3e6`. Der Vergleich mit dem ursprünglichen `DecisionVisitor` bestätigt unveränderte Zähl- und Besuchsregeln, Kandidaten, Descriptor und Behavior-Version von `method-control-flow-outliers`.
 - Testabdeckungs-Commits: `1fc8480`, `395468d`, `948c369`, `29f35b6`, `d0f93fe`, `3245618`, `50ee999`; Audits: `00f004e`, `166a45a`, `84f6c39`, `5659d51`. `missing-test-evidence-candidates` nutzt `ControlFlowMetrics` und `TestFrameworkClassifier`; die Korrekturen für Accessors, Unsicherheit und vollständige generierte Zwischenknoten sind in Code, Tests und Berichtspfad vorhanden.
 - Größen-Commits: `33c0338`, `79bf4e2`, `72f52b0`, `1bbe656`, `0b489fb`; Audits und Dokumentationskorrektur: `e1172fd`, `2690fd1`, `7ce5f70`, `e27b3ca`, `d70ec5c`, `e4f78d1`. `code-size-candidates` nutzt `CodeLineMetrics` und `ControlFlowMetrics`; Member-, Klassen- und Dateiauswahl, physische Pfad-Deduplizierung, Partial-Evidenz und Berichte wurden gegen Code und Tests geprüft.

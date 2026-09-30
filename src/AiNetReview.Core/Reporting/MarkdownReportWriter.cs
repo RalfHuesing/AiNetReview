@@ -17,7 +17,17 @@ using AiNetReview.Core.ReviewAnalyses;
 /// <summary>Writes and atomically publishes one complete Markdown report set.</summary>
 public sealed class MarkdownReportWriter
 {
+    private const int ErrorAccessDenied = 5;
+    private const int ErrorSharingViolation = 32;
+    private const int ErrorLockViolation = 33;
     private static readonly UTF8Encoding Utf8WithoutBom = new(encoderShouldEmitUTF8Identifier: false);
+    private static readonly TimeSpan[] PublicationRetryDelays =
+    [
+        TimeSpan.FromMilliseconds(20),
+        TimeSpan.FromMilliseconds(40),
+        TimeSpan.FromMilliseconds(80),
+        TimeSpan.FromMilliseconds(160),
+    ];
     private readonly Func<CancellationToken, ValueTask>? beforePublication;
 
     public MarkdownReportWriter()
@@ -92,7 +102,7 @@ public sealed class MarkdownReportWriter
 
                 try
                 {
-                    Directory.Move(temporaryPath, finalPath);
+                    await MoveDirectoryWithTransientRetryAsync(temporaryPath, finalPath, cancellationToken).ConfigureAwait(false);
                     published = true;
                     return new PublishedReport(runId, Path.Combine(config.OutputDirectory, runId, "index.md").Replace('\\', '/'));
                 }
@@ -109,6 +119,38 @@ public sealed class MarkdownReportWriter
                 }
             }
         }
+    }
+
+    private static async Task MoveDirectoryWithTransientRetryAsync(
+        string sourcePath,
+        string destinationPath,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                Directory.Move(sourcePath, destinationPath);
+                return;
+            }
+            catch (IOException exception) when (IsTransientPublicationLock(exception))
+            {
+                if (attempt >= PublicationRetryDelays.Length || Directory.Exists(destinationPath))
+                {
+                    throw;
+                }
+
+                await Task.Delay(PublicationRetryDelays[attempt], cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static bool IsTransientPublicationLock(IOException exception)
+    {
+        // Windows reports locks on files inside a directory as HRESULT_FROM_WIN32 errors.
+        var errorCode = exception.HResult & 0xFFFF;
+        return errorCode is ErrorAccessDenied or ErrorSharingViolation or ErrorLockViolation;
     }
 
     private static bool TryCreateOwnedTemporaryDirectory(string path)

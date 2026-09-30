@@ -33,6 +33,55 @@ public sealed class MarkdownReportWriterPublicationTests
     }
 
     [Fact]
+    public async Task WriteAsync_RetriesPublicationAfterTransientWindowsFileLock()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var temp = TestTempDirectory.Create();
+        var analysis = new PublicationAnalysis();
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        var result = new ReviewRunResult([new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, ReviewAnalysisResult.Empty)]);
+        FileStream? lockedFile = null;
+        Task? releaseLock = null;
+        var writer = new MarkdownReportWriter(_ =>
+        {
+            var temporaryPath = Directory.EnumerateDirectories(config.ResolvedOutputDirectory, ".ainetreview-tmp-*").Single();
+            var indexPath = Path.Combine(temporaryPath, "index.md");
+            lockedFile = new FileStream(indexPath, FileMode.Open, FileAccess.Read, FileShare.None);
+            releaseLock = Task.Run(async () =>
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(90));
+                await lockedFile.DisposeAsync();
+            });
+            return ValueTask.CompletedTask;
+        });
+
+        PublishedReport report;
+        try
+        {
+            report = await writer.WriteAsync(config, result);
+        }
+        finally
+        {
+            if (releaseLock is not null)
+            {
+                await releaseLock;
+            }
+
+            if (lockedFile is not null)
+            {
+                await lockedFile.DisposeAsync();
+            }
+        }
+
+        Assert.True(File.Exists(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "index.md")));
+        Assert.Empty(Directory.EnumerateDirectories(config.ResolvedOutputDirectory, ".ainetreview-tmp-*"));
+    }
+
+    [Fact]
     public async Task WriteAsync_RemovesTemporaryReportWhenWritingFailsBeforePublication()
     {
         using var temp = TestTempDirectory.Create();
