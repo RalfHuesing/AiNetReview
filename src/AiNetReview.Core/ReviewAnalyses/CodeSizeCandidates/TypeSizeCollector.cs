@@ -19,11 +19,11 @@ internal static class TypeSizeCollector
         CancellationToken cancellationToken)
     {
         var partsBySymbol = new Dictionary<INamedTypeSymbol, List<TypeSizePart>>(SymbolEqualityComparer.Default);
-        foreach (var document in project.Documents.OrderBy(static item => item.FilePath, StringComparer.Ordinal))
+        foreach (var item in CodeSizeDocuments.GetUniqueByPhysicalPath(project))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (string.IsNullOrWhiteSpace(document.FilePath)
-                || !document.FilePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
+            var document = item.Document;
+            if (!item.FilePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
                 || await ReviewSourceClassifier.IsGeneratedDocumentAsync(document, cancellationToken).ConfigureAwait(false))
             {
                 continue;
@@ -37,7 +37,7 @@ internal static class TypeSizeCollector
                 continue;
             }
 
-            var sourcePath = context.GetProjectRelativePath(document.FilePath);
+            var sourcePath = context.GetProjectRelativePath(item.FilePath);
             foreach (var declaration in root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>().Where(IsClassDeclaration))
             {
                 cancellationToken.ThrowIfCancellationRequested();

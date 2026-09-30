@@ -579,6 +579,31 @@ public sealed class CodeSizeCandidatesAnalysisTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_DeduplicatesRepeatedPhysicalDocumentPathsWithinProject()
+    {
+        const string source = "namespace Sample; public partial class Shared { public int Value; }";
+        using var fixture = CreateContext(new ProjectSpec("Example", source,
+        [
+            new DocumentSpec("Shared.cs", source),
+            new DocumentSpec("Nested/../Shared.cs", source),
+            new DocumentSpec("nested/../shared.cs", source)
+        ]));
+
+        var project = Assert.Single(fixture.Context.Solution.Projects);
+        var typeMeasurement = Assert.Single(await TypeSizeCollector.CollectAsync(fixture.Context, project, CancellationToken.None));
+        Assert.Single(typeMeasurement.Parts);
+        Assert.Equal(1, typeMeasurement.CodeLines);
+
+        var findings = await Analyze(fixture.Context, Options(extremeTypeCodeLines: 1, extremeFileLines: 1));
+
+        var fileFinding = Assert.Single(findings.Where(static finding => finding.Discriminator == "file-size"));
+        Assert.Equal("file:Example/Shared.cs", fileFinding.SubjectId);
+        var typeFinding = Assert.Single(findings.Where(static finding => finding.Discriminator == "type-size"));
+        Assert.Single(typeFinding.Evidence);
+        Assert.Equal(1, typeFinding.Metrics["typeCodeLines"]);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ExcludesWhitespaceOnlyAndGeneratedFilesFromFileCandidates()
     {
         using var fixture = CreateContext(new ProjectSpec("Example", " ",

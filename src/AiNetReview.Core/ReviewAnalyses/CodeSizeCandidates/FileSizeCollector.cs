@@ -18,11 +18,11 @@ internal static class FileSizeCollector
         CancellationToken cancellationToken)
     {
         var measurements = new List<FileSizeMeasurement>();
-        foreach (var document in project.Documents.OrderBy(static item => item.FilePath, StringComparer.Ordinal))
+        foreach (var item in CodeSizeDocuments.GetUniqueByPhysicalPath(project))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (string.IsNullOrWhiteSpace(document.FilePath)
-                || !document.FilePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
+            var document = item.Document;
+            if (!item.FilePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
                 || await ReviewSourceClassifier.IsGeneratedDocumentAsync(document, cancellationToken).ConfigureAwait(false))
             {
                 continue;
@@ -34,7 +34,7 @@ internal static class FileSizeCollector
                 continue;
             }
 
-            var sourcePath = context.GetProjectRelativePath(document.FilePath);
+            var sourcePath = context.GetProjectRelativePath(item.FilePath);
             var projectPath = context.GetProjectRelativePath(project.FilePath!);
             measurements.Add(new FileSizeMeasurement(
                 projectPath,
