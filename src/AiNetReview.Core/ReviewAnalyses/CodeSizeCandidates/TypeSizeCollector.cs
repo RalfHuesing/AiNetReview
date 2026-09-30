@@ -19,15 +19,10 @@ internal static class TypeSizeCollector
         CancellationToken cancellationToken)
     {
         var partsBySymbol = new Dictionary<INamedTypeSymbol, List<TypeSizePart>>(SymbolEqualityComparer.Default);
-        foreach (var item in CodeSizeDocuments.GetUniqueByPhysicalPath(project))
+        foreach (var item in await CodeSizeDocuments.GetUniqueNonGeneratedByPhysicalPathAsync(project, cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var document = item.Document;
-            if (!item.FilePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
-                || await ReviewSourceClassifier.IsGeneratedDocumentAsync(document, cancellationToken).ConfigureAwait(false))
-            {
-                continue;
-            }
 
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
             var sourceText = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);

@@ -18,15 +18,10 @@ internal static class ExecutableMemberCollector
         CancellationToken cancellationToken)
     {
         var measurements = new List<ExecutableMemberMeasurement>();
-        foreach (var document in project.Documents.OrderBy(static item => item.FilePath, StringComparer.Ordinal))
+        foreach (var item in await CodeSizeDocuments.GetUniqueNonGeneratedByPhysicalPathAsync(project, cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (string.IsNullOrWhiteSpace(document.FilePath)
-                || !document.FilePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
-                || await ReviewSourceClassifier.IsGeneratedDocumentAsync(document, cancellationToken).ConfigureAwait(false))
-            {
-                continue;
-            }
+            var document = item.Document;
 
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
             var sourceText = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
@@ -53,7 +48,7 @@ internal static class ExecutableMemberCollector
                 }
 
                 var metrics = ControlFlowMetrics.Measure(body);
-                var sourcePath = context.GetProjectRelativePath(document.FilePath);
+                var sourcePath = context.GetProjectRelativePath(item.FilePath);
                 var projectPath = context.GetProjectRelativePath(project.FilePath!);
                 var startLine = sourceText.Lines.GetLineFromPosition(declaration.SpanStart).LineNumber + 1;
                 var subjectId = DocumentationCommentId.CreateDeclarationId(symbol)

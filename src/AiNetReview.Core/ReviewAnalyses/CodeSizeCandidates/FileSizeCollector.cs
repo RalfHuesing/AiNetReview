@@ -18,15 +18,10 @@ internal static class FileSizeCollector
         CancellationToken cancellationToken)
     {
         var measurements = new List<FileSizeMeasurement>();
-        foreach (var item in CodeSizeDocuments.GetUniqueByPhysicalPath(project))
+        foreach (var item in await CodeSizeDocuments.GetUniqueNonGeneratedByPhysicalPathAsync(project, cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var document = item.Document;
-            if (!item.FilePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
-                || await ReviewSourceClassifier.IsGeneratedDocumentAsync(document, cancellationToken).ConfigureAwait(false))
-            {
-                continue;
-            }
 
             var sourceText = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
             if (!TryCreateEvidence(sourceText, out var evidence))
