@@ -157,3 +157,13 @@ Vor der fachlichen Umsetzung waren die IntegrationTests wegen wechselnder Report
 - Gates: `CodeSizeCandidatesAnalysisTests` und `MethodControlFlowOutliersAnalysisTests` zusammen 25/25 bestanden; `dotnet build AiNetReview.slnx --no-restore` mit 0 Warnungen und 0 Fehlern bestanden; `git diff --check` bestanden.
 - C1-Commit: `33c0338b7b2247cb509bb141e454157198c9bb52` (`feat(review): add member size candidate analysis`).
 - Nächster ausführbarer Punkt: C2 — Klassen- und Dateikandidaten ergänzen.
+
+## C2 — Klassen- und Dateikandidaten
+
+- C2 aggregiert explizite Klassen und Record-Klassen je Roslyn-Symbol und Produktionsprojekt mit `CodeLineMetrics.CountOwnTypePart`. Verschachtelte Klassen werden eigenständig gemessen; Partial-Findings haben eine repräsentative erste nicht generierte Deklaration, genau ein RelatedSymbol und Evidenz zu jedem nicht generierten Teil. Generierte Dokumentteile und generierte Symbole bleiben ausgeschlossen.
+- Klassen verwenden getrennte nearest-rank-Gruppen und relative sowie unabhängige Extrempfade. Datei-Findings zählen `SourceText.Lines` und UTF-8-Bytes des geladenen Textes ohne BOM; beide unabhängigen Extrempfade laufen pro Produktionsprojekt. Whitespace-only und generierte Dateien werden ausgelassen. Dateiidentität und Discriminator sind `file:<project-relative-path>` und `file-size`.
+- FastTests prüfen Partial-Änderungen in `changed-files/`, Nested-/Record-/Partial-Aggregation und generierte Teile/Symbole, Gleichstände und exakte Grenzwerte beider Klassenauswahlpfade, gemeinsame physische Dateien in zwei Projekten, Zeilen-/UTF-8-Grenzen mit mehrzeiligem Unicode-Literal, Whitespace-Dateien und Validator-Evidenz aus dem geladenen Snapshot.
+- AiNetLinter wurde read-only über `MetricsTreeScanner` und `metrics_tree` geprüft. Es gibt eine physische Datei-/Verzeichnisstatistik, aber keine entsprechende Snapshot-Typaggregation; es wurden keine Schwellen oder Analyse-Regeln übernommen.
+- Doku-Check: `README.md`, `docs/README.md`, `docs/development/adding-review-analyses.md`, `docs/review/findings.md`, Konfiguration, CLI und Architektur geprüft. `code-size-candidates` bleibt unregistriert bis C3; die dokumentierten Produktionslisten sind weiterhin korrekt, daher keine `docs/`-Änderung.
+- Gates: gezielte `CodeSizeCandidatesAnalysisTests` **16/16**, vollständige `scripts/test-fast.ps1` **256/256 ohne Skips**, `scripts/build.ps1` **0 Warnungen/0 Fehler**, `git diff --cached --check` bestanden.
+- C2-Commit: `79bf4e2` (`feat(review): add class and file size candidates`). Keine Audit-Runde verbraucht; nächster ausführbarer Punkt: **C2-Audit — Aggregation und Dateimaße unabhängig prüfen**.
