@@ -45,39 +45,179 @@ public sealed class MarkdownReportWriterPublicationTests
         var config = CreateConfig(temp.DirectoryPath, analysis);
         var result = new ReviewRunResult([new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, ReviewAnalysisResult.Empty)]);
         FileStream? lockedFile = null;
-        Task? releaseLock = null;
+        var moveAttempts = 0;
+        var firstMoveError = 0;
         var writer = new MarkdownReportWriter(_ =>
         {
             var temporaryPath = Directory.EnumerateDirectories(config.ResolvedOutputDirectory, ".ainetreview-tmp-*").Single();
-            var indexPath = Path.Combine(temporaryPath, "index.md");
-            lockedFile = new FileStream(indexPath, FileMode.Open, FileAccess.Read, FileShare.None);
-            releaseLock = Task.Run(async () =>
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(90));
-                await lockedFile.DisposeAsync();
-            });
+            lockedFile = new FileStream(Path.Combine(temporaryPath, "index.md"), FileMode.Open, FileAccess.Read, FileShare.None);
             return ValueTask.CompletedTask;
+        }, (sourcePath, destinationPath) =>
+        {
+            moveAttempts++;
+            if (moveAttempts == 1)
+            {
+                var exception = Assert.Throws<IOException>(() => Directory.Move(sourcePath, destinationPath));
+                firstMoveError = exception.HResult;
+                lockedFile!.Dispose();
+                lockedFile = null;
+                throw exception;
+            }
+
+            Assert.Null(lockedFile);
+            Directory.Move(sourcePath, destinationPath);
+        }, Directory.Delete);
+
+        var report = await writer.WriteAsync(config, result);
+
+        Assert.Equal(2, moveAttempts);
+        Assert.Equal(unchecked((int)0x80070005), firstMoveError);
+        Assert.True(File.Exists(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "index.md")));
+        Assert.Empty(Directory.EnumerateDirectories(config.ResolvedOutputDirectory, ".ainetreview-tmp-*"));
+    }
+
+    [Fact]
+    public async Task WriteAsync_ExhaustedPublicationRetriesReattemptOwnedTemporaryCleanup()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var temp = TestTempDirectory.Create();
+        var analysis = new PublicationAnalysis();
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        var result = new ReviewRunResult([new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, ReviewAnalysisResult.Empty)]);
+        FileStream? lockedFile = null;
+        var moveAttempts = 0;
+        var deleteAttempts = 0;
+        var writer = new MarkdownReportWriter(_ =>
+        {
+            var temporaryPath = Directory.EnumerateDirectories(config.ResolvedOutputDirectory, ".ainetreview-tmp-*").Single();
+            lockedFile = new FileStream(Path.Combine(temporaryPath, "index.md"), FileMode.Open, FileAccess.Read, FileShare.None);
+            return ValueTask.CompletedTask;
+        }, (sourcePath, destinationPath) =>
+        {
+            moveAttempts++;
+            Directory.Move(sourcePath, destinationPath);
+        }, (path, recursive) =>
+        {
+            deleteAttempts++;
+            if (deleteAttempts <= 2)
+            {
+                if (deleteAttempts == 2)
+                {
+                    lockedFile!.Dispose();
+                    lockedFile = null;
+                }
+
+                throw new IOException("injected transient cleanup lock", unchecked((int)0x80070005));
+            }
+
+            Directory.Delete(path, recursive);
         });
 
-        PublishedReport report;
-        try
-        {
-            report = await writer.WriteAsync(config, result);
-        }
-        finally
-        {
-            if (releaseLock is not null)
-            {
-                await releaseLock;
-            }
+        var exception = await Assert.ThrowsAsync<IOException>(() => writer.WriteAsync(config, result));
 
-            if (lockedFile is not null)
-            {
-                await lockedFile.DisposeAsync();
-            }
-        }
+        Assert.Equal(unchecked((int)0x80070005), exception.HResult);
+        Assert.Equal(5, moveAttempts);
+        Assert.Equal(3, deleteAttempts);
+        Assert.Null(lockedFile);
+        Assert.Empty(Directory.EnumerateDirectories(config.ResolvedOutputDirectory, ".ainetreview-tmp-*"));
+    }
 
-        Assert.True(File.Exists(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "index.md")));
+    [Fact]
+    public async Task WriteAsync_LeavesClearlyNamedTemporaryDirectoryWhenLockOutlastsCleanupRetries()
+    {
+        using var temp = TestTempDirectory.Create();
+        var analysis = new PublicationAnalysis();
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        var result = new ReviewRunResult([new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, ReviewAnalysisResult.Empty)]);
+        var writer = new MarkdownReportWriter(
+            static _ => ValueTask.CompletedTask,
+            (_, _) => throw new IOException("persistent publication lock", unchecked((int)0x80070005)),
+            (_, _) => throw new IOException("persistent cleanup lock", unchecked((int)0x80070005)));
+
+        await Assert.ThrowsAsync<IOException>(() => writer.WriteAsync(config, result));
+
+        var leftovers = Directory.EnumerateDirectories(config.ResolvedOutputDirectory, ".ainetreview-tmp-*").ToArray();
+        Assert.Single(leftovers);
+        Assert.Empty(Directory.EnumerateDirectories(config.ResolvedOutputDirectory).Where(path =>
+            !Path.GetFileName(path).StartsWith(".ainetreview-tmp-", StringComparison.Ordinal)));
+
+        Directory.Delete(leftovers[0], recursive: true);
+    }
+
+    [Fact]
+    public async Task WriteAsync_DoesNotRetryNonWin32MoveErrorsWithLockLikeLowWord()
+    {
+        using var temp = TestTempDirectory.Create();
+        var analysis = new PublicationAnalysis();
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        var result = new ReviewRunResult([new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, ReviewAnalysisResult.Empty)]);
+        var moveAttempts = 0;
+        var writer = new MarkdownReportWriter(
+            static _ => ValueTask.CompletedTask,
+            (_, _) =>
+            {
+                moveAttempts++;
+                throw new IOException("unrelated HRESULT with a lock-like low word", unchecked((int)0x80010005));
+            },
+            Directory.Delete);
+
+        var exception = await Assert.ThrowsAsync<IOException>(() => writer.WriteAsync(config, result));
+
+        Assert.Equal(unchecked((int)0x80010005), exception.HResult);
+        Assert.Equal(1, moveAttempts);
+        Assert.Empty(Directory.EnumerateDirectories(config.ResolvedOutputDirectory, ".ainetreview-tmp-*"));
+    }
+
+    [Fact]
+    public async Task WriteAsync_DoesNotRetryPermanentWin32MoveErrors()
+    {
+        using var temp = TestTempDirectory.Create();
+        var analysis = new PublicationAnalysis();
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        var result = new ReviewRunResult([new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, ReviewAnalysisResult.Empty)]);
+        var moveAttempts = 0;
+        var writer = new MarkdownReportWriter(
+            static _ => ValueTask.CompletedTask,
+            (_, _) =>
+            {
+                moveAttempts++;
+                throw new IOException("permanent Win32 error", unchecked((int)0x80070003));
+            },
+            Directory.Delete);
+
+        var exception = await Assert.ThrowsAsync<IOException>(() => writer.WriteAsync(config, result));
+
+        Assert.Equal(unchecked((int)0x80070003), exception.HResult);
+        Assert.Equal(1, moveAttempts);
+        Assert.Empty(Directory.EnumerateDirectories(config.ResolvedOutputDirectory, ".ainetreview-tmp-*"));
+    }
+
+    [Fact]
+    public async Task WriteAsync_CancellationDuringPublicationRetryStopsFurtherMovesAndCleansTemporaryReport()
+    {
+        using var temp = TestTempDirectory.Create();
+        var analysis = new PublicationAnalysis();
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        var result = new ReviewRunResult([new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, ReviewAnalysisResult.Empty)]);
+        using var cancellation = new CancellationTokenSource();
+        var moveAttempts = 0;
+        var writer = new MarkdownReportWriter(
+            static _ => ValueTask.CompletedTask,
+            (_, _) =>
+            {
+                moveAttempts++;
+                cancellation.Cancel();
+                throw new IOException("cancel during transient retry", unchecked((int)0x80070005));
+            },
+            Directory.Delete);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => writer.WriteAsync(config, result, cancellation.Token));
+
+        Assert.Equal(1, moveAttempts);
         Assert.Empty(Directory.EnumerateDirectories(config.ResolvedOutputDirectory, ".ainetreview-tmp-*"));
     }
 

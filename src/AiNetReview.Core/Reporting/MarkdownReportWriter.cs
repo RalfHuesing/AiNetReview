@@ -20,6 +20,8 @@ public sealed class MarkdownReportWriter
     private const int ErrorAccessDenied = 5;
     private const int ErrorSharingViolation = 32;
     private const int ErrorLockViolation = 33;
+    private const int HResultFacilityWin32 = unchecked((int)0x80070000);
+    private const int HResultFacilityMask = unchecked((int)0xFFFF0000);
     private static readonly UTF8Encoding Utf8WithoutBom = new(encoderShouldEmitUTF8Identifier: false);
     private static readonly TimeSpan[] PublicationRetryDelays =
     [
@@ -29,14 +31,28 @@ public sealed class MarkdownReportWriter
         TimeSpan.FromMilliseconds(160),
     ];
     private readonly Func<CancellationToken, ValueTask>? beforePublication;
+    private readonly Action<string, string> moveDirectory;
+    private readonly Action<string, bool> deleteDirectory;
 
     public MarkdownReportWriter()
     {
+        moveDirectory = Directory.Move;
+        deleteDirectory = Directory.Delete;
     }
 
     internal MarkdownReportWriter(Func<CancellationToken, ValueTask> beforePublication)
+        : this(beforePublication ?? throw new ArgumentNullException(nameof(beforePublication)), Directory.Move, Directory.Delete)
     {
-        this.beforePublication = beforePublication ?? throw new ArgumentNullException(nameof(beforePublication));
+    }
+
+    internal MarkdownReportWriter(
+        Func<CancellationToken, ValueTask>? beforePublication,
+        Action<string, string> moveDirectory,
+        Action<string, bool> deleteDirectory)
+    {
+        this.beforePublication = beforePublication;
+        this.moveDirectory = moveDirectory ?? throw new ArgumentNullException(nameof(moveDirectory));
+        this.deleteDirectory = deleteDirectory ?? throw new ArgumentNullException(nameof(deleteDirectory));
     }
 
     public async Task<PublishedReport> WriteAsync(
@@ -115,13 +131,13 @@ public sealed class MarkdownReportWriter
             {
                 if (!published)
                 {
-                    TryDeleteTemporaryDirectory(temporaryPath);
+                    await TryDeleteTemporaryDirectoryAsync(temporaryPath).ConfigureAwait(false);
                 }
             }
         }
     }
 
-    private static async Task MoveDirectoryWithTransientRetryAsync(
+    private async Task MoveDirectoryWithTransientRetryAsync(
         string sourcePath,
         string destinationPath,
         CancellationToken cancellationToken)
@@ -131,7 +147,7 @@ public sealed class MarkdownReportWriter
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                Directory.Move(sourcePath, destinationPath);
+                moveDirectory(sourcePath, destinationPath);
                 return;
             }
             catch (IOException exception) when (IsTransientPublicationLock(exception))
@@ -146,9 +162,14 @@ public sealed class MarkdownReportWriter
         }
     }
 
-    private static bool IsTransientPublicationLock(IOException exception)
+    private static bool IsTransientPublicationLock(Exception exception)
     {
         // Windows reports locks on files inside a directory as HRESULT_FROM_WIN32 errors.
+        if ((exception.HResult & HResultFacilityMask) != HResultFacilityWin32)
+        {
+            return false;
+        }
+
         var errorCode = exception.HResult & 0xFFFF;
         return errorCode is ErrorAccessDenied or ErrorSharingViolation or ErrorLockViolation;
     }
@@ -671,22 +692,36 @@ public sealed class MarkdownReportWriter
     private static string CreateRunId(DateTimeOffset value) => value.UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture)
         + "-" + Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
 
-    private static void TryDeleteTemporaryDirectory(string path)
+    private async Task TryDeleteTemporaryDirectoryAsync(string path)
     {
-        try
+        for (var attempt = 0; ; attempt++)
         {
-            if (Directory.Exists(path))
+            try
             {
-                Directory.Delete(path, recursive: true);
+                if (Directory.Exists(path))
+                {
+                    deleteDirectory(path, true);
+                }
+
+                return;
             }
-        }
-        catch (IOException)
-        {
-            // Best effort: a failed report is never published, and any remaining directory is clearly temporary.
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // Best effort: a failed report is never published, and any remaining directory is clearly temporary.
+            catch (Exception exception) when (IsTransientPublicationLock(exception))
+            {
+                if (attempt >= PublicationRetryDelays.Length)
+                {
+                    return;
+                }
+
+                await Task.Delay(PublicationRetryDelays[attempt]).ConfigureAwait(false);
+            }
+            catch (IOException)
+            {
+                return;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return;
+            }
         }
     }
 }
