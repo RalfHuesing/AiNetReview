@@ -1,5 +1,10 @@
 # Laufstand: Drei Review-Tasks
 
+## C4 — closing audit open (2026-09-30)
+
+- Independent C4 review found no size-analysis production-code deviation. Full normal gates after C3: FastTests **259/259**, IntegrationTests **97/97**, no skips; build **0 warnings/0 errors**. Active manual audits with exact concept defaults produced AiNetReview **13 member, 5 class, 0 file** findings and read-only AiNetLinter **1 member, 36 class, 0 file** findings; run IDs, trigger examples, and verification are in [the size audit](../analyse-groessen/audit.md). Existing disabled local profiles were not changed.
+- One required current-state documentation finding remains: `docs/review/findings.md:13` calls the first listed registry analysis a method-only control-flow analysis even though `code-size-candidates` is listed first. A separate correction and independent follow-up audit are needed. Fach-Roadmap 4, Multi C4, and the size aggregate remain open; next executable action is that documentation correction. The historical intermittent `Directory.Move` `IOException` remains the accepted residual finding.
+
 ## C3 — Analyse und Bericht integriert (30.09.2026)
 
 - `code-size-candidates` ist genau einmal als siebte Produktionsanalyse registriert und standardmäßig aktiviert. Repository- und generierte Konfiguration führen die sieben Optionen mit Konzept-Defaults auf; benutzerdefinierte Werte werden vom vorhandenen Descriptor validiert.
