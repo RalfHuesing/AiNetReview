@@ -47,7 +47,8 @@ public sealed class HostAdapterIntegrationTests
         var runDirectory = Path.Combine(projectRoot, "reports", first.RunId);
         var allReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "all-findings", "indirection-drift-candidates.md"));
         var changedReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "changed-files", "indirection-drift-candidates.md"));
-        Assert.Equal(allReport, changedReport);
+        AssertViewPolicies(allReport, changedReport);
+        Assert.Equal(NormalizeForChangedView(allReport), changedReport);
         Assert.Contains("Forwarding path: 2 forwarding edges across 3 types and 3 files", allReport, StringComparison.Ordinal);
         Assert.True(allReport.IndexOf("`Sample/ZApi.cs`", StringComparison.Ordinal)
             < allReport.IndexOf("`Sample/BService.cs`", StringComparison.Ordinal));
@@ -125,7 +126,8 @@ public sealed class HostAdapterIntegrationTests
         Assert.Contains("\"minimumSimilarity\": \"exact\"", exactReport, StringComparison.Ordinal);
         Assert.Contains("2 methods;", exactReport, StringComparison.Ordinal);
         Assert.Contains("Total findings: 1", exactReport, StringComparison.Ordinal);
-        Assert.Contains("| ProductA/ProductA.csproj | ProductA/First.cs | 1 |", exactReport, StringComparison.Ordinal);
+        Assert.Contains("Total findings: 1 across 1 projects and 1 source files.", exactReport, StringComparison.Ordinal);
+        Assert.Contains("### Project: ProductA/ProductA.csproj (1 files, 1 findings)", exactReport, StringComparison.Ordinal);
         Assert.Contains("#### File: ProductA/First.cs (1 findings)", exactReport, StringComparison.Ordinal);
         Assert.Matches("[0-9]+(?:\\.[0-9]+)?% similarity \\(minimum [0-9]+(?:\\.[0-9]+)?%\\)", exactReport);
         Assert.Contains("`ProductA/First.cs`: ", exactReport, StringComparison.Ordinal);
@@ -217,7 +219,8 @@ public sealed class HostAdapterIntegrationTests
         var structuralReport = await ReadStructuralDuplicateReportAsync(projectRoot, together.RunId, "all-findings");
         Assert.Contains("Structural duplicate: 2 occurrences in 2 executable members", structuralReport, StringComparison.Ordinal);
         Assert.Contains("Total findings: 1", structuralReport, StringComparison.Ordinal);
-        Assert.Contains("| ProductA/ProductA.csproj | ProductA/First.cs | 1 |", structuralReport, StringComparison.Ordinal);
+        Assert.Contains("Total findings: 1 across 1 projects and 1 source files.", structuralReport, StringComparison.Ordinal);
+        Assert.Contains("### Project: ProductA/ProductA.csproj (1 files, 1 findings)", structuralReport, StringComparison.Ordinal);
         Assert.Contains("#### File: ProductA/First.cs (1 findings)", structuralReport, StringComparison.Ordinal);
         Assert.Contains("`ProductA/First.cs`", structuralReport, StringComparison.Ordinal);
         Assert.Contains("`ProductB/Second.cs`", structuralReport, StringComparison.Ordinal);
@@ -247,7 +250,8 @@ public sealed class HostAdapterIntegrationTests
         Assert.Equal(2, changed.Detected);
         var changedStructuralReport = await ReadStructuralDuplicateReportAsync(projectRoot, changed.RunId, "changed-files");
         Assert.Contains("Total findings: 1", changedStructuralReport, StringComparison.Ordinal);
-        Assert.Contains("| ProductA/ProductA.csproj | ProductA/First.cs | 1 |", changedStructuralReport, StringComparison.Ordinal);
+        Assert.Contains("Total findings: 1 across 1 projects and 1 source files.", changedStructuralReport, StringComparison.Ordinal);
+        Assert.Contains("### Project: ProductA/ProductA.csproj (1 files, 1 findings)", changedStructuralReport, StringComparison.Ordinal);
         Assert.Contains("#### File: ProductA/First.cs (1 findings)", changedStructuralReport, StringComparison.Ordinal);
         Assert.Contains("`ProductA/First.cs`", changedStructuralReport, StringComparison.Ordinal);
         Assert.Contains("`ProductB/Second.cs`", changedStructuralReport, StringComparison.Ordinal);
@@ -353,7 +357,8 @@ public sealed class HostAdapterIntegrationTests
         Assert.Contains("no static test path", allReport, StringComparison.Ordinal);
         Assert.Contains("indirect test path only", allReport, StringComparison.Ordinal);
         Assert.Contains("Shortest resolved test path:", allReport, StringComparison.Ordinal);
-        Assert.Equal(allReport, changedReport);
+        AssertViewPolicies(allReport, changedReport);
+        Assert.Equal(NormalizeForChangedView(allReport), changedReport);
         Assert.Contains("any C# path was added, changed, or deleted", index, StringComparison.Ordinal);
 
         var baseline = await InvokeProductionCommandAsync(["baseline", projectRoot]);
@@ -812,6 +817,20 @@ public sealed class HostAdapterIntegrationTests
 
     private static Task<string> ReadDuplicateCodeReportAsync(string projectRoot, string runId) =>
         File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId, "all-findings", "duplicate-code-candidates.md"));
+
+    private static void AssertViewPolicies(string allFindingsReport, string changedFilesReport)
+    {
+        Assert.Contains(
+            "This is the reference-only `all-findings/` view; inspect or report it only when the user explicitly requests a full repository audit.",
+            allFindingsReport,
+            StringComparison.Ordinal);
+        Assert.Contains("Use `changed-files/` as the primary review set;", changedFilesReport, StringComparison.Ordinal);
+    }
+
+    private static string NormalizeForChangedView(string report) => report.Replace(
+        "Review policy: These potential signals do not require changes. This is the reference-only `all-findings/` view; inspect or report it only when the user explicitly requests a full repository audit. See the [root index's Review guidance](../index.md#review-guidance).",
+        "Review policy: These potential signals do not require changes. Use `changed-files/` as the primary review set; see the [root index's Review guidance](../index.md#review-guidance).",
+        StringComparison.Ordinal);
 
     private static void AssertMarkdownLinksResolve(string runDirectory)
     {

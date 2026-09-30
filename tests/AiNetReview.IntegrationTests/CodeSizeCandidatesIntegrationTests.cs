@@ -70,15 +70,15 @@ public sealed class CodeSizeCandidatesIntegrationTests
         Assert.Contains("relative length\\-and\\-control\\-flow path", sizeReport, StringComparison.Ordinal);
         Assert.Contains("extreme length path", sizeReport, StringComparison.Ordinal);
         Assert.Contains("Related: method-control-flow-outliers", sizeReport, StringComparison.Ordinal);
-        Assert.Contains("Is this executable body cohesive, and are its paths and tests easy to review?", sizeReport, StringComparison.Ordinal);
+        Assert.Equal(1, sizeReport.Split("Is this executable body cohesive, and are its paths and tests easy to review?", StringSplitOptions.None).Length - 1);
         Assert.Contains("Class: ", sizeReport, StringComparison.Ordinal);
         Assert.Contains("relative type\\-size path", sizeReport, StringComparison.Ordinal);
         Assert.Contains("extreme type\\-size path", sizeReport, StringComparison.Ordinal);
-        Assert.Contains("Do the members of this class serve one cohesive responsibility?", sizeReport, StringComparison.Ordinal);
+        Assert.Equal(1, sizeReport.Split("Do the members of this class serve one cohesive responsibility?", StringSplitOptions.None).Length - 1);
         Assert.Contains("File: ", sizeReport, StringComparison.Ordinal);
         Assert.Contains("line\\-count path", sizeReport, StringComparison.Ordinal);
         Assert.Contains("UTF\\-8 byte path", sizeReport, StringComparison.Ordinal);
-        Assert.Contains("Can relevant code in this file be located and edited with focused context?", sizeReport, StringComparison.Ordinal);
+        Assert.Equal(1, sizeReport.Split("Can relevant code in this file be located and edited with focused context?", StringSplitOptions.None).Length - 1);
         var flowReport = await File.ReadAllTextAsync(flowReportPath);
         Assert.Contains("8 decisions across 8 constructs (cutoff 8)", flowReport, StringComparison.Ordinal);
         Assert.Contains("LongOperation", flowReport, StringComparison.Ordinal);
