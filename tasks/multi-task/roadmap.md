@@ -56,7 +56,7 @@ Start nur nach geschlossenem Core-Aggregat und Prüfung von `ControlFlowMetrics.
 
 ## Gesamtabnahme
 
-- [ ] **Endaudit über den erreichten Stand**
+- [x] **Endaudit über den erreichten Stand**
   - Intention: Prüfen, ob die drei Taskergebnisse zusammen den freigegebenen Verträgen entsprechen und der Lauf nachvollziehbar abgeschlossen oder begründet teilabgeschlossen ist.
   - Scope: Nach allen erreichbaren Punkten einen unabhängigen Audit-Agenten die gemeinsamen Core-APIs, beide Verbraucher, bestehende Review-Verträge, Tests/Gates, Doku, Checkboxen, Restbefunde und Commits gegen [Konzept.md](Konzept.md) und die drei Fachkonzepte prüfen lassen. Bestätigte Pflichtbefunde in höchstens drei eigenen sequenziellen Fix-/Nachaudit-Runden bearbeiten; `Status.md` mit abgeschlossenem und offenem Umfang aktualisieren und committen.
   - Nicht: Einen blockierten Fach-Task als erledigt markieren, neue Features aufnehmen oder denselben aussichtslosen Fix wiederholen.
