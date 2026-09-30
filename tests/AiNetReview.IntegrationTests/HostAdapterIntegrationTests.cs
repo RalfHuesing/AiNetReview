@@ -124,6 +124,10 @@ public sealed class HostAdapterIntegrationTests
         var exactReport = await ReadDuplicateCodeReportAsync(projectRoot, exact.RunId);
         Assert.Equal(1, exact.Detected);
         Assert.Contains("\"minimumSimilarity\": \"exact\"", exactReport, StringComparison.Ordinal);
+        Assert.Contains("`exact` = 0.95, `near` = 0.80, and `fuzzy` = 0.65", exactReport, StringComparison.Ordinal);
+        Assert.Contains("`exact` is the strictest preset, not exact identity.", exactReport, StringComparison.Ordinal);
+        Assert.Contains("Jaccard over distinct fixed five-token n-gram sets from method bodies", exactReport, StringComparison.Ordinal);
+        Assert.Contains("Whitespace and comments are ignored; identifier and literal token text is retained, with no identifier or local-name normalization.", exactReport, StringComparison.Ordinal);
         Assert.Contains("2 methods;", exactReport, StringComparison.Ordinal);
         Assert.Contains("Total findings: 1", exactReport, StringComparison.Ordinal);
         Assert.Contains("Total findings: 1 across 1 projects and 1 source files.", exactReport, StringComparison.Ordinal);

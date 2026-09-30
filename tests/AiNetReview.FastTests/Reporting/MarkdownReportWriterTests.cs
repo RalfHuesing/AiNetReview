@@ -60,6 +60,7 @@ public sealed class MarkdownReportWriterTests
             "all-findings", "structural-duplication-candidates.md"));
 
         Assert.Contains("Structural duplicate: 3 occurrences in 2 executable members; 3 statements / 60 tokens; identical after local/parameter normalization.", markdown, StringComparison.Ordinal);
+        Assert.Contains("Containment suppression removes a smaller fragment only when every occurrence is contained in an occurrence of a larger qualifying group; a smaller group with any additional occurrence remains reportable.", markdown, StringComparison.Ordinal);
         Assert.Contains("Total findings: 1", markdown, StringComparison.Ordinal);
         Assert.Contains("#### File: ", markdown, StringComparison.Ordinal);
         Assert.Contains("(1 findings)", markdown, StringComparison.Ordinal);
@@ -358,6 +359,8 @@ public sealed class MarkdownReportWriterTests
         var analysis = new MissingTestEvidenceCandidatesAnalysis();
         var otherAnalysis = new ReportAnalysis("other-analysis", "Other Analysis", "file based selection");
         var config = CreateConfig(temp.DirectoryPath, analysis, otherAnalysis);
+        const string testPathMethodId = "M:Sample.Tests.Tests`1.CallsApi(System.Collections.Generic.Dictionary{System.String,System.Int32})";
+        const string testPathSource = "Sample.Tests/Test`Root{V1}.cs";
         var noPath = new FindingDraft("Sample/Sample.csproj", "Sample/NoPath.cs", "M:Sample.NoPath.Run", "no-static-test-path", 2,
             "no static test path", new Dictionary<string, double>
             {
@@ -371,12 +374,12 @@ public sealed class MarkdownReportWriterTests
             },
             [
                 new FindingEvidence("Sample/Indirect.cs", 4, "M:Sample.Indirect.Run", "Eligible candidate", "Run"),
-                new FindingEvidence("Sample.Tests/Tests.cs", 3, "M:Sample.Tests.Tests.CallsApi", "Test root", "CallsApi"),
+                new FindingEvidence(testPathSource, 3, testPathMethodId, "Test root", "CallsApi"),
                 new FindingEvidence("Sample/Generated/Worker.g.cs", 2, "M:Sample.GeneratedIntermediate.Run", "Generated intermediate", "Run"),
                 new FindingEvidence("Sample/Api.cs", 8, "M:Sample.Api.Run", "Intermediate", "Run"),
                 new FindingEvidence("Sample/Indirect.cs", 4, "M:Sample.Indirect.Run", "Candidate", "Run"),
             ],
-            [new FindingSymbol("Sample/Sample.csproj", "Sample.Tests/Tests.cs", "M:Sample.Tests.Tests.CallsApi", 3),
+            [new FindingSymbol("Sample/Sample.csproj", testPathSource, testPathMethodId, 3),
                 new FindingSymbol("Sample/Sample.csproj", "Sample/Api.cs", "M:Sample.Api.Run", 8),
                 new FindingSymbol("Sample/Sample.csproj", "Sample/Indirect.cs", "M:Sample.Indirect.Run", 4)]);
         var otherFinding = Finding("Sample/Other.cs", 1, "M:Sample.Other.Run", "unchanged analysis finding", "Run", "case");
@@ -403,13 +406,15 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("indirect test path only; 5 decisions, nesting 3", allFindings, StringComparison.Ordinal);
         Assert.Contains("The `attribution uncertain` marker means the static test association may be incomplete", allFindings, StringComparison.Ordinal);
         Assert.Contains("It does not assess test assertion quality.", allFindings, StringComparison.Ordinal);
+        Assert.Contains("A production function meets the nontrivial gate when `decisionCount >= minDecisionCount OR maxDecisionNesting >= minDecisionNesting`.", allFindings, StringComparison.Ordinal);
+        Assert.Contains("an indirect-path-only function must also meet `decisionCount >= minIndirectDecisionCount OR maxDecisionNesting >= minIndirectDecisionNesting`", allFindings, StringComparison.Ordinal);
+        Assert.Contains("A reachable global uncertainty input can mark every function", allFindings, StringComparison.Ordinal);
+        Assert.Contains("neither means a test is missing nor that the marked function itself has an unresolved binding", allFindings, StringComparison.Ordinal);
         Assert.Contains("each switch section or switch-expression arm once", allFindings, StringComparison.Ordinal);
         Assert.Contains("`&&`, `||`, and `??` do not add decisions", allFindings, StringComparison.Ordinal);
         Assert.Contains("Shortest resolved test path:", allFindings, StringComparison.Ordinal);
-        Assert.Contains("M:Sample.Tests.Tests.CallsApi (Sample.Tests/Tests.cs:3)", allFindings, StringComparison.Ordinal);
-        Assert.Contains("M:Sample.GeneratedIntermediate.Run (Sample/Generated/Worker.g.cs:2)", allFindings, StringComparison.Ordinal);
-        Assert.Contains("M:Sample.Api.Run (Sample/Api.cs:8)", allFindings, StringComparison.Ordinal);
-        Assert.Contains("M:Sample.Indirect.Run (Sample/Indirect.cs:4)", allFindings, StringComparison.Ordinal);
+        var shortestPathLine = Assert.Single(allFindings.Split('\n').Where(static line => line.StartsWith("  - Shortest resolved test path:", StringComparison.Ordinal)));
+        Assert.Equal($"  - Shortest resolved test path: ``{testPathMethodId}`` (``{testPathSource}:3``) -> `M:Sample.GeneratedIntermediate.Run` (`Sample/Generated/Worker.g.cs:2`) -> `M:Sample.Api.Run` (`Sample/Api.cs:8`) -> `M:Sample.Indirect.Run` (`Sample/Indirect.cs:4`)", shortestPathLine);
         Assert.Contains("Reflection, dependency injection, external test projects, dynamic dispatch, branch execution, and custom test discovery", allFindings, StringComparison.Ordinal);
         Assert.Contains("No findings in this view.", changedIndex, StringComparison.Ordinal);
         Assert.Contains("shows every current finding when any C# path was added, changed, or deleted", rootIndex, StringComparison.Ordinal);

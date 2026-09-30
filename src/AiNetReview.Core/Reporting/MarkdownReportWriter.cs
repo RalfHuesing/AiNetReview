@@ -378,9 +378,31 @@ public sealed class MarkdownReportWriter
             builder.Append("\nControl-flow counting: `decisionCount` counts each `if`, conditional expression, loop, and `catch` once, and each switch section or switch-expression arm once. `decisionConstructCount` counts each `if`, conditional expression, loop, and `catch` once and each entire switch once. Nesting is the maximum depth of counted decisions (`else if` chains stay at the same depth). Operators such as `&&`, `||`, and `??` do not add decisions; these measures are not cyclomatic complexity.\n");
         }
 
+        if (configuredAnalysis.AnalysisId == "method-control-flow-outliers")
+        {
+            builder.Append("\nSelection: Within each production C# project, decision-count and maximum-nesting populations have separate nearest-rank values at the configured `percentile`. Inclusive cutoffs are `max(8, decision percentile)` and `max(4, nesting percentile)`. A method is selected when `decisionCount >= decision cutoff AND decisionConstructCount >= 2`, or `maxDecisionNesting >= nesting cutoff`.\n");
+        }
+
+        if (configuredAnalysis.AnalysisId == "code-size-candidates")
+        {
+            builder.Append("\nCode-size counting and selection: Member code lines are distinct physical source lines with a non-missing C# token start in the full executable declaration; tokenless comment and blank lines do not count, while signature, attributes, and braces count where their tokens start. A multiline literal counts its token-start line; continuation lines count only if another token starts there. Type code lines sum the same token-start line counts across each non-generated part of an explicit class or record class symbol, excluding nested types and delegates. File lines are physical source lines; file bytes are UTF-8 bytes without a BOM.\n\n")
+                .Append("Within each production project, members meet the relative size criterion when `memberCodeLines >= max(minMemberCodeLines, project nearest-rank memberCodeLines value at percentile)` and `((decisionCount >= 8 AND decisionConstructCount >= 2) OR maxDecisionNesting >= 4)`; `extremeMemberCodeLines` is an independent inclusive threshold. Types meet the relative criterion at `typeCodeLines >= max(minTypeCodeLines, project nearest-rank typeCodeLines value at percentile)` or the independent `extremeTypeCodeLines` threshold. Files meet either inclusive threshold: `fileLines >= extremeFileLines` or `fileUtf8Bytes >= extremeFileUtf8Bytes`.\n");
+        }
+
+        if (configuredAnalysis.AnalysisId == "duplicate-code-candidates")
+        {
+            builder.Append("\nSimilarity presets: `exact` = 0.95, `near` = 0.80, and `fuzzy` = 0.65; `exact` is the strictest preset, not exact identity. Similarity is Jaccard over distinct fixed five-token n-gram sets from method bodies. Whitespace and comments are ignored; identifier and literal token text is retained, with no identifier or local-name normalization.\n");
+        }
+
+        if (configuredAnalysis.AnalysisId == "structural-duplication-candidates")
+        {
+            builder.Append("\nContainment suppression removes a smaller fragment only when every occurrence is contained in an occurrence of a larger qualifying group; a smaller group with any additional occurrence remains reportable.\n");
+        }
+
         if (configuredAnalysis.AnalysisId == "missing-test-evidence-candidates")
         {
-            builder.Append("\nThis is static test-path evidence from the loaded snapshot, not runtime coverage. The `attribution uncertain` marker means the static test association may be incomplete; it can result from reachable unresolved bindings, method groups, or virtual/interface dispatch, and may propagate to downstream methods over known calls. It does not assess test assertion quality. Reflection, dependency injection, external test projects, dynamic dispatch, branch execution, and custom test discovery can hide associations.\n");
+            builder.Append("\nSelection: A production function meets the nontrivial gate when `decisionCount >= minDecisionCount OR maxDecisionNesting >= minDecisionNesting`. A direct resolved static test path suppresses a finding. A function with no resolved static test path is reported at the nontrivial gate; an indirect-path-only function must also meet `decisionCount >= minIndirectDecisionCount OR maxDecisionNesting >= minIndirectDecisionNesting`.\n\n")
+                .Append("This is static test-path evidence from the loaded snapshot, not runtime coverage. The `attribution uncertain` marker means the static test association may be incomplete; it can result from reachable unresolved bindings, method groups, or virtual/interface dispatch, and may propagate to downstream methods over known calls. A reachable global uncertainty input can mark every function, so the marker alone neither means a test is missing nor that the marked function itself has an unresolved binding. It does not assess test assertion quality. Reflection, dependency injection, external test projects, dynamic dispatch, branch execution, and custom test discovery can hide associations.\n");
             if (viewDirectory == "changed-files")
             {
                 builder.Append("\nChanged-files selection is snapshot-wide because changes to test roots or the call graph can alter associations in unchanged production files. Without a baseline, every current source file is treated as new. With a baseline, any added, changed, or deleted C# path selects all current findings; an unchanged C# snapshot selects none. The source status in each file heading describes only that representative file relative to the baseline; an unchanged status does not mean unaffected.\n");
@@ -460,8 +482,8 @@ public sealed class MarkdownReportWriter
                         if (finding.Discriminator == "indirect-test-path-only" && finding.Evidence.Count > 1)
                         {
                             var path = finding.Evidence.Skip(1)
-                                .Select(static evidence => $"{evidence.Label} ({evidence.SourcePath}:{evidence.Line})");
-                            builder.Append("  - Shortest resolved test path: ").Append(EscapeInline(string.Join(" -> ", path))).Append('\n');
+                                .Select(static evidence => $"{FormatCodeSpan(evidence.Label)} ({FormatCodeSpan(evidence.SourcePath + ":" + evidence.Line.ToString(CultureInfo.InvariantCulture))})");
+                            builder.Append("  - Shortest resolved test path: ").Append(string.Join(" -> ", path)).Append('\n');
                         }
                     }
                     else if (isCluster)
