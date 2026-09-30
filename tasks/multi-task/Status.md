@@ -1,5 +1,12 @@
 # Laufstand: Drei Review-Tasks
 
+## C3 — Analyse und Bericht integriert (30.09.2026)
+
+- `code-size-candidates` ist genau einmal als siebte Produktionsanalyse registriert und standardmäßig aktiviert. Repository- und generierte Konfiguration führen die sieben Optionen mit Konzept-Defaults auf; benutzerdefinierte Werte werden vom vorhandenen Descriptor validiert.
+- Markdown zeigt für Member, Klassen und Dateien kompakte Maße, jeden tatsächlich erfüllten Auswahlpfad und die jeweils festgelegte Reviewer-Frage. Integrationstests belegen alle drei Kategorien, Mehrfachgründe, Symbolbeziehung zu `method-control-flow-outliers`, wiederholungsstabile Analyseberichte sowie eine Änderung an einem nicht repräsentativen `partial`-Teil in `changed-files/`. Default-, benutzerdefinierte, ungültige, leere und deaktivierte Konfigurationen sind abgedeckt. Der Kontrollflussbericht blieb unverändert.
+- Gates: C3-Integrationstests **4/4**, vollständige FastTests **259/259** ohne Skips, vollständige IntegrationTests **97/97** ohne Skips, `dotnet build AiNetReview.slnx --no-restore` **0 Warnungen/0 Fehler**, `git diff --check` bestanden. Der historische, vom Nutzer akzeptierte flüchtige `Directory.Move`-`IOException`-Befund bleibt dokumentiert; kein neuer reproduzierbarer Fehler.
+- README und betroffene Konfigurations-, Findings-, CLI- und Architektur-Dokumentation beschreiben den verifizierten Ist-Stand. Fach-Roadmap Punkt 3 und Multi C3 sind geschlossen; nächster ausführbarer Punkt: **C4 — Größen-Schlussaudit und reale Stichprobe**. Der C3-Slice ist in diesem Commit enthalten; C4 muss die Defaults in AiNetReview und AiNetLinter read-only prüfen.
+
 ## B5-Nachaudit — abgenommen (30.09.2026)
 
 - Unabhängig geprüft: B1 `1fc8480`, B2a `395468d`, B2b `948c369`, B2-Korrektur `29f35b6`, B3 `d0f93fe`, B4 `3245618`, B5-Erstaudit `84f6c399`, Korrektur `50ee9993` und Status-Commit `413dbecb`. Die beiden neuen Contracttests treffen am Vor-Fix-Code die ausgelassenen generierten Pfadknoten beziehungsweise die fehlende Unsicherheitsweitergabe; sie waren vor der Korrektur rot und sind danach grün. Die Finding-Evidenz und die daraus erzeugte Markdown-Zeile enthalten den vollständigen kürzesten Pfad einschließlich source-generated Zwischenknoten mit Symbol-ID und Fundstelle. Der Validator gleicht deren kanonischen Quellpfad, Zeile und Snippet mit dem geladenen erzeugten Dokument ab. Andere Analysen behalten ihre Quellen- und Evidenzprüfung; die betroffenen Validator- und Reporttests bestanden.

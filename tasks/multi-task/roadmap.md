@@ -51,7 +51,7 @@ Start nur nach geschlossenem Core-Aggregat und Prüfung von `ControlFlowMetrics.
     - Scope: Unabhängig Mess-APIs, Kandidaten, Auswahlpfade, Evidenz und `changed-files/` gegen [Größen-Konzept](../analyse-groessen/Konzept.md), C1/C2-Code und Tests prüfen; Findings und gegebenenfalls sequenzielle Fix-/Nachaudit-Runden in `Status.md` festhalten.
     - Nicht: Core-Metriken oder festgelegte Schwellenwerte still ändern.
     - Abnahme: Kein offener Pflichtbefund zu C1/C2; geprüfte Commits, akzeptierte Restbefunde und verbrauchte Runden sind dokumentiert.
-  - [ ] **C3 — Analyse und Bericht integrieren** — [Größen-Roadmap, Punkt 3](../analyse-groessen/roadmap.md) vollständig ausführen und abnehmen.
+  - [x] **C3 — Analyse und Bericht integrieren** — [Größen-Roadmap, Punkt 3](../analyse-groessen/roadmap.md) vollständig ausführen und abnehmen.
   - [ ] **C4 — Größen-Schlussaudit und Stichprobe** — [Größen-Roadmap, Punkt 4](../analyse-groessen/roadmap.md) mit einem unabhängigen Audit-Agenten ausführen; volle Gates und die read-only Stichprobe an AiNetReview und AiNetLinter prüfen. Vor der Stichprobe sicherstellen, dass das tatsächlich verwendete lokale Audit-Profil aktiviert ist und `code-size-candidates` mit den Konzept-Defaults enthält; falls nötig ein temporäres Profil im AiNetReview-Repository verwenden, ohne das AiNetLinter-Repository oder bestehende lokale Profile zu ändern. Ein wegen `enabled: false` übersprungener Lauf ist kein Nachweis. Die Runden aus C2-Audit zählen zum Task-Limit. Audit-Ergebnis und etwaige Korrekturen dokumentieren und committen.
 
 ## Gesamtabnahme

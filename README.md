@@ -11,6 +11,7 @@ AiNetReview helps audit C# code after the usual build, tests, and static analysi
 | `duplicate-code-candidates` | Groups of substantially similar method bodies; similarity does not by itself justify merging them. |
 | `indirection-drift-candidates` | Current statically declared paths with at least two transparent forwarding edges across three types and three production C# files; runtime dispatch and historical growth are not measured. |
 | `missing-test-evidence-candidates` | Structurally nontrivial production functions with no static test path, or only an indirect path when both higher complexity thresholds are met; this is not runtime coverage evidence. |
+| `code-size-candidates` | Executable members, classes, and source files selected by project-relative size and control-flow thresholds for focused review. |
 
 The reports are prompts for an audit, not defect claims. See [Current findings](docs/review/findings.md) for the analyses' scope and limitations.
 

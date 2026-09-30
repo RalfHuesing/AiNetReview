@@ -43,6 +43,17 @@ public sealed class ZeroConfigIntegrationTests
         {
             Assert.Equal(JsonValueKind.True, generatedDocument.RootElement.GetProperty("analyses")
                 .GetProperty("indirection-drift-candidates").GetProperty("enabled").ValueKind);
+            var analyses = generatedDocument.RootElement.GetProperty("analyses");
+            var codeSize = analyses.GetProperty("code-size-candidates");
+            Assert.True(codeSize.GetProperty("enabled").GetBoolean());
+            Assert.Equal(90, codeSize.GetProperty("percentile").GetInt32());
+            Assert.Equal(80, codeSize.GetProperty("minMemberCodeLines").GetInt32());
+            Assert.Equal(300, codeSize.GetProperty("extremeMemberCodeLines").GetInt32());
+            Assert.Equal(300, codeSize.GetProperty("minTypeCodeLines").GetInt32());
+            Assert.Equal(800, codeSize.GetProperty("extremeTypeCodeLines").GetInt32());
+            Assert.Equal(1000, codeSize.GetProperty("extremeFileLines").GetInt32());
+            Assert.Equal(131072, codeSize.GetProperty("extremeFileUtf8Bytes").GetInt32());
+            Assert.Equal(7, analyses.EnumerateObject().Count());
         }
 
         var reviewSubcommand = await InvokeAsync(["review", projectRoot], services);

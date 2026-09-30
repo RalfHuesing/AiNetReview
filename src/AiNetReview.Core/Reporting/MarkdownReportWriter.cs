@@ -479,6 +479,75 @@ public sealed class MarkdownReportWriter
             return signal.ToString();
         }
 
+        if (analysisId == "code-size-candidates")
+        {
+            if (finding.Discriminator == "member-size")
+            {
+                var signal = new StringBuilder("Member: ")
+                    .Append(FormatNumber(Metric(finding, "memberCodeLines"))).Append(" code lines; ")
+                    .Append(FormatNumber(Metric(finding, "decisionCount"))).Append(" decisions across ")
+                    .Append(FormatNumber(Metric(finding, "decisionConstructCount"))).Append(" constructs; nesting ")
+                    .Append(FormatNumber(Metric(finding, "maxDecisionNesting")));
+                if (Metric(finding, "relativePathSelected") > 0)
+                {
+                    signal.Append("; relative length-and-control-flow path (minimum ")
+                        .Append(FormatNumber(Metric(finding, "minMemberCodeLines"))).Append(", P")
+                        .Append(FormatNumber(Metric(finding, "percentile"))).Append(" value ")
+                        .Append(FormatNumber(Metric(finding, "memberPercentileValue"))).Append(')');
+                }
+
+                if (Metric(finding, "extremePathSelected") > 0)
+                {
+                    signal.Append("; extreme length path (threshold ")
+                        .Append(FormatNumber(Metric(finding, "extremeMemberCodeLines"))).Append(')');
+                }
+
+                return signal.Append(". Review question: Is this executable body cohesive, and are its paths and tests easy to review?").ToString();
+            }
+
+            if (finding.Discriminator == "type-size")
+            {
+                var signal = new StringBuilder("Class: ")
+                    .Append(FormatNumber(Metric(finding, "typeCodeLines"))).Append(" code lines across ")
+                    .Append(FormatNumber(Metric(finding, "typePartCount"))).Append(" declaration parts");
+                if (Metric(finding, "relativePathSelected") > 0)
+                {
+                    signal.Append("; relative type-size path (minimum ")
+                        .Append(FormatNumber(Metric(finding, "minTypeCodeLines"))).Append(", P")
+                        .Append(FormatNumber(Metric(finding, "percentile"))).Append(" value ")
+                        .Append(FormatNumber(Metric(finding, "typePercentileValue"))).Append(')');
+                }
+
+                if (Metric(finding, "extremePathSelected") > 0)
+                {
+                    signal.Append("; extreme type-size path (threshold ")
+                        .Append(FormatNumber(Metric(finding, "extremeTypeCodeLines"))).Append(')');
+                }
+
+                return signal.Append(". Review question: Do the members of this class serve one cohesive responsibility?").ToString();
+            }
+
+            if (finding.Discriminator == "file-size")
+            {
+                var signal = new StringBuilder("File: ")
+                    .Append(FormatNumber(Metric(finding, "fileLines"))).Append(" lines; ")
+                    .Append(FormatNumber(Metric(finding, "fileUtf8Bytes"))).Append(" UTF-8 bytes");
+                if (Metric(finding, "lineCountPathSelected") > 0)
+                {
+                    signal.Append("; line-count path (threshold ")
+                        .Append(FormatNumber(Metric(finding, "extremeFileLines"))).Append(')');
+                }
+
+                if (Metric(finding, "byteCountPathSelected") > 0)
+                {
+                    signal.Append("; UTF-8 byte path (threshold ")
+                        .Append(FormatNumber(Metric(finding, "extremeFileUtf8Bytes"))).Append(')');
+                }
+
+                return signal.Append(". Review question: Can relevant code in this file be located and edited with focused context?").ToString();
+            }
+        }
+
         return finding.Rationale;
     }
 

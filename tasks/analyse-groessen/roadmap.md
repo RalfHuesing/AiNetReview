@@ -14,7 +14,7 @@ Verbindlicher Vertrag: [Konzept.md](Konzept.md). Die Punkte werden in Reihenfolg
   - Nicht: Structs/Interfaces als Typkandidaten, relatives Dateiperzentil, eigenes Finding für lokale Funktionen/Lambdas, Änderungen an Core-Metriken oder am Report-Publikationsformat.
   - Abnahme: Tests prüfen verschachtelte und `partial`-Klassen einschließlich generierter Teile, Änderung an einem nicht repräsentativen Teil für `changed-files/`, leere und gleichständige Klassengruppen, Klassen-Grenzwerte, dieselbe Datei in mehreren Projekten, Zeilen- und Byte-Grenzwerte unabhängig voneinander, mehrzeilige Literale sowie rein leere/Whitespace-Dateien. Finding-Validierung akzeptiert alle Snippets aus dem geladenen Snapshot.
 
-- [ ] **3. Analyse produktiv integrieren und Bericht veröffentlichen**
+- [x] **3. Analyse produktiv integrieren und Bericht veröffentlichen**
   - Intention: Vollständige Größenkandidaten über den bestehenden `review`-Ablauf prüfbar machen.
   - Scope: Die eine Analyse registrieren und mit den Konzept-Defaults in `ainetreview.json` aufführen. Den speziellen Markdown-Signaltext mit Kandidatenart, Maßen, allen Auslösegründen und passender Frage ergänzen. Konfigurationsgenerierung und -validierung, Deaktivierung, leere Ergebnisse, deterministische Reihenfolge, Symbolbeziehung zur Kontrollflussanalyse und beide Reportansichten integrieren. README und betroffene `docs/`-Seiten gemäß tatsächlich implementiertem Verhalten aktualisieren.
   - Nicht: Neues CLI-Kommando, separate öffentliche Analysen je Kandidatenart, automatische Refactorings, Builddiagnosen oder Änderungen an `method-control-flow-outliers`.

@@ -25,6 +25,16 @@
       "minIndirectDecisionCount": 5,
       "minIndirectDecisionNesting": 3
     },
+    "code-size-candidates": {
+      "enabled": true,
+      "percentile": 90,
+      "minMemberCodeLines": 80,
+      "extremeMemberCodeLines": 300,
+      "minTypeCodeLines": 300,
+      "extremeTypeCodeLines": 800,
+      "extremeFileLines": 1000,
+      "extremeFileUtf8Bytes": 131072
+    },
     "non-ascii-identifiers": {
       "enabled": true
     }

@@ -10,6 +10,7 @@ using AiNetReview.Core.ReviewAnalyses.MethodControlFlowOutliers;
 using AiNetReview.Core.ReviewAnalyses.NonAsciiIdentifiers;
 using AiNetReview.Core.ReviewAnalyses.IndirectionDriftCandidates;
 using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
+using AiNetReview.Core.ReviewAnalyses.CodeSizeCandidates;
 
 public sealed class DefaultReviewConfigGeneratorTests
 {
@@ -32,6 +33,7 @@ public sealed class DefaultReviewConfigGeneratorTests
             new NonAsciiIdentifiersAnalysis(),
             new IndirectionDriftCandidatesAnalysis(),
             new MissingTestEvidenceCandidatesAnalysis(),
+            new CodeSizeCandidatesAnalysis(),
         ]);
         var generator = new DefaultReviewConfigGenerator(registry);
 

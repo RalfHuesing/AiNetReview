@@ -10,8 +10,8 @@ using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Findings;
 using Microsoft.CodeAnalysis;
 
-/// <summary>Measures member, class, and file size candidates without registering the analysis in production.</summary>
-internal sealed class CodeSizeCandidatesAnalysis : IReviewAnalysis
+/// <summary>Measures member, class, and file size candidates for focused review.</summary>
+public sealed class CodeSizeCandidatesAnalysis : IReviewAnalysis
 {
     private static readonly ReviewAnalysisOptionDescriptor[] AnalysisOptions =
     [
