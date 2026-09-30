@@ -8,7 +8,7 @@ Verbindlicher Vertrag: [Konzept.md](Konzept.md). Die Punkte werden in Reihenfolg
   - Nicht: Core-Zählregeln kopieren, die bestehende Kontrollflussanalyse ändern, Klassen oder Dateien melden, die neue Analyse bereits in der Produktionsregistrierung aktivieren.
   - Abnahme: Fokussierte Tests decken alle ein- und ausgeschlossenen Memberarten, rumpflose und partielle Deklarationen, lokale Funktionen/Lambdas, einen flachen Mapper, verzweigten Fachcode, beide Auswahlpfade, Grenzwerte, kleine Gruppen, Perzentile/Gleichstände, generierte Quellen und Testprojekte ab. Der Descriptor validiert exakt die Optionen und Defaults des Konzepts. Betroffene Tests, Build und Dokumentationsabgleich sind erfolgreich.
 
-- [ ] **2. Klassen- und Dateikandidaten ergänzen**
+- [x] **2. Klassen- und Dateikandidaten ergänzen**
   - Intention: Aggregierte Klassengröße und extreme physische Dateigröße ohne Vermischung der Maße auswerten.
   - Scope: Klassen und Record-Klassen mit `CodeLineMetrics.CountOwnTypePart` je Symbol und Projekt einschließlich `partial`-Teilen aggregieren; beide Klassenauswahlpfade anwenden. Dateizeilen und UTF-8-Bytes aus geladenem `SourceText` messen und beide unabhängigen Dateipfade anwenden. Pro Kandidatenart genau ein Finding mit den im Konzept festgelegten Subjekt-IDs, Discriminators, repräsentativen Stellen und Evidenzen erzeugen. Die Analyse bleibt bis Punkt 3 unregistriert.
   - Nicht: Structs/Interfaces als Typkandidaten, relatives Dateiperzentil, eigenes Finding für lokale Funktionen/Lambdas, Änderungen an Core-Metriken oder am Report-Publikationsformat.
