@@ -18,6 +18,57 @@ using Microsoft.CodeAnalysis.Text;
 public sealed class MissingTestEvidenceCandidatesAnalysisTests
 {
     [Fact]
+    public async Task ExecuteAsync_PreservesTestAttributionAndFindingsWithNullForgivingExpressionBodies()
+    {
+        using var fixture = CreateFixture(
+            productionSource: """
+                public static class Worker
+                {
+                    public static string DirectTarget(int value) => (value > 0 ? value > 1 ? value > 2 ? "a" : "b" : "c" : "d")!;
+                    public static string IndirectTarget(int value) => (value > 0 ? value > 1 ? value > 2 ? "a" : "b" : "c" : "d")!;
+                    public static string Entry() => IndirectTarget(1)!;
+                    public static string Uncovered(int value) => (value > 0 ? value > 1 ? value > 2 ? "a" : "b" : "c" : "d")!;
+                }
+                """,
+            testSource: """
+                using System.Text.Json;
+                using Xunit;
+                public sealed class Tests
+                {
+                    [Fact] public void Root() { _ = Helper(); _ = Worker.Entry(); _ = GetFirstText(default); }
+                    private static string Helper() => Worker.DirectTarget(1)!;
+                    private static string GetFirstText(JsonElement value) => value.GetString()!;
+                }
+                """);
+        foreach (var project in fixture.Context.Solution.Projects)
+        {
+            var compilation = await project.GetCompilationAsync(CancellationToken.None);
+            Assert.NotNull(compilation);
+            Assert.Empty(compilation.GetDiagnostics().Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
+        }
+
+        var analysis = new MissingTestEvidenceCandidatesAnalysis();
+        var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
+
+        Assert.Equal(2, result.Findings.Count);
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("DirectTarget", StringComparison.Ordinal));
+        var indirect = Assert.Single(result.Findings, static finding => finding.SubjectId.Contains("IndirectTarget", StringComparison.Ordinal));
+        Assert.Equal("indirect-test-path-only", indirect.Discriminator);
+        Assert.Equal(3, indirect.Metrics["decisionCount"]);
+        Assert.Equal(3, indirect.Metrics["maxDecisionNesting"]);
+        Assert.Equal(new[] { "M:Tests.Root", "M:Worker.Entry~System.String", "M:Worker.IndirectTarget(System.Int32)~System.String" },
+            indirect.Evidence.Skip(1).Select(static evidence => evidence.Label));
+        var uncovered = Assert.Single(result.Findings, static finding => finding.SubjectId.Contains("Uncovered", StringComparison.Ordinal));
+        Assert.Equal("no-static-test-path", uncovered.Discriminator);
+        Assert.Single(uncovered.Evidence);
+        Assert.All(result.Findings, static finding => Assert.Equal(0, finding.Metrics["attributionUncertain"]));
+
+        var validated = await new CurrentFindingValidator().ValidateAndSortAsync(
+            analysis.Descriptor.AnalysisId, fixture.Context, result.Findings, CancellationToken.None);
+        Assert.Equal(result.Findings.Count, validated.Count);
+    }
+
+    [Fact]
     public void Descriptor_UsesExactIdentityDefaultsAndPositiveInt32Options()
     {
         var descriptor = new MissingTestEvidenceCandidatesAnalysis().Descriptor;

@@ -14,6 +14,131 @@ using Microsoft.CodeAnalysis.Text;
 
 public sealed class MissingTestEvidenceSemanticGraphBuilderTests
 {
+    [Theory]
+    [InlineData("Target()!", "Target", nameof(MissingTestEvidenceGraphEdgeKind.Invocation))]
+    [InlineData("(Target()!)", "Target", nameof(MissingTestEvidenceGraphEdgeKind.Invocation))]
+    [InlineData("(Target())!", "Target", nameof(MissingTestEvidenceGraphEdgeKind.Invocation))]
+    [InlineData("(((Target()!)))", "Target", nameof(MissingTestEvidenceGraphEdgeKind.Invocation))]
+    [InlineData("Value!", "get_Value", nameof(MissingTestEvidenceGraphEdgeKind.PropertyGet))]
+    [InlineData("(Value!)", "get_Value", nameof(MissingTestEvidenceGraphEdgeKind.PropertyGet))]
+    [InlineData("((Value!))", "get_Value", nameof(MissingTestEvidenceGraphEdgeKind.PropertyGet))]
+    [InlineData("(((Value!)))", "get_Value", nameof(MissingTestEvidenceGraphEdgeKind.PropertyGet))]
+    public async Task BuildAsync_PreservesEdgesAndTestPathsThroughNullForgivingAndParenthesizedBodies(
+        string expression,
+        string referencedMethod,
+        string edgeKind)
+    {
+        using var fixture = CreateFixture(
+            productionSources:
+            [
+                ("Worker.cs", $$"""
+                    public static class Worker
+                    {
+                        public static string Target() => string.Empty!;
+                        public static string Value => Target();
+                        public static string Entry() => {{expression}};
+                    }
+                    """),
+            ],
+            testSource: """
+                using Xunit;
+                public sealed class Tests
+                {
+                    [Fact] public void Root() { _ = Helper(); }
+                    private static string Helper() => Worker.Entry()!;
+                }
+                """);
+        await AssertNoCompilerErrorsAsync(fixture.Workspace.CurrentSolution);
+
+        var graph = await MissingTestEvidenceSemanticGraphBuilder.BuildAsync(fixture.Workspace.CurrentSolution, CancellationToken.None);
+
+        Assert.Contains(graph.Edges, static edge => edge.From.Name == "Root" && edge.To.Name == "Helper");
+        Assert.Contains(graph.Edges, static edge => edge.From.Name == "Helper" && edge.To.Name == "Entry");
+        var reference = Assert.Single(graph.Edges, edge => edge.From.Name == "Entry" && edge.To.Name == referencedMethod);
+        Assert.Equal(edgeKind, reference.Kind.ToString());
+        Assert.True(reference.SourceSpan.Length > 0);
+        Assert.EndsWith("Worker.cs", reference.SourceFilePath, StringComparison.Ordinal);
+        Assert.Contains(graph.Edges, static edge => edge.From.Name == "get_Value" && edge.To.Name == "Target");
+        Assert.Empty(graph.UncertaintyInputs);
+
+        var paths = MissingTestEvidencePathClassifier.Classify(graph, CancellationToken.None);
+        var entry = Assert.Single(graph.Nodes, static node => node.Method.Name == "Entry");
+        var target = Assert.Single(graph.Nodes, static node => node.Method.Name == "Target");
+        Assert.Equal(MissingTestEvidencePathKind.Direct, paths[entry.Method].Kind);
+        Assert.Equal(new[] { "Root", "Helper", "Entry" }, paths[entry.Method].Path.Select(static node => node.Method.Name));
+        Assert.Equal(MissingTestEvidencePathKind.Indirect, paths[target.Method].Kind);
+        var expectedPath = referencedMethod == "Target"
+            ? new[] { "Root", "Helper", "Entry", "Target" }
+            : new[] { "Root", "Helper", "Entry", "get_Value", "Target" };
+        Assert.Equal(expectedPath, paths[target.Method].Path.Select(static node => node.Method.Name));
+    }
+
+    [Theory]
+    [InlineData("public Worker Entry() => Target()!;", "_ = worker.Entry();", "Entry", nameof(MissingTestEvidenceGraphEdgeKind.Invocation))]
+    [InlineData("public Worker Entry() { return Target()!; }", "_ = worker.Entry();", "Entry", nameof(MissingTestEvidenceGraphEdgeKind.Invocation))]
+    [InlineData("public void Entry() => _ = Target()!;", "worker.Entry();", "Entry", nameof(MissingTestEvidenceGraphEdgeKind.Invocation))]
+    [InlineData("public Worker(int value) : this() => _ = Target()!;", "_ = new Worker(1);", ".ctor", nameof(MissingTestEvidenceGraphEdgeKind.ObjectCreation))]
+    [InlineData("public Worker Value => Target()!;", "_ = worker.Value;", "get_Value", nameof(MissingTestEvidenceGraphEdgeKind.PropertyGet))]
+    [InlineData("public Worker Value { get => Target()!; }", "_ = worker.Value;", "get_Value", nameof(MissingTestEvidenceGraphEdgeKind.PropertyGet))]
+    [InlineData("public Worker Value { set => _ = Target()!; }", "worker.Value = worker;", "set_Value", nameof(MissingTestEvidenceGraphEdgeKind.PropertySet))]
+    [InlineData("public Worker Value { init => _ = Target()!; }", "_ = new Worker { Value = worker };", "set_Value", nameof(MissingTestEvidenceGraphEdgeKind.PropertySet))]
+    [InlineData("public Worker this[int index] => Target()!;", "_ = worker[1];", "get_Item", nameof(MissingTestEvidenceGraphEdgeKind.PropertyGet))]
+    [InlineData("public Worker this[int index] { get => Target()!; }", "_ = worker[1];", "get_Item", nameof(MissingTestEvidenceGraphEdgeKind.PropertyGet))]
+    [InlineData("public Worker this[int index] { set => _ = Target()!; }", "worker[1] = worker;", "set_Item", nameof(MissingTestEvidenceGraphEdgeKind.PropertySet))]
+    [InlineData("public event System.Action Changed { add => _ = Target()!; remove => _ = Target()!; }", "worker.Changed += () => { };", "add_Changed", nameof(MissingTestEvidenceGraphEdgeKind.EventAdd))]
+    [InlineData("public event System.Action Changed { add => _ = Target()!; remove => _ = Target()!; }", "worker.Changed -= () => { };", "remove_Changed", nameof(MissingTestEvidenceGraphEdgeKind.EventRemove))]
+    [InlineData("public static Worker operator +(Worker left, Worker right) => Target()!;", "_ = worker + worker;", "op_Addition", nameof(MissingTestEvidenceGraphEdgeKind.UserOperator))]
+    [InlineData("public static implicit operator Worker(int value) => Target()!;", "Worker converted = 1;", "op_Implicit", nameof(MissingTestEvidenceGraphEdgeKind.UserConversion))]
+    public async Task BuildAsync_PreservesCallsAndTestPathsForNullForgivingExecutableBodyVariants(
+        string declaration,
+        string testStatement,
+        string entryName,
+        string entryEdgeKind)
+    {
+        using var fixture = CreateFixture(
+            productionSources:
+            [
+                ("Worker.cs", $$"""
+                    public sealed class Worker
+                    {
+                        public Worker() { }
+                        public static Worker Target() { return new Worker(); }
+                        {{declaration}}
+                    }
+                    """),
+            ],
+            testSource: $$"""
+                using Xunit;
+                public sealed class Tests
+                {
+                    [Fact] public void Root() { var worker = new Worker(); {{testStatement}} }
+                }
+                """);
+        await AssertNoCompilerErrorsAsync(fixture.Workspace.CurrentSolution);
+
+        var graph = await MissingTestEvidenceSemanticGraphBuilder.BuildAsync(fixture.Workspace.CurrentSolution, CancellationToken.None);
+        var entry = Assert.Single(graph.Nodes, node => node.Method.Name == entryName
+            && (entryName != ".ctor" || node.Method.Parameters.Length == 1));
+        var target = Assert.Single(graph.Nodes, static node => node.Method.Name == "Target");
+        var incoming = Assert.Single(graph.Edges, edge => edge.From.Name == "Root"
+            && SymbolEqualityComparer.Default.Equals(edge.To, entry.Method));
+        Assert.Equal(entryEdgeKind, incoming.Kind.ToString());
+        var outgoing = Assert.Single(graph.Edges, edge => SymbolEqualityComparer.Default.Equals(edge.From, entry.Method)
+            && edge.To.Name == "Target");
+        Assert.Equal(MissingTestEvidenceGraphEdgeKind.Invocation, outgoing.Kind);
+        if (entryName == ".ctor")
+        {
+            Assert.Contains(graph.Edges, edge => SymbolEqualityComparer.Default.Equals(edge.From, entry.Method)
+                && edge.To.MethodKind == MethodKind.Constructor && edge.To.Parameters.Length == 0);
+        }
+
+        var paths = MissingTestEvidencePathClassifier.Classify(graph, CancellationToken.None);
+        Assert.Equal(MissingTestEvidencePathKind.Direct, paths[entry.Method].Kind);
+        Assert.Equal(MissingTestEvidencePathKind.Indirect, paths[target.Method].Kind);
+        Assert.Equal(new[] { "Root", entryName, "Target" }, paths[target.Method].Path.Select(static node => node.Method.Name));
+        Assert.False(paths[target.Method].IsAttributionUncertain);
+    }
+
     [Fact]
     public async Task BuildAsync_CollectsSemanticCallsAccessorsOperatorsConversionsAndContainedCallbacks()
     {
@@ -371,6 +496,16 @@ public sealed class MissingTestEvidenceSemanticGraphBuilderTests
         var semanticModelFailure = Assert.Throws<AnalysisFailedException>(
             () => MissingTestEvidenceSemanticGraphBuilder.RequireSemanticModel(null, "Unavailable.cs"));
         Assert.Contains("Semantic model could not be created", semanticModelFailure.Message, StringComparison.Ordinal);
+    }
+
+    private static async Task AssertNoCompilerErrorsAsync(Solution solution)
+    {
+        foreach (var project in solution.Projects)
+        {
+            var compilation = await project.GetCompilationAsync(CancellationToken.None);
+            Assert.NotNull(compilation);
+            Assert.Empty(compilation.GetDiagnostics().Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
+        }
     }
 
     private static Fixture CreateFixture(

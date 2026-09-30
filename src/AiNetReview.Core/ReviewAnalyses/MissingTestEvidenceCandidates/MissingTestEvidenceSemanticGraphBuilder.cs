@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AiNetReview.Core.Analysis;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Operations;
 using Microsoft.CodeAnalysis.Text;
@@ -247,6 +248,29 @@ internal static class MissingTestEvidenceSemanticGraphBuilder
     private static SyntaxNode? GetBody(MethodDeclarationSyntax declaration) =>
         (SyntaxNode?)declaration.Body ?? declaration.ExpressionBody?.Expression;
 
+    private static IOperation? GetBodyOperation(
+        SemanticModel semanticModel,
+        SyntaxNode body,
+        CancellationToken cancellationToken)
+    {
+        // Roslyn does not expose operations for these semantically transparent expression wrappers.
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            switch (body)
+            {
+                case ParenthesizedExpressionSyntax parenthesized:
+                    body = parenthesized.Expression;
+                    break;
+                case PostfixUnaryExpressionSyntax suppression when suppression.IsKind(SyntaxKind.SuppressNullableWarningExpression):
+                    body = suppression.Operand;
+                    break;
+                default:
+                    return semanticModel.GetOperation(body, cancellationToken);
+            }
+        }
+    }
+
     private static IMethodSymbol Normalize(IMethodSymbol method)
     {
         if (method.ReducedFrom is { } reduced)
@@ -287,7 +311,7 @@ internal static class MissingTestEvidenceSemanticGraphBuilder
         public void Collect(GraphFunction function)
         {
             var source = function.Node!;
-            var operation = function.SemanticModel.GetOperation(function.Body, cancellationToken);
+            var operation = GetBodyOperation(function.SemanticModel, function.Body, cancellationToken);
             if (operation is null)
             {
                 throw new AnalysisFailedException($"Semantic operation could not be created for '{source.Method.ToDisplayString()}'.");
