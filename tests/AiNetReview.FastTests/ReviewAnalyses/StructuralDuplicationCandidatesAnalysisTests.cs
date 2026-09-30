@@ -367,6 +367,65 @@ public sealed class StructuralDuplicationCandidatesAnalysisTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_DoesNotMatchFunctionPointerTypesWithDifferentNestedSignatureBoundaries()
+    {
+        var statements = string.Join(" ", Enumerable.Range(0, 3).Select(_ =>
+            string.Join(" = ", Enumerable.Repeat("input", 10)) + ";"));
+        Assert.Equal(60, CountTokens(statements));
+        var source = "public static unsafe class First { public static void Run(delegate*<int, delegate*<int, void>> input) { " + statements + " } }\n"
+            + "public static unsafe class Second { public static void Run(delegate*<delegate*<int, int, void>> input) { " + statements + " } }\n";
+        using var fixture = CreateFixture(("Product", "NestedFunctionPointers.cs", source));
+        AssertNoCompilationErrors(fixture.Context);
+        var analysis = new StructuralDuplicationCandidatesAnalysis();
+
+        var findings = (await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None)).Findings;
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ExcludesTopLevelLambdaAndAnonymousMethodBodiesAsOwners()
+    {
+        var fragment = string.Join(" ", Enumerable.Range(0, 3).Select(_ =>
+            string.Join(" = ", Enumerable.Repeat("input", 10)) + ";"));
+        var analysis = new StructuralDuplicationCandidatesAnalysis();
+
+        using (var topLevel = CreateFixture(
+            new CSharpCompilationOptions(OutputKind.ConsoleApplication, allowUnsafe: true),
+            ("Product", "TopLevel.cs", fragment.Replace("input", "args", StringComparison.Ordinal)
+                + " public static class Eligible { public static void Run(string[] args) { " + fragment.Replace("input", "args", StringComparison.Ordinal) + " } }")))
+        {
+            AssertNoCompilationErrors(topLevel.Context);
+            var findings = (await analysis.ExecuteAsync(topLevel.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None)).Findings;
+            Assert.Empty(findings);
+        }
+
+        foreach (var (fileName, callback) in new[]
+        {
+            ("Lambda.cs", "System.Action<int> callback = input => { " + fragment + " };"),
+            ("AnonymousMethod.cs", "System.Action<int> callback = delegate(int input) { " + fragment + " };")
+        })
+        {
+            var source = "public static class Excluded { public static void Run() { " + callback + " } }\n"
+                + "public static class Eligible { public static void Run(int input) { " + fragment + " } }\n";
+            using var fixture = CreateFixture(("Product", fileName, source));
+            AssertNoCompilationErrors(fixture.Context);
+            var findings = (await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None)).Findings;
+            Assert.Empty(findings);
+        }
+
+        using var eligibleOwners = CreateFixture(("Product", "EligibleOwners.cs",
+            "public static class First { public static void Run(int input) { " + fragment + " } }\n"
+            + "public static class Second { public static void Run(int input) { " + fragment + " } }\n"));
+        AssertNoCompilationErrors(eligibleOwners.Context);
+        var positive = (await analysis.ExecuteAsync(eligibleOwners.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None)).Findings;
+        var finding = Assert.Single(positive);
+        Assert.Equal(2, finding.Metrics["executableCount"]);
+        Assert.Equal(2, finding.Metrics["memberCount"]);
+        Assert.All(finding.Evidence, static evidence => Assert.Contains("Run", evidence.Label, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task ExecuteAsync_RetainsContainedGroupWhenOneOccurrenceIsUncoveredAndDoesNotUnionPartialOverlap()
     {
         var firstSequence = Enumerable.Range(1, 5).Select(index => BuildPatternStatement("left" + index, "input", index));
@@ -606,7 +665,12 @@ public sealed class StructuralDuplicationCandidatesAnalysisTests
         }
     }
 
-    private static AnalysisFixture CreateFixture(params (string Project, string File, string Source)[] documents)
+    private static AnalysisFixture CreateFixture(params (string Project, string File, string Source)[] documents) =>
+        CreateFixture(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true), documents);
+
+    private static AnalysisFixture CreateFixture(
+        CSharpCompilationOptions compilationOptions,
+        params (string Project, string File, string Source)[] documents)
     {
         var workspace = new AdhocWorkspace();
         var root = TestTempDirectory.Create();
@@ -621,7 +685,7 @@ public sealed class StructuralDuplicationCandidatesAnalysisTests
                 group.Key,
                 LanguageNames.CSharp,
                 filePath: Path.Combine(root.DirectoryPath, group.Key + ".csproj"),
-                compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true),
+                compilationOptions: compilationOptions,
                 parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
                 metadataReferences: PlatformReferences()));
         }

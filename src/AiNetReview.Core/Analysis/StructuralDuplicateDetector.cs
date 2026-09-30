@@ -533,23 +533,24 @@ internal static class StructuralDuplicateDetector
                 break;
             case IArrayTypeSymbol array:
                 AppendPart(builder, "ArrayRank", array.Rank.ToString(CultureInfo.InvariantCulture));
-                return AppendTypeKey(array.ElementType, builder);
+                return AppendNestedTypeKey(builder, "ArrayElement", array.ElementType);
             case IPointerTypeSymbol pointer:
-                AppendPart(builder, "Pointer", string.Empty);
-                return AppendTypeKey(pointer.PointedAtType, builder);
+                return AppendNestedTypeKey(builder, "PointerTarget", pointer.PointedAtType);
             case IFunctionPointerTypeSymbol functionPointer:
                 AppendPart(builder, "FunctionPointerConvention", functionPointer.Signature.CallingConvention.ToString());
+                AppendPart(builder, "FunctionPointerUnmanagedConventionCount", functionPointer.Signature.UnmanagedCallingConventionTypes.Length.ToString(CultureInfo.InvariantCulture));
                 foreach (var conventionType in functionPointer.Signature.UnmanagedCallingConventionTypes)
                 {
                     AppendPart(builder, "FunctionPointerUnmanagedConvention", conventionType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
                 }
 
                 AppendRefKind(builder, functionPointer.Signature.RefKind);
-                if (!AppendTypeKey(functionPointer.Signature.ReturnType, builder)) return false;
+                if (!AppendNestedTypeKey(builder, "FunctionPointerReturnType", functionPointer.Signature.ReturnType)) return false;
+                AppendPart(builder, "FunctionPointerParameterCount", functionPointer.Signature.Parameters.Length.ToString(CultureInfo.InvariantCulture));
                 foreach (var parameter in functionPointer.Signature.Parameters)
                 {
                     AppendRefKind(builder, parameter.RefKind);
-                    if (!AppendTypeKey(parameter.Type, builder)) return false;
+                    if (!AppendNestedTypeKey(builder, "FunctionPointerParameterType", parameter.Type)) return false;
                 }
                 return true;
             case ITypeParameterSymbol parameter:
@@ -563,20 +564,31 @@ internal static class StructuralDuplicateDetector
                 AppendPart(builder, "NamedDefinition", named.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
                 if (named.ContainingType is not null)
                 {
-                    var containingKey = CreateTypeKey(named.ContainingType);
-                    if (containingKey is null) return false;
-                    AppendPart(builder, "ContainingType", containingKey);
+                    if (!AppendNestedTypeKey(builder, "ContainingType", named.ContainingType)) return false;
                 }
 
+                AppendPart(builder, "NamedTypeArgumentCount", named.TypeArguments.Length.ToString(CultureInfo.InvariantCulture));
                 foreach (var argument in named.TypeArguments)
                 {
-                    if (!AppendTypeKey(argument, builder)) return false;
+                    if (!AppendNestedTypeKey(builder, "NamedTypeArgument", argument)) return false;
                 }
                 return true;
             default:
                 return false;
         }
 
+        return true;
+    }
+
+    private static bool AppendNestedTypeKey(StringBuilder builder, string tag, ITypeSymbol type)
+    {
+        var nested = new StringBuilder();
+        if (!AppendTypeKey(type, nested))
+        {
+            return false;
+        }
+
+        AppendPart(builder, tag, nested.ToString());
         return true;
     }
 
