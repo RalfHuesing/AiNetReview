@@ -188,7 +188,7 @@ public sealed class HostProcessIntegrationTests
             ?? throw new InvalidOperationException("AiNetReview Debug host process could not be started.");
         var (stdout, stderr) = await ReadProcessOutputAsync(process);
 
-        Assert.Equal(0, process.ExitCode);
+        Assert.True(process.ExitCode == 0, $"Repository review failed with exit code {process.ExitCode}. stdout: {stdout}{Environment.NewLine}stderr: {stderr}");
         Assert.Empty(stderr);
         using var response = JsonDocument.Parse(Assert.Single(stdout.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)));
         Assert.Equal("completed", response.RootElement.GetProperty("status").GetString());

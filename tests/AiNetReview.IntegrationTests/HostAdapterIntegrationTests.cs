@@ -176,6 +176,76 @@ public sealed class HostAdapterIntegrationTests
     }
 
     [Fact]
+    public async Task ReviewCommand_ProductionStructuralDuplicationCoexistsAndHonorsConfigurationAndBaselineSelection()
+    {
+        using var tempDirectory = TestTempDirectory.Create("ainet-host-structural-duplicate-");
+        var projectRoot = tempDirectory.GetPath("adapter-project");
+        var firstProject = Path.Combine(projectRoot, "ProductA");
+        var secondProject = Path.Combine(projectRoot, "ProductB");
+        Directory.CreateDirectory(firstProject);
+        Directory.CreateDirectory(secondProject);
+        var firstProjectFile = Path.Combine(firstProject, "ProductA.csproj");
+        var secondProjectFile = Path.Combine(secondProject, "ProductB.csproj");
+        var firstSource = Path.Combine(firstProject, "First.cs");
+        var secondSource = Path.Combine(secondProject, "Second.cs");
+        const string projectContent = "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>";
+        await File.WriteAllTextAsync(firstProjectFile, projectContent);
+        await File.WriteAllTextAsync(secondProjectFile, projectContent);
+        var body = BuildDuplicateBody();
+        await File.WriteAllTextAsync(firstSource, WrapDuplicateMethod("FirstContainer", "RunFirst", body));
+        await File.WriteAllTextAsync(secondSource, WrapDuplicateMethod("SecondContainer", "RunSecond", body));
+        await RestoreProjectAsync(firstProjectFile, firstProject);
+        await RestoreProjectAsync(secondProjectFile, secondProject);
+        await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
+            "<Solution><Project Path=\"ProductA/ProductA.csproj\" /><Project Path=\"ProductB/ProductB.csproj\" /></Solution>");
+        var configPath = Path.Combine(projectRoot, "ainetreview.json");
+
+        await WriteStructuralDuplicateConfigAsync(configPath, includeStructural: false);
+        var duplicateOnly = await RunStructuralReviewAsync(projectRoot);
+        var duplicateOnlyReport = await ReadDuplicateCodeReportAsync(projectRoot, duplicateOnly.RunId);
+        Assert.Equal(1, duplicateOnly.Detected);
+        Assert.False(File.Exists(Path.Combine(projectRoot, "reports", duplicateOnly.RunId, "all-findings", "structural-duplication-candidates.md")));
+
+        await WriteStructuralDuplicateConfigAsync(configPath, includeStructural: true);
+        var together = await RunStructuralReviewAsync(projectRoot);
+        Assert.Equal(2, together.Detected);
+        Assert.Equal(WithoutRelatedFindingLines(duplicateOnlyReport),
+            WithoutRelatedFindingLines(await ReadDuplicateCodeReportAsync(projectRoot, together.RunId)));
+        var structuralReport = await ReadStructuralDuplicateReportAsync(projectRoot, together.RunId, "all-findings");
+        Assert.Contains("Structural duplicate: 2 occurrences in 2 executable members", structuralReport, StringComparison.Ordinal);
+        Assert.Contains("`ProductA/First.cs`", structuralReport, StringComparison.Ordinal);
+        Assert.Contains("`ProductB/Second.cs`", structuralReport, StringComparison.Ordinal);
+        AssertMarkdownLinksResolve(Path.Combine(projectRoot, "reports", together.RunId));
+
+        await WriteStructuralDuplicateConfigAsync(configPath, includeStructural: true, structuralEnabled: false);
+        var disabled = await RunStructuralReviewAsync(projectRoot);
+        Assert.Equal(1, disabled.Detected);
+        Assert.False(File.Exists(Path.Combine(projectRoot, "reports", disabled.RunId, "all-findings", "structural-duplication-candidates.md")));
+
+        await WriteStructuralDuplicateConfigAsync(configPath, includeStructural: true, invalidStructuralOptions: true);
+        var publishedRunsBeforeInvalidInput = Directory.GetDirectories(Path.Combine(projectRoot, "reports")).Length;
+        var invalid = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(2, invalid.ExitCode);
+        using (var invalidResponse = JsonDocument.Parse(invalid.Error))
+        {
+            Assert.Equal("INVALID_INPUT", invalidResponse.RootElement.GetProperty("code").GetString());
+        }
+        Assert.Equal(publishedRunsBeforeInvalidInput, Directory.GetDirectories(Path.Combine(projectRoot, "reports")).Length);
+
+        await WriteStructuralDuplicateConfigAsync(configPath, includeStructural: true);
+        var baseline = await InvokeProductionCommandAsync(["baseline", projectRoot]);
+        Assert.Equal(0, baseline.ExitCode);
+        Assert.Empty(baseline.Error);
+        await File.AppendAllTextAsync(secondSource, "// a changed source snapshot\n");
+        var changed = await RunStructuralReviewAsync(projectRoot);
+        Assert.Equal(2, changed.Detected);
+        var changedStructuralReport = await ReadStructuralDuplicateReportAsync(projectRoot, changed.RunId, "changed-files");
+        Assert.Contains("`ProductA/First.cs`", changedStructuralReport, StringComparison.Ordinal);
+        Assert.Contains("`ProductB/Second.cs`", changedStructuralReport, StringComparison.Ordinal);
+
+    }
+
+    [Fact]
     public async Task ReviewCommand_ProductionDeadCodeAnalysisPublishesRepeatedAndEmptyAudits()
     {
         using var tempDirectory = TestTempDirectory.Create("ainet-host-dead-code-");
@@ -486,7 +556,7 @@ public sealed class HostAdapterIntegrationTests
         var report = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "all-findings", "fixture-finding.md"));
         Assert.Contains("Fixture scenario 'base' requires review of FixtureCaseA.", report, StringComparison.Ordinal);
         Assert.Equal(
-            new[] { "code-size-candidates", "dead-code-candidates", "duplicate-code-candidates", "fixture-finding", "indirection-drift-candidates", "method-control-flow-outliers", "missing-test-evidence-candidates", "non-ascii-identifiers" },
+            new[] { "code-size-candidates", "dead-code-candidates", "duplicate-code-candidates", "fixture-finding", "indirection-drift-candidates", "method-control-flow-outliers", "missing-test-evidence-candidates", "non-ascii-identifiers", "structural-duplication-candidates" },
             provider.GetRequiredService<ReviewAnalysisRegistry>().Analyses.Select(static analysis => analysis.Descriptor.AnalysisId));
     }
 
@@ -650,6 +720,55 @@ public sealed class HostAdapterIntegrationTests
         });
         await File.WriteAllTextAsync(configPath, json);
     }
+
+    private static async Task WriteStructuralDuplicateConfigAsync(
+        string configPath,
+        bool includeStructural,
+        bool structuralEnabled = true,
+        bool invalidStructuralOptions = false)
+    {
+        var analyses = new Dictionary<string, object>
+        {
+            ["duplicate-code-candidates"] = new { minTokens = 30, minimumSimilarity = "exact" },
+        };
+        if (includeStructural)
+        {
+            if (invalidStructuralOptions)
+            {
+                analyses["structural-duplication-candidates"] = new { enabled = structuralEnabled, minTokens = 60 };
+            }
+            else
+            {
+                analyses["structural-duplication-candidates"] = new { enabled = structuralEnabled };
+            }
+        }
+
+        var json = JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            solution = "Sample.slnx",
+            outputDirectory = "reports",
+            analyses,
+        });
+        await File.WriteAllTextAsync(configPath, json);
+    }
+
+    private static async Task<(string RunId, int Detected)> RunStructuralReviewAsync(string projectRoot)
+    {
+        var result = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.True(result.ExitCode == 0, $"Production structural duplication audit failed: {result.Error}");
+        Assert.Empty(result.Error);
+        using var response = JsonDocument.Parse(result.Output);
+        return (
+            response.RootElement.GetProperty("runId").GetString()!,
+            response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
+    }
+
+    private static Task<string> ReadStructuralDuplicateReportAsync(string projectRoot, string runId, string view) =>
+        File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId, view, "structural-duplication-candidates.md"));
+
+    private static string WithoutRelatedFindingLines(string markdown) => string.Join("\n",
+        markdown.Split('\n').Where(static line => !line.StartsWith("  - Related: ", StringComparison.Ordinal)));
 
     private static async Task<(string RunId, int Detected)> RunProductionDuplicateCodeAsync(string configPath)
     {

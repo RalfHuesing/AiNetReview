@@ -394,6 +394,18 @@ public sealed class MarkdownReportWriter
                         .Append(member.Label).Append("`\n");
                 }
             }
+            else if (reviewFinding.AnalysisId == "structural-duplication-candidates")
+            {
+                builder.Append("- Structural duplicate: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
+                foreach (var occurrence in finding.Evidence)
+                {
+                    var (projectPath, start, end) = ParseStructuralEvidenceDetail(occurrence.Detail);
+                    builder.Append("  - Project ").Append(FormatCodeSpan(projectPath))
+                        .Append(", file ").Append(FormatCodeSpan(occurrence.SourcePath))
+                        .Append(": ").Append(FormatCodeSpan(occurrence.Label))
+                        .Append(" (start ").Append(FormatCodeSpan(start)).Append("; end-exclusive ").Append(FormatCodeSpan(end)).Append(")\n");
+                }
+            }
             else if (reviewFinding.AnalysisId == "missing-test-evidence-candidates")
             {
                 builder.Append("- `").Append(finding.SourcePath).Append("`: `")
@@ -511,6 +523,14 @@ public sealed class MarkdownReportWriter
             return $"{FormatNumber(Metric(finding, "memberCount"))} methods; {FormatPercent(similarity)} similarity (minimum {FormatPercent(minimumSimilarity)})";
         }
 
+        if (analysisId == "structural-duplication-candidates")
+        {
+            return FormatNumber(Metric(finding, "memberCount")) + " occurrences in "
+                + FormatNumber(Metric(finding, "executableCount")) + " executable members; "
+                + FormatNumber(Metric(finding, "statementCount")) + " statements / "
+                + FormatNumber(Metric(finding, "tokenCount")) + " tokens; identical after local/parameter normalization.";
+        }
+
         if (analysisId == "indirection-drift-candidates")
         {
             return FormatNumber(Metric(finding, "forwardingEdgeCount")) + " forwarding edges across "
@@ -616,6 +636,36 @@ public sealed class MarkdownReportWriter
 
     private static double Metric(FindingDraft finding, string name) =>
         finding.Metrics.TryGetValue(name, out var value) ? value : 0;
+
+    private static (string ProjectPath, string Start, string End) ParseStructuralEvidenceDetail(string detail)
+    {
+        const string projectPrefix = "project=";
+        const string startMarker = ";start=";
+        const string endMarker = ";end=";
+        var startIndex = detail.LastIndexOf(startMarker, StringComparison.Ordinal);
+        var endIndex = detail.LastIndexOf(endMarker, StringComparison.Ordinal);
+        if (!detail.StartsWith(projectPrefix, StringComparison.Ordinal) || startIndex < projectPrefix.Length || endIndex < startIndex)
+        {
+            throw new InvalidOperationException("Structural evidence detail does not contain a valid project path and fragment region.");
+        }
+
+        try
+        {
+            var projectPath = JsonSerializer.Deserialize<string>(detail[projectPrefix.Length..startIndex]);
+            if (projectPath is null)
+            {
+                throw new JsonException("Project path is null.");
+            }
+
+            return (projectPath,
+                detail[(startIndex + startMarker.Length)..endIndex],
+                detail[(endIndex + endMarker.Length)..]);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidOperationException("Structural evidence project path is invalid JSON.", exception);
+        }
+    }
 
     private static string FormatNumber(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
 

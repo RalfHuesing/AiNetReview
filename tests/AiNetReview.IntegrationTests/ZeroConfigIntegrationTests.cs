@@ -53,7 +53,8 @@ public sealed class ZeroConfigIntegrationTests
             Assert.Equal(800, codeSize.GetProperty("extremeTypeCodeLines").GetInt32());
             Assert.Equal(1000, codeSize.GetProperty("extremeFileLines").GetInt32());
             Assert.Equal(131072, codeSize.GetProperty("extremeFileUtf8Bytes").GetInt32());
-            Assert.Equal(7, analyses.EnumerateObject().Count());
+            Assert.True(analyses.GetProperty("structural-duplication-candidates").GetProperty("enabled").GetBoolean());
+            Assert.Equal(8, analyses.EnumerateObject().Count());
         }
 
         var reviewSubcommand = await InvokeAsync(["review", projectRoot], services);

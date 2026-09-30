@@ -11,6 +11,7 @@ using AiNetReview.Core.ReviewAnalyses.DeadCodeCandidates;
 using AiNetReview.Core.ReviewAnalyses.DuplicateCodeCandidates;
 using AiNetReview.Core.ReviewAnalyses.NonAsciiIdentifiers;
 using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
+using AiNetReview.Core.ReviewAnalyses.StructuralDuplicationCandidates;
 
 public sealed class ReviewConfigValidatorTests
 {
@@ -19,7 +20,8 @@ public sealed class ReviewConfigValidatorTests
         new DeadCodeCandidatesAnalysis(),
         new DuplicateCodeCandidatesAnalysis(),
         new MissingTestEvidenceCandidatesAnalysis(),
-        new NonAsciiIdentifiersAnalysis()]);
+        new NonAsciiIdentifiersAnalysis(),
+        new StructuralDuplicationCandidatesAnalysis()]);
 
     [Fact]
     public void Validate_AppliesAndValidatesNonAsciiIdentifiersOptions()
@@ -55,6 +57,26 @@ public sealed class ReviewConfigValidatorTests
         Assert.Equal("exact", analysis.EffectiveOptions["minimumSimilarity"].GetString());
         Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
             "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"duplicate-code-candidates\":{\"minimumSimilarity\":\"loose\"}}}"));
+    }
+
+    [Fact]
+    public void Validate_AcceptsStructuralDuplicationEnabledOnly()
+    {
+        using var temp = TestTempDirectory.Create();
+        temp.CreateFile("Project.slnx", "<Solution />");
+        var validator = new ReviewConfigValidator(Registry());
+
+        var defaults = Assert.Single(validator.Validate(temp.DirectoryPath,
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"structural-duplication-candidates\":{}}}").Analyses);
+        Assert.Empty(defaults.EffectiveOptions.Values);
+
+        Assert.Empty(validator.Validate(temp.DirectoryPath,
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"structural-duplication-candidates\":{\"enabled\":false}}}").Analyses);
+
+        Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"structural-duplication-candidates\":{\"minTokens\":60}}}"));
+        Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
+            "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"structural-duplication-candidates\":{\"enabled\":1}}}"));
     }
 
     [Fact]

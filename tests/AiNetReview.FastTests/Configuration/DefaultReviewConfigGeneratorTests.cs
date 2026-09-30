@@ -11,6 +11,7 @@ using AiNetReview.Core.ReviewAnalyses.NonAsciiIdentifiers;
 using AiNetReview.Core.ReviewAnalyses.IndirectionDriftCandidates;
 using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
 using AiNetReview.Core.ReviewAnalyses.CodeSizeCandidates;
+using AiNetReview.Core.ReviewAnalyses.StructuralDuplicationCandidates;
 
 public sealed class DefaultReviewConfigGeneratorTests
 {
@@ -34,6 +35,7 @@ public sealed class DefaultReviewConfigGeneratorTests
             new IndirectionDriftCandidatesAnalysis(),
             new MissingTestEvidenceCandidatesAnalysis(),
             new CodeSizeCandidatesAnalysis(),
+            new StructuralDuplicationCandidatesAnalysis(),
         ]);
         var generator = new DefaultReviewConfigGenerator(registry);
 

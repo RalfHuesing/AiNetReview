@@ -37,6 +37,9 @@
     },
     "non-ascii-identifiers": {
       "enabled": true
+    },
+    "structural-duplication-candidates": {
+      "enabled": true
     }
   }
 }

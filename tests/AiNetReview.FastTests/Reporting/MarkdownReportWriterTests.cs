@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using AiNetReview.Core.Analysis;
@@ -14,9 +15,61 @@ using AiNetReview.Core.ReviewAnalyses;
 using AiNetReview.Core.ReviewAnalyses.NonAsciiIdentifiers;
 using AiNetReview.Core.ReviewAnalyses.IndirectionDriftCandidates;
 using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
+using AiNetReview.Core.ReviewAnalyses.StructuralDuplicationCandidates;
 
 public sealed class MarkdownReportWriterTests
 {
+    [Fact]
+    public async Task WriteAsync_RendersEveryStructuralOccurrenceWithFramedPathsAndExclusiveCoordinates()
+    {
+        using var temp = TestTempDirectory.Create();
+        var analysis = new StructuralDuplicationCandidatesAnalysis();
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        const string projectPath = "Product; One/[β]`special.csproj";
+        const string sourcePath = "src/file ; [x]`β.cs";
+        const string owner = "M:Product.Sample.Run(System.Int32)";
+        var finding = new FindingDraft(
+            projectPath,
+            sourcePath,
+            owner,
+            "structural-duplicate:12:80",
+            3,
+            "This group contains repeated fragments.",
+            new Dictionary<string, double>
+            {
+                ["memberCount"] = 3,
+                ["executableCount"] = 2,
+                ["statementCount"] = 3,
+                ["tokenCount"] = 60,
+            },
+            [
+                new FindingEvidence(sourcePath, 3, owner,
+                    $"project={JsonSerializer.Serialize(projectPath)};start=3:5;end=7:10", "int x = value;"),
+                new FindingEvidence(sourcePath, 4, owner,
+                    $"project={JsonSerializer.Serialize(projectPath)};start=4:1;end=8:2", "int x = value;"),
+                new FindingEvidence(sourcePath, 9, "M:Product.Other.Run(System.Int32)",
+                    $"project={JsonSerializer.Serialize(projectPath)};start=9:2;end=12:1", "int y = input;"),
+            ],
+            [new FindingSymbol(projectPath, sourcePath, owner, 3),
+                new FindingSymbol(projectPath, sourcePath, "M:Product.Other.Run(System.Int32)", 9)]);
+
+        var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
+            new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([finding])),
+        ]));
+        var markdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId,
+            "all-findings", "structural-duplication-candidates.md"));
+
+        Assert.Contains("Structural duplicate: 3 occurrences in 2 executable members; 3 statements / 60 tokens; identical after local/parameter normalization.", markdown, StringComparison.Ordinal);
+        Assert.Contains(projectPath, markdown, StringComparison.Ordinal);
+        Assert.Contains(sourcePath, markdown, StringComparison.Ordinal);
+        Assert.Contains("start `3:5`; end-exclusive `7:10`", markdown, StringComparison.Ordinal);
+        Assert.Contains("start `4:1`; end-exclusive `8:2`", markdown, StringComparison.Ordinal);
+        Assert.Contains("start `9:2`; end-exclusive `12:1`", markdown, StringComparison.Ordinal);
+        Assert.Equal(3, markdown.Split("Project ", StringSplitOptions.None).Length - 1);
+        Assert.Equal(1, markdown.Split("Statement and control\\-flow shape", StringSplitOptions.None).Length - 1);
+        Assert.Equal(1, markdown.Split("Is this repeated structure intentional", StringSplitOptions.None).Length - 1);
+    }
+
     [Fact]
     public async Task WriteAsync_FormatsNonAsciiIdentifiersSignalAndReport()
     {

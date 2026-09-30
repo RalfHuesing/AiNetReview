@@ -10,11 +10,83 @@ using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Findings;
 using AiNetReview.Core.ReviewAnalyses;
+using AiNetReview.Core.ReviewAnalyses.DuplicateCodeCandidates;
 using AiNetReview.Core.ReviewAnalyses.IndirectionDriftCandidates;
+using AiNetReview.Core.ReviewAnalyses.StructuralDuplicationCandidates;
 using AiNetReview.IntegrationTests.FixtureAnalyses;
 
 public sealed class ReviewRunnerTests
 {
+    [Fact]
+    public async Task RunAsync_DoesNotInferCrossAnalysisRelationsForLocalFunctionFallbackIds()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp);
+        var terms = string.Join(" + ", Enumerable.Repeat("value", 24));
+        var source = $$"""
+            namespace Sample;
+            public static class Example
+            {
+                public static void First(int input)
+                {
+                    int Local(int value)
+                    {
+                        int first = {{terms}};
+                        int second = +{{terms}};
+                        int third = {{terms}};
+                        return first + second + third;
+                    }
+                    _ = Local(input);
+                }
+
+                public static void Second(int input)
+                {
+                    int Local(int value)
+                    {
+                        int first = {{terms}};
+                        int second = +{{terms}};
+                        int third = {{terms}};
+                        return first + second + third;
+                    }
+                    _ = Local(input);
+                }
+            }
+            """;
+        await File.WriteAllTextAsync(Path.Combine(root, "Sample", "FixtureCases.cs"), source);
+        IReviewAnalysis[] analyses = [new DuplicateCodeCandidatesAnalysis(), new StructuralDuplicationCandidatesAnalysis()];
+        var config = CreateConfig(root, analyses);
+        using var loaded = await new SolutionLoader().LoadAsync(config);
+
+        var result = await new ReviewRunner().RunAsync(config, loaded);
+
+        var structural = Assert.Single(result.Findings.Where(static finding => finding.AnalysisId == "structural-duplication-candidates"));
+        var duplicate = Assert.Single(result.Analyses.Single(static analysis => analysis.AnalysisId == "duplicate-code-candidates").Result.Findings
+            .Where(static finding => finding.RelatedSymbols.Any(static symbol => symbol.SymbolId.Contains(".Local(", StringComparison.Ordinal))));
+        Assert.Equal(duplicate.RelatedSymbols.Select(static symbol => symbol.SymbolId), structural.Finding.RelatedSymbols.Select(static symbol => symbol.SymbolId));
+        Assert.Contains(structural.RelatedFindings, static related => related.AnalysisId == "duplicate-code-candidates");
+
+        // When one analysis must use a location-suffixed local-function fallback and the
+        // other exposes only its display identity, the runner must not infer a relationship.
+        var sourceLines = source.Split('\n');
+        var localLine = Array.FindIndex(sourceLines, static line => line.Contains("int Local(int value)", StringComparison.Ordinal)) + 1;
+        var localSnippet = sourceLines[localLine - 1].Trim();
+        const string displayId = "M:Sample.Example.First(System.Int32).Local(System.Int32)~System.Int32";
+        var displaySymbol = new FindingSymbol("Sample/Sample.csproj", "Sample/FixtureCases.cs", displayId, localLine);
+        var fallbackSymbol = new FindingSymbol("Sample/Sample.csproj", "Sample/FixtureCases.cs", displayId + "@123", localLine);
+        var duplicateDraft = new FindingDraft("Sample/Sample.csproj", "Sample/FixtureCases.cs", displayId,
+            "fallback-check", localLine, "Duplicate local identity.", new Dictionary<string, double>(),
+            [new FindingEvidence("Sample/FixtureCases.cs", localLine, "Local", "Display identity", localSnippet)], [displaySymbol]);
+        var structuralDraft = new FindingDraft("Sample/Sample.csproj", "Sample/FixtureCases.cs", displayId + "@123",
+            "fallback-check", localLine, "Structural local identity.", new Dictionary<string, double>(),
+            [new FindingEvidence("Sample/FixtureCases.cs", localLine, "Local", "Location fallback", localSnippet)], [fallbackSymbol]);
+        var fallbackConfig = CreateConfig(root, [
+            new TestFindingAnalysis("duplicate-code-candidates", [duplicateDraft]),
+            new TestFindingAnalysis("structural-duplication-candidates", [structuralDraft]),
+        ]);
+        var fallbackRun = await new ReviewRunner().RunAsync(fallbackConfig, loaded);
+        Assert.All(fallbackRun.Findings, static finding => Assert.Empty(finding.RelatedFindings));
+    }
+
     [Fact]
     public async Task RunAsync_IndirectionPathUsesEverySourceForBaselineSelectionAndExactSymbolLinks()
     {
