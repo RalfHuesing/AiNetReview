@@ -83,7 +83,8 @@ public sealed class MethodControlFlowOutliersIntegrationTests
         Assert.Contains("8 decisions across", report, StringComparison.Ordinal);
         Assert.Contains("(cutoff 8)", report, StringComparison.Ordinal);
         Assert.DoesNotContain("sourceSpanLines", report, StringComparison.Ordinal);
-        Assert.Contains("`Sample/Class1.cs`:", report, StringComparison.Ordinal);
+        Assert.Contains("Total findings: 1", report, StringComparison.Ordinal);
+        Assert.Contains("#### File: Sample/Class1.cs (1 findings)", report, StringComparison.Ordinal);
         Assert.Contains("## Findings", report, StringComparison.Ordinal);
         Assert.Contains("HighlyBranched", report, StringComparison.Ordinal);
         Assert.DoesNotContain("public int", report, StringComparison.Ordinal);

@@ -264,7 +264,9 @@ public sealed class MarkdownReportWriterPublicationTests
         var report = await new MarkdownReportWriter().WriteAsync(config, result);
         var analysisReportPath = Path.Combine(outputDirectory, report.RunId, "all-findings", "publication-analysis.md");
         var analysisReport = await File.ReadAllTextAsync(analysisReportPath);
-        Assert.Contains("`Sample Code.cs`: `T:Sample`", analysisReport, StringComparison.Ordinal);
+        Assert.Contains("Total findings: 1", analysisReport, StringComparison.Ordinal);
+        Assert.Contains("#### File: Sample Code.cs (1 findings)", analysisReport, StringComparison.Ordinal);
+        Assert.Contains("- `T:Sample`", analysisReport, StringComparison.Ordinal);
         Assert.DoesNotContain("#L", analysisReport, StringComparison.Ordinal);
         Assert.True(File.Exists(Path.Combine(repositoryRoot, "Sample Code.cs")));
         Assert.False(Directory.Exists(Path.Combine(repositoryRoot, "reports")));

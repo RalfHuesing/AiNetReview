@@ -374,70 +374,100 @@ public sealed class MarkdownReportWriter
             builder.Append("\nThis is static test-path evidence from the loaded snapshot, not runtime coverage. Reflection, dependency injection, external test projects, dynamic dispatch, branch execution, and custom test discovery can hide associations.\n");
         }
 
-        builder.Append("\n## Findings\n\n");
+        var groups = findings
+            .GroupBy(static item => (item.Finding.ProjectPath, item.Finding.SourcePath))
+            .OrderBy(static group => group.Key.ProjectPath, StringComparer.Ordinal)
+            .ThenBy(static group => group.Key.SourcePath, StringComparer.Ordinal)
+            .Select(group => new
+            {
+                group.Key.ProjectPath,
+                group.Key.SourcePath,
+                Findings = group.OrderBy(static item => item.Finding.StartLine)
+                    .ThenBy(static item => item.Finding.SubjectId, StringComparer.Ordinal)
+                    .ThenBy(static item => item.Finding.Discriminator, StringComparer.Ordinal)
+                    .ToArray(),
+            })
+            .ToArray();
 
-        foreach (var reviewFinding in findings.OrderBy(static item => item.Finding.ProjectPath, StringComparer.Ordinal)
-                     .ThenBy(static item => item.Finding.SourcePath, StringComparer.Ordinal)
-                     .ThenBy(static item => item.Finding.StartLine)
-                     .ThenBy(static item => item.Finding.SubjectId, StringComparer.Ordinal)
-                     .ThenBy(static item => item.Finding.Discriminator, StringComparer.Ordinal))
+        builder.Append("\n## Summary\n\nTotal findings: ")
+            .Append(findings.Count.ToString(CultureInfo.InvariantCulture))
+            .Append("\n\n| Project | Source file | Findings |\n| --- | --- | ---: |\n");
+        foreach (var group in groups)
         {
-            var finding = reviewFinding.Finding;
-            var isCluster = finding.RelatedSymbols.Count > 1;
+            builder.Append("| ").Append(EscapeInline(group.ProjectPath)).Append(" | ")
+                .Append(EscapeInline(group.SourcePath)).Append(" | ")
+                .Append(group.Findings.Length.ToString(CultureInfo.InvariantCulture)).Append(" |\n");
+        }
 
-            if (reviewFinding.AnalysisId == "indirection-drift-candidates")
+        builder.Append("\n## Findings\n\n");
+        foreach (var projectGroup in groups.GroupBy(static group => group.ProjectPath, StringComparer.Ordinal))
+        {
+            builder.Append("### Project: ").Append(EscapeInline(projectGroup.Key)).Append("\n\n");
+            foreach (var group in projectGroup)
             {
-                builder.Append("- Forwarding path: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
-                foreach (var member in finding.Evidence)
+                builder.Append("#### File: ").Append(EscapeInline(group.SourcePath)).Append(" (")
+                    .Append(group.Findings.Length.ToString(CultureInfo.InvariantCulture)).Append(" findings)\n\n");
+                foreach (var reviewFinding in group.Findings)
                 {
-                    builder.Append("  - `").Append(member.SourcePath).Append("`: `")
-                        .Append(member.Label).Append("`\n");
-                }
-            }
-            else if (reviewFinding.AnalysisId == "structural-duplication-candidates")
-            {
-                builder.Append("- Structural duplicate: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
-                foreach (var occurrence in finding.Evidence)
-                {
-                    var (projectPath, start, end) = ParseStructuralEvidenceDetail(occurrence.Detail);
-                    builder.Append("  - Project ").Append(FormatCodeSpan(projectPath))
-                        .Append(", file ").Append(FormatCodeSpan(occurrence.SourcePath))
-                        .Append(": ").Append(FormatCodeSpan(occurrence.Label))
-                        .Append(" (start ").Append(FormatCodeSpan(start)).Append("; end-exclusive ").Append(FormatCodeSpan(end)).Append(")\n");
-                }
-            }
-            else if (reviewFinding.AnalysisId == "missing-test-evidence-candidates")
-            {
-                builder.Append("- `").Append(finding.SourcePath).Append("`: `")
-                    .Append(finding.SubjectId).Append("`\n")
-                    .Append("  - Signal: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append('\n');
-                if (finding.Discriminator == "indirect-test-path-only" && finding.Evidence.Count > 1)
-                {
-                    var path = finding.Evidence.Skip(1)
-                        .Select(static evidence => $"{evidence.Label} ({evidence.SourcePath}:{evidence.Line})");
-                    builder.Append("  - Shortest resolved test path: ").Append(EscapeInline(string.Join(" -> ", path))).Append('\n');
-                }
-            }
-            else if (isCluster)
-            {
-                builder.Append("- Cluster: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append('\n');
-                foreach (var symbol in finding.RelatedSymbols)
-                {
-                    builder.Append("  - `").Append(symbol.SourcePath).Append("`: `")
-                        .Append(symbol.SymbolId).Append("`\n");
-                }
-            }
-            else
-            {
-                builder.Append("- `").Append(finding.SourcePath).Append("`: `")
-                    .Append(finding.SubjectId).Append("`\n")
-                    .Append("  - Signal: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append('\n');
-            }
+                    var finding = reviewFinding.Finding;
+                    var isCluster = finding.RelatedSymbols.Count > 1;
+                    if (reviewFinding.AnalysisId == "indirection-drift-candidates")
+                    {
+                        builder.Append("- Forwarding path: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
+                        foreach (var member in finding.Evidence)
+                        {
+                            builder.Append("  - ").Append(FormatCodeSpan(member.SourcePath)).Append(": ")
+                                .Append(FormatCodeSpan(member.Label)).Append('\n');
+                        }
+                    }
+                    else if (reviewFinding.AnalysisId == "structural-duplication-candidates")
+                    {
+                        builder.Append("- Structural duplicate: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
+                        foreach (var occurrence in finding.Evidence)
+                        {
+                            var (projectPath, start, end) = ParseStructuralEvidenceDetail(occurrence.Detail);
+                            builder.Append("  - Project ").Append(FormatCodeSpan(projectPath))
+                                .Append(", file ").Append(FormatCodeSpan(occurrence.SourcePath))
+                                .Append(": ").Append(FormatCodeSpan(occurrence.Label))
+                                .Append(" (start ").Append(FormatCodeSpan(start)).Append("; end-exclusive ")
+                                .Append(FormatCodeSpan(end)).Append(")\n");
+                        }
+                    }
+                    else if (reviewFinding.AnalysisId == "missing-test-evidence-candidates")
+                    {
+                        builder.Append("- ").Append(FormatCodeSpan(finding.SubjectId)).Append('\n')
+                            .Append("  - Signal: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append('\n');
+                        if (finding.Discriminator == "indirect-test-path-only" && finding.Evidence.Count > 1)
+                        {
+                            var path = finding.Evidence.Skip(1)
+                                .Select(static evidence => $"{evidence.Label} ({evidence.SourcePath}:{evidence.Line})");
+                            builder.Append("  - Shortest resolved test path: ").Append(EscapeInline(string.Join(" -> ", path))).Append('\n');
+                        }
+                    }
+                    else if (isCluster)
+                    {
+                        builder.Append("- Cluster: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append('\n');
+                        foreach (var symbol in finding.RelatedSymbols)
+                        {
+                            builder.Append("  - ").Append(FormatCodeSpan(symbol.SourcePath)).Append(": ")
+                                .Append(FormatCodeSpan(symbol.SymbolId)).Append('\n');
+                        }
+                    }
+                    else
+                    {
+                        builder.Append("- ").Append(FormatCodeSpan(finding.SubjectId)).Append('\n')
+                            .Append("  - Signal: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append('\n');
+                    }
 
-            var related = FormatRelated(reviewFinding, findings, allFindings);
-            if (!string.IsNullOrEmpty(related))
-            {
-                builder.Append("  - Related: ").Append(related).Append('\n');
+                    var related = FormatRelated(reviewFinding, findings, allFindings);
+                    if (!string.IsNullOrEmpty(related))
+                    {
+                        // Analysis IDs are validated lowercase slugs; preserve their exact identifiers and the all-findings suffix.
+                        builder.Append("  - Related: ").Append(related).Append('\n');
+                    }
+                }
+
+                builder.Append('\n');
             }
         }
 

@@ -124,6 +124,9 @@ public sealed class HostAdapterIntegrationTests
         Assert.Equal(1, exact.Detected);
         Assert.Contains("\"minimumSimilarity\": \"exact\"", exactReport, StringComparison.Ordinal);
         Assert.Contains("2 methods;", exactReport, StringComparison.Ordinal);
+        Assert.Contains("Total findings: 1", exactReport, StringComparison.Ordinal);
+        Assert.Contains("| ProductA/ProductA.csproj | ProductA/First.cs | 1 |", exactReport, StringComparison.Ordinal);
+        Assert.Contains("#### File: ProductA/First.cs (1 findings)", exactReport, StringComparison.Ordinal);
         Assert.Matches("[0-9]+(?:\\.[0-9]+)?% similarity \\(minimum [0-9]+(?:\\.[0-9]+)?%\\)", exactReport);
         Assert.Contains("`ProductA/First.cs`: ", exactReport, StringComparison.Ordinal);
         Assert.Contains("`ProductB/Second.cs`: ", exactReport, StringComparison.Ordinal);
@@ -213,6 +216,9 @@ public sealed class HostAdapterIntegrationTests
             WithoutRelatedFindingLines(await ReadDuplicateCodeReportAsync(projectRoot, together.RunId)));
         var structuralReport = await ReadStructuralDuplicateReportAsync(projectRoot, together.RunId, "all-findings");
         Assert.Contains("Structural duplicate: 2 occurrences in 2 executable members", structuralReport, StringComparison.Ordinal);
+        Assert.Contains("Total findings: 1", structuralReport, StringComparison.Ordinal);
+        Assert.Contains("| ProductA/ProductA.csproj | ProductA/First.cs | 1 |", structuralReport, StringComparison.Ordinal);
+        Assert.Contains("#### File: ProductA/First.cs (1 findings)", structuralReport, StringComparison.Ordinal);
         Assert.Contains("`ProductA/First.cs`", structuralReport, StringComparison.Ordinal);
         Assert.Contains("`ProductB/Second.cs`", structuralReport, StringComparison.Ordinal);
         AssertMarkdownLinksResolve(Path.Combine(projectRoot, "reports", together.RunId));
@@ -240,6 +246,9 @@ public sealed class HostAdapterIntegrationTests
         var changed = await RunStructuralReviewAsync(projectRoot);
         Assert.Equal(2, changed.Detected);
         var changedStructuralReport = await ReadStructuralDuplicateReportAsync(projectRoot, changed.RunId, "changed-files");
+        Assert.Contains("Total findings: 1", changedStructuralReport, StringComparison.Ordinal);
+        Assert.Contains("| ProductA/ProductA.csproj | ProductA/First.cs | 1 |", changedStructuralReport, StringComparison.Ordinal);
+        Assert.Contains("#### File: ProductA/First.cs (1 findings)", changedStructuralReport, StringComparison.Ordinal);
         Assert.Contains("`ProductA/First.cs`", changedStructuralReport, StringComparison.Ordinal);
         Assert.Contains("`ProductB/Second.cs`", changedStructuralReport, StringComparison.Ordinal);
 

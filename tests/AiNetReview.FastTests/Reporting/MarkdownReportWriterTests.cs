@@ -60,12 +60,17 @@ public sealed class MarkdownReportWriterTests
             "all-findings", "structural-duplication-candidates.md"));
 
         Assert.Contains("Structural duplicate: 3 occurrences in 2 executable members; 3 statements / 60 tokens; identical after local/parameter normalization.", markdown, StringComparison.Ordinal);
+        Assert.Contains("Total findings: 1", markdown, StringComparison.Ordinal);
+        Assert.Contains("#### File: ", markdown, StringComparison.Ordinal);
+        Assert.Contains("(1 findings)", markdown, StringComparison.Ordinal);
         Assert.Contains(projectPath, markdown, StringComparison.Ordinal);
         Assert.Contains(sourcePath, markdown, StringComparison.Ordinal);
+        Assert.Contains("``Product; One/[β]`special.csproj``", markdown, StringComparison.Ordinal);
         Assert.Contains("start `3:5`; end-exclusive `7:10`", markdown, StringComparison.Ordinal);
         Assert.Contains("start `4:1`; end-exclusive `8:2`", markdown, StringComparison.Ordinal);
         Assert.Contains("start `9:2`; end-exclusive `12:1`", markdown, StringComparison.Ordinal);
-        Assert.Equal(3, markdown.Split("Project ", StringSplitOptions.None).Length - 1);
+        Assert.Equal(1, markdown.Split("### Project: ", StringSplitOptions.None).Length - 1);
+        Assert.Equal(1, markdown.Split("#### File: ", StringSplitOptions.None).Length - 1);
         Assert.Equal(1, markdown.Split("Statement and control\\-flow shape", StringSplitOptions.None).Length - 1);
         Assert.Equal(1, markdown.Split("Is this repeated structure intentional", StringSplitOptions.None).Length - 1);
     }
@@ -92,7 +97,7 @@ public sealed class MarkdownReportWriterTests
         var markdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "all-findings", "non-ascii-identifiers.md"));
 
         Assert.Contains("## Findings", markdown, StringComparison.Ordinal);
-        Assert.Contains("`Sample.cs`: `T:Sample.BestätigungsService`", markdown, StringComparison.Ordinal);
+        Assert.Contains("- `T:Sample.BestätigungsService`", markdown, StringComparison.Ordinal);
         Assert.Contains("Signal: The type identifier 'BestätigungsService' contains non\\-ASCII characters (e.g. 'ä').", markdown, StringComparison.Ordinal);
     }
 
@@ -172,9 +177,52 @@ public sealed class MarkdownReportWriterTests
         Assert.True(File.Exists(Path.Combine(runDirectory, "changed-files", "index.md")));
         Assert.False(File.Exists(Path.Combine(runDirectory, "all-findings", "empty-analysis.md")));
         Assert.Contains("## Findings", analysisReport, StringComparison.Ordinal);
-        Assert.Contains("`Sample.cs`: `C:Sample`", analysisReport, StringComparison.Ordinal);
-        Assert.Contains("`Sample.cs`: `C:Other`", analysisReport, StringComparison.Ordinal);
+        Assert.Contains("Total findings: 2", analysisReport, StringComparison.Ordinal);
+        Assert.Contains("| Sample/Sample.csproj | Sample.cs | 1 |", analysisReport, StringComparison.Ordinal);
+        Assert.Contains("| Other/Sample.csproj | Sample.cs | 1 |", analysisReport, StringComparison.Ordinal);
+        Assert.Contains("### Project: Other/Sample.csproj", analysisReport, StringComparison.Ordinal);
+        Assert.Contains("#### File: Sample.cs (1 findings)", analysisReport, StringComparison.Ordinal);
+        Assert.Contains("### Project: Sample/Sample.csproj", analysisReport, StringComparison.Ordinal);
+        Assert.Contains("- `C:Sample`", analysisReport, StringComparison.Ordinal);
+        Assert.Contains("- `C:Other`", analysisReport, StringComparison.Ordinal);
         Assert.Equal(analysisReport, changedReport);
+    }
+
+    [Fact]
+    public async Task WriteAsync_GroupsFindingsDeterministicallyAndEscapesMarkdownTableAndHeadings()
+    {
+        using var temp = TestTempDirectory.Create();
+        var analysis = new ReportAnalysis("fixture-analysis", "Fixture", "safe");
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        const string projectPath = "Project|One/β`name.csproj";
+        const string sourcePath = "src|folder/line\nbreak`file.cs";
+        var first = new FindingDraft(projectPath, sourcePath, "M:Zed.Run", "z", 4, "last|signal",
+            new Dictionary<string, double>(), [new FindingEvidence(sourcePath, 4, "Member", "detail", "Run")]);
+        var second = new FindingDraft(projectPath, sourcePath, "M:Alpha.Run", "a", 4, "first|signal",
+            new Dictionary<string, double>(), [new FindingEvidence(sourcePath, 4, "Member", "detail", "Run")]);
+        var sameSubject = new FindingDraft(projectPath, sourcePath, "M:Alpha.Run", "b", 4, "second|signal",
+            new Dictionary<string, double>(), [new FindingEvidence(sourcePath, 4, "Member", "detail", "Run")]);
+        var otherProject = new FindingDraft("Another.csproj", sourcePath, "M:Only.Run", "only", 1, "single",
+            new Dictionary<string, double>(), [new FindingEvidence(sourcePath, 1, "Member", "detail", "Run")]);
+
+        var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
+            new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([first, otherProject, sameSubject, second])),
+        ]));
+        var markdownPath = Path.Combine(config.ResolvedOutputDirectory, report.RunId, "all-findings", "fixture-analysis.md");
+        var markdownBytes = await File.ReadAllBytesAsync(markdownPath);
+        var markdown = Encoding.UTF8.GetString(markdownBytes);
+
+        Assert.Contains("## Summary\n\nTotal findings: 4\n\n| Project | Source file | Findings |", markdown, StringComparison.Ordinal);
+        Assert.Contains("| Project\\|One/β\\`name.csproj | src\\|folder/line break\\`file.cs | 3 |", markdown, StringComparison.Ordinal);
+        Assert.Contains("### Project: Another.csproj", markdown, StringComparison.Ordinal);
+        Assert.Contains("#### File: src\\|folder/line break\\`file.cs (1 findings)", markdown, StringComparison.Ordinal);
+        Assert.Contains("#### File: src\\|folder/line break\\`file.cs (3 findings)", markdown, StringComparison.Ordinal);
+        Assert.True(markdown.IndexOf("first\\|signal", StringComparison.Ordinal) < markdown.IndexOf("second\\|signal", StringComparison.Ordinal));
+        Assert.True(markdown.IndexOf("second\\|signal", StringComparison.Ordinal) < markdown.IndexOf("last\\|signal", StringComparison.Ordinal));
+        Assert.DoesNotContain("`src|folder/line", markdown, StringComparison.Ordinal);
+        Assert.Equal(4, markdown.Split("- Signal:", StringSplitOptions.None).Length - 1);
+        Assert.False(markdownBytes.AsSpan().StartsWith(Encoding.UTF8.GetPreamble()));
+        Assert.DoesNotContain((byte)'\r', markdownBytes);
     }
 
     [Fact]
@@ -192,9 +240,9 @@ public sealed class MarkdownReportWriterTests
         var markdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "all-findings", "fixture-analysis.md"));
 
         Assert.Contains("## Findings", markdown, StringComparison.Ordinal);
-        Assert.True(markdown.IndexOf("`a file#1.cs`: `A`", StringComparison.Ordinal) < markdown.IndexOf("`z file#1.cs`: `Z`", StringComparison.Ordinal));
+        Assert.True(markdown.IndexOf("- `A`", StringComparison.Ordinal) < markdown.IndexOf("- `Z`", StringComparison.Ordinal));
         Assert.Contains("\\| rationale", markdown, StringComparison.Ordinal);
-        Assert.DoesNotContain("Sample/Sample.csproj", markdown, StringComparison.Ordinal);
+        Assert.Contains("#### File: a file\\#1.cs (1 findings)", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("aMetric", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("Metrics", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("detail", markdown, StringComparison.Ordinal);
@@ -218,7 +266,7 @@ public sealed class MarkdownReportWriterTests
         await File.WriteAllTextAsync(Path.Combine(temp.DirectoryPath, "First.cs"), "class First { }");
         await File.WriteAllTextAsync(Path.Combine(temp.DirectoryPath, "Second.cs"), "class Second { }");
         var first = new FindingSymbol("Sample/Sample.csproj", "First.cs", "M:First.Run", 2);
-        var second = new FindingSymbol("Sample/Sample.csproj", "Second.cs", "M:Second.Run", 5);
+        var second = new FindingSymbol("Other/Other.csproj", "Second.cs", "M:Second.Run", 5);
         var finding = new FindingDraft("Sample/Sample.csproj", "First.cs", "M:First.Run", "duplicate-cluster", 2, "similar methods",
             new Dictionary<string, double>(), [new FindingEvidence("First.cs", 2, "Member", "member source", "Run")], [first, second]);
 
@@ -229,6 +277,9 @@ public sealed class MarkdownReportWriterTests
         var markdown = await File.ReadAllTextAsync(Path.Combine(runDirectory, "all-findings", "duplicate-code-candidates.md"));
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
 
+        Assert.Contains("Total findings: 1", markdown, StringComparison.Ordinal);
+        Assert.Contains("#### File: First.cs (1 findings)", markdown, StringComparison.Ordinal);
+        Assert.Contains("| Sample/Sample.csproj | First.cs | 1 |", markdown, StringComparison.Ordinal);
         Assert.Contains("`First.cs`: `M:First.Run`", markdown, StringComparison.Ordinal);
         Assert.Contains("`Second.cs`: `M:Second.Run`", markdown, StringComparison.Ordinal);
         Assert.Contains("(changed-files/duplicate-code-candidates.md)", index, StringComparison.Ordinal);
@@ -278,6 +329,8 @@ public sealed class MarkdownReportWriterTests
         var changedFiles = await File.ReadAllTextAsync(Path.Combine(runDirectory, "changed-files", "indirection-drift-candidates.md"));
 
         Assert.Equal(allFindings, changedFiles);
+        Assert.Contains("Total findings: 1", allFindings, StringComparison.Ordinal);
+        Assert.Contains("#### File: ZApi.cs (1 findings)", allFindings, StringComparison.Ordinal);
         Assert.Contains("- Forwarding path: 2 forwarding edges across 3 types and 3 files", allFindings, StringComparison.Ordinal);
         Assert.True(allFindings.IndexOf("`ZApi.cs`: `M:ZApi.Run(System.Int32)`", StringComparison.Ordinal)
             < allFindings.IndexOf("`BService.cs`: `M:BService.Run(System.Int32)`", StringComparison.Ordinal));
