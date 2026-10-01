@@ -588,7 +588,8 @@ public sealed class MarkdownReportWriter
                         builder.Append("- Forwarding path: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
                         foreach (var member in finding.Evidence)
                         {
-                            builder.Append("  - ").Append(FormatCodeSpan(member.SourcePath)).Append(':')
+                            builder.Append("  - [").Append(EscapeLinkText(member.SourcePath)).Append("](")
+                                .Append(FormatSourceLink(reportPath, projectRoot, member.SourcePath)).Append("):")
                                 .Append(member.Line.ToString(CultureInfo.InvariantCulture)).Append(": ")
                                 .Append(FormatCodeSpan(member.Label)).Append(" (")
                                 .Append(GetOccurrenceRole(reviewFinding, finding.ProjectPath, member.SourcePath, member.Label)).Append(")\n");
@@ -601,7 +602,8 @@ public sealed class MarkdownReportWriter
                         {
                             var (projectPath, start, end) = ParseStructuralEvidenceDetail(occurrence.Detail);
                             builder.Append("  - Project ").Append(FormatCodeSpan(projectPath))
-                                .Append(", file ").Append(FormatCodeSpan(occurrence.SourcePath))
+                                .Append(", file [").Append(EscapeLinkText(occurrence.SourcePath)).Append("](")
+                                .Append(FormatSourceLink(reportPath, projectRoot, occurrence.SourcePath)).Append(")")
                                 .Append(": ").Append(FormatCodeSpan(occurrence.Label))
                                 .Append(" (start ").Append(FormatCodeSpan(start)).Append("; end-exclusive ")
                                 .Append(FormatCodeSpan(end)).Append("; ")
@@ -625,7 +627,8 @@ public sealed class MarkdownReportWriter
                         builder.Append("- Cluster: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append('\n');
                         foreach (var symbol in finding.RelatedSymbols)
                         {
-                            builder.Append("  - ").Append(FormatCodeSpan(symbol.SourcePath)).Append(": ")
+                            builder.Append("  - [").Append(EscapeLinkText(symbol.SourcePath)).Append("](")
+                                .Append(FormatSourceLink(reportPath, projectRoot, symbol.SourcePath)).Append("): ")
                                 .Append(FormatCodeSpan(symbol.SymbolId)).Append(" (line ")
                                 .Append(symbol.Line.ToString(CultureInfo.InvariantCulture)).Append("; ")
                                 .Append(GetOccurrenceRole(reviewFinding, symbol)).Append(")\n");

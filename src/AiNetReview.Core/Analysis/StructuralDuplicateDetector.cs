@@ -27,7 +27,7 @@ internal static class StructuralDuplicateDetector
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var occurrences = new List<StructuralDuplicateOccurrence>();
+        var statementLists = new List<StatementListContext>();
         var projects = context.Solution.Projects
             .Where(static project => project.Language == LanguageNames.CSharp)
             .OrderBy(static project => project.FilePath, StringComparer.Ordinal)
@@ -83,16 +83,33 @@ internal static class StructuralDuplicateDetector
                     var ownerId = DocumentationCommentId.CreateDeclarationId(owner)
                         ?? owner.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + "@"
                             + ownerStart.ToString(CultureInfo.InvariantCulture);
-                    occurrences.AddRange(CollectFromOwner(body, semanticModel, projectPath, sourcePath, ownerId, ownerStart, cancellationToken));
+                    statementLists.AddRange(CollectFromOwner(body, semanticModel, projectPath, sourcePath, ownerId, ownerStart, cancellationToken));
                 }
             }
         }
 
         cancellationToken.ThrowIfCancellationRequested();
+        // Keep only compact fingerprints until a normalized form occurs in distinct owners.
+        // Exact ordinal strings remain the authority when groups are built below.
+        var fingerprintOwners = new Dictionary<NormalizedFingerprint, FingerprintOwners>();
+        foreach (var statementList in statementLists)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CollectFingerprintOwners(statementList, fingerprintOwners, cancellationToken);
+        }
+
+        var occurrences = new List<StructuralDuplicateOccurrence>();
+        var normalizedForms = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var statementList in statementLists)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            occurrences.AddRange(CollectFromList(statementList, fingerprintOwners, normalizedForms, cancellationToken));
+        }
+
         return BuildGroups(occurrences, cancellationToken);
     }
 
-    private static List<StructuralDuplicateOccurrence> CollectFromOwner(
+    private static List<StatementListContext> CollectFromOwner(
         BlockSyntax body,
         SemanticModel semanticModel,
         string projectPath,
@@ -103,8 +120,8 @@ internal static class StructuralDuplicateDetector
     {
         // The callback above is intentionally side-effect free; collect each syntax list here so
         // one owner has a single stable location for all of its fragment candidates.
-        var found = new List<StructuralDuplicateOccurrence>();
-        VisitStatementLists(body, body, list => found.AddRange(CollectFromList(
+        var found = new List<StatementListContext>();
+        VisitStatementLists(body, body, list => found.Add(CreateStatementListContext(
             list, semanticModel, projectPath, sourcePath, ownerId, ownerStart, cancellationToken)), cancellationToken);
         return found;
     }
@@ -137,7 +154,7 @@ internal static class StructuralDuplicateDetector
         }
     }
 
-    private static List<StructuralDuplicateOccurrence> CollectFromList(
+    private static StatementListContext CreateStatementListContext(
         SyntaxList<StatementSyntax> statements,
         SemanticModel semanticModel,
         string projectPath,
@@ -146,9 +163,10 @@ internal static class StructuralDuplicateDetector
         int ownerStart,
         CancellationToken cancellationToken)
     {
-        var result = new List<StructuralDuplicateOccurrence>();
         var eligible = new bool[statements.Count];
         var tokenCounts = new int[statements.Count];
+        var firstTokens = new SyntaxToken[statements.Count];
+        var lastTokens = new SyntaxToken[statements.Count];
         for (var index = 0; index < statements.Count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -160,42 +178,121 @@ internal static class StructuralDuplicateDetector
 
             var tokens = GetOriginalTokens(statement);
             tokenCounts[index] = tokens.Count;
+            firstTokens[index] = tokens[0];
+            lastTokens[index] = tokens[^1];
             eligible[index] = true;
         }
+
+        return new StatementListContext(statements, semanticModel, projectPath, sourcePath, ownerId, ownerStart,
+            eligible, tokenCounts, firstTokens, lastTokens);
+    }
+
+    private static void CollectFingerprintOwners(
+        StatementListContext statementList,
+        Dictionary<NormalizedFingerprint, FingerprintOwners> fingerprintOwners,
+        CancellationToken cancellationToken)
+    {
+        var statements = statementList.Statements;
+        for (var start = 0; start < statements.Count; start++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!statementList.Eligible[start]) continue;
+
+            var tokenCount = 0;
+            var writer = new FragmentHashWriter();
+            var symbols = new Dictionary<ISymbol, (string Category, int Index, string TypeKey)>(SymbolEqualityComparer.Default);
+            var nextLocal = 0;
+            var nextParameter = 0;
+            for (var end = start; end < statements.Count && statementList.Eligible[end]; end++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                tokenCount += statementList.TokenCounts[end];
+                if (!AppendNode(statements[end], ref writer, symbols, ref nextLocal, ref nextParameter,
+                        statementList.SemanticModel, cancellationToken))
+                {
+                    break;
+                }
+
+                var statementCount = end - start + 1;
+                if (statementCount < MinimumStatementCount || tokenCount < MinimumTokenCount) continue;
+
+                // Statement count is the leading field in the exact form, so keep it as a separate key part.
+                var fingerprint = new NormalizedFingerprint(statementCount, writer.Hash);
+                if (fingerprintOwners.TryGetValue(fingerprint, out var owners))
+                {
+                    owners.AddOwner(statementList.OwnerKey);
+                }
+                else
+                {
+                    fingerprintOwners.Add(fingerprint, new FingerprintOwners(statementList.OwnerKey));
+                }
+            }
+        }
+    }
+
+    private static List<StructuralDuplicateOccurrence> CollectFromList(
+        StatementListContext statementList,
+        Dictionary<NormalizedFingerprint, FingerprintOwners> fingerprintOwners,
+        Dictionary<string, string> normalizedForms,
+        CancellationToken cancellationToken)
+    {
+        var statements = statementList.Statements;
+        var result = new List<StructuralDuplicateOccurrence>();
 
         for (var start = 0; start < statements.Count; start++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!eligible[start])
+            if (!statementList.Eligible[start])
             {
                 continue;
             }
 
             var tokenCount = 0;
-            for (var end = start; end < statements.Count && eligible[end]; end++)
+            var writer = new FragmentHashWriter();
+            var symbols = new Dictionary<ISymbol, (string Category, int Index, string TypeKey)>(SymbolEqualityComparer.Default);
+            var nextLocal = 0;
+            var nextParameter = 0;
+            for (var end = start; end < statements.Count && statementList.Eligible[end]; end++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                tokenCount += tokenCounts[end];
+                tokenCount += statementList.TokenCounts[end];
                 var statementCount = end - start + 1;
+                if (!AppendNode(statements[end], ref writer, symbols, ref nextLocal, ref nextParameter,
+                        statementList.SemanticModel, cancellationToken))
+                {
+                    break;
+                }
+
                 if (statementCount < MinimumStatementCount || tokenCount < MinimumTokenCount)
                 {
                     continue;
                 }
 
-                var normalized = NormalizeFragment(statements, start, statementCount, semanticModel, cancellationToken);
-                if (normalized is null)
+                var fingerprint = new NormalizedFingerprint(statementCount, writer.Hash);
+                if (!fingerprintOwners.TryGetValue(fingerprint, out var owners) || !owners.HasMultipleOwners)
                 {
                     continue;
                 }
 
-                var firstToken = GetOriginalTokens(statements[start])[0];
-                var lastToken = GetOriginalTokens(statements[end]).Last();
+                var normalized = NormalizeFragment(statements, start, statementCount, statementList.SemanticModel, cancellationToken);
+                if (normalized is null) continue;
+                if (normalizedForms.TryGetValue(normalized, out var sharedNormalized))
+                {
+                    normalized = sharedNormalized;
+                }
+                else
+                {
+                    normalizedForms.Add(normalized, normalized);
+                }
+
+                var firstToken = statementList.FirstTokens[start];
+                var lastToken = statementList.LastTokens[end];
                 var span = TextSpan.FromBounds(firstToken.SpanStart, lastToken.Span.End);
                 result.Add(new StructuralDuplicateOccurrence(
-                    projectPath,
-                    sourcePath,
-                    ownerId,
-                    ownerStart,
+                    statementList.ProjectPath,
+                    statementList.SourcePath,
+                    statementList.OwnerId,
+                    statementList.OwnerStart,
                     span.Start,
                     span.Length,
                     statementCount,
@@ -203,7 +300,7 @@ internal static class StructuralDuplicateDetector
                     normalized,
                     firstToken,
                     lastToken,
-                    semanticModel.SyntaxTree.GetText(cancellationToken)));
+                    statementList.SemanticModel.SyntaxTree.GetText(cancellationToken)));
             }
         }
 
@@ -384,10 +481,11 @@ internal static class StructuralDuplicateDetector
         var nextLocal = 0;
         var nextParameter = 0;
         AppendPart(builder, "FragmentStatementCount", count.ToString(CultureInfo.InvariantCulture));
+        var writer = new StringBuilderFragmentWriter(builder);
         for (var index = start; index < start + count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!AppendNode(statements[index], builder, symbols, ref nextLocal, ref nextParameter, semanticModel, cancellationToken))
+            if (!AppendNode(statements[index], ref writer, symbols, ref nextLocal, ref nextParameter, semanticModel, cancellationToken))
             {
                 return null;
             }
@@ -396,23 +494,24 @@ internal static class StructuralDuplicateDetector
         return builder.ToString();
     }
 
-    private static bool AppendNode(
+    private static bool AppendNode<TWriter>(
         SyntaxNode node,
-        StringBuilder builder,
+        ref TWriter builder,
         Dictionary<ISymbol, (string Category, int Index, string TypeKey)> symbols,
         ref int nextLocal,
         ref int nextParameter,
         SemanticModel semanticModel,
         CancellationToken cancellationToken)
+        where TWriter : struct, IFragmentWriter
     {
         cancellationToken.ThrowIfCancellationRequested();
-        AppendPart(builder, "N", node.RawKind.ToString(CultureInfo.InvariantCulture));
+        AppendPart(ref builder, "N", node.RawKind.ToString(CultureInfo.InvariantCulture));
         foreach (var child in node.ChildNodesAndTokens())
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (child.IsNode)
             {
-                if (!AppendNode(child.AsNode()!, builder, symbols, ref nextLocal, ref nextParameter, semanticModel, cancellationToken))
+                if (!AppendNode(child.AsNode()!, ref builder, symbols, ref nextLocal, ref nextParameter, semanticModel, cancellationToken))
                 {
                     return false;
                 }
@@ -453,18 +552,18 @@ internal static class StructuralDuplicateDetector
                         symbols.Add(symbol, placeholder);
                     }
 
-                    AppendPart(builder, placeholder.Category, placeholder.Index.ToString(CultureInfo.InvariantCulture));
-                    AppendPart(builder, "T", placeholder.TypeKey);
+                    AppendPart(ref builder, placeholder.Category, placeholder.Index.ToString(CultureInfo.InvariantCulture));
+                    AppendPart(ref builder, "T", placeholder.TypeKey);
                 }
                 else
                 {
-                    AppendPart(builder, "K", token.RawKind.ToString(CultureInfo.InvariantCulture));
-                    AppendPart(builder, "V", token.ValueText);
+                    AppendPart(ref builder, "K", token.RawKind.ToString(CultureInfo.InvariantCulture));
+                    AppendPart(ref builder, "V", token.ValueText);
                 }
             }
         }
 
-        AppendPart(builder, "E", node.RawKind.ToString(CultureInfo.InvariantCulture));
+        AppendPart(ref builder, "E", node.RawKind.ToString(CultureInfo.InvariantCulture));
         return true;
     }
 
@@ -611,10 +710,51 @@ internal static class StructuralDuplicateDetector
     private static void AppendRefKind(StringBuilder builder, RefKind refKind) =>
         AppendPart(builder, "RefKind", refKind.ToString());
 
+    private static void AppendPart<TWriter>(ref TWriter writer, string tag, string value)
+        where TWriter : struct, IFragmentWriter
+    {
+        writer.Append(tag.Length.ToString(CultureInfo.InvariantCulture));
+        writer.Append(":");
+        writer.Append(tag);
+        writer.Append(value.Length.ToString(CultureInfo.InvariantCulture));
+        writer.Append(":");
+        writer.Append(value);
+    }
+
     private static void AppendPart(StringBuilder builder, string tag, string value)
     {
         builder.Append(tag.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(tag)
             .Append(value.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(value);
+    }
+
+    private interface IFragmentWriter
+    {
+        void Append(string value);
+    }
+
+    private struct StringBuilderFragmentWriter(StringBuilder builder) : IFragmentWriter
+    {
+        public void Append(string value) => builder.Append(value);
+    }
+
+    private struct FragmentHashWriter : IFragmentWriter
+    {
+        private const ulong OffsetBasis = 14695981039346656037UL;
+        private const ulong Prime = 1099511628211UL;
+        private ulong hash;
+
+        public FragmentHashWriter() => hash = OffsetBasis;
+
+        public readonly ulong Hash => hash;
+
+        public void Append(string value)
+        {
+            foreach (var character in value)
+            {
+                hash ^= character;
+                hash = unchecked(hash * Prime);
+            }
+        }
     }
 
     private static List<SyntaxToken> GetOriginalTokens(SyntaxNode node) => node.DescendantTokens(descendIntoTrivia: false)
@@ -642,6 +782,38 @@ internal static class StructuralDuplicateDetector
 
     private static bool ContainsNestedExecutable(StatementSyntax statement) =>
         statement.DescendantNodesAndSelf().Any(static node => IsNestedExecutable(node));
+
+    private sealed record StatementListContext(
+        SyntaxList<StatementSyntax> Statements,
+        SemanticModel SemanticModel,
+        string ProjectPath,
+        string SourcePath,
+        string OwnerId,
+        int OwnerStart,
+        bool[] Eligible,
+        int[] TokenCounts,
+        SyntaxToken[] FirstTokens,
+        SyntaxToken[] LastTokens)
+    {
+        public (string ProjectPath, string SourcePath, int OwnerStart) OwnerKey => (ProjectPath, SourcePath, OwnerStart);
+    }
+
+    private readonly record struct NormalizedFingerprint(int StatementCount, ulong Hash);
+
+    private sealed class FingerprintOwners((string ProjectPath, string SourcePath, int OwnerStart) firstOwner)
+    {
+        private readonly (string ProjectPath, string SourcePath, int OwnerStart) firstOwner = firstOwner;
+
+        public bool HasMultipleOwners { get; private set; }
+
+        public bool AddOwner((string ProjectPath, string SourcePath, int OwnerStart) owner)
+        {
+            if (HasMultipleOwners) return true;
+            if (firstOwner == owner) return false;
+            HasMultipleOwners = true;
+            return true;
+        }
+    }
 
     internal sealed record StructuralDuplicateOccurrence(
         string ProjectPath,

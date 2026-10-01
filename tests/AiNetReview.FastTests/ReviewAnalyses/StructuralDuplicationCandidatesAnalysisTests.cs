@@ -491,6 +491,28 @@ public sealed class StructuralDuplicationCandidatesAnalysisTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_FlatLongDuplicateListsRetainEveryQualifyingOccurrenceRange()
+    {
+        const int statementCount = 100;
+        var repeatedAssignment = "input = " + string.Join(" + ", Enumerable.Repeat("input", 12)) + ";";
+        var body = string.Join(" ", Enumerable.Repeat(repeatedAssignment, statementCount));
+        using var fixture = CreateFixture(("Product", "FlatDuplicates.cs",
+            WrapStatements("First", body, "input") + WrapStatements("Second", body, "value")));
+        AssertNoCompilationErrors(fixture.Context);
+        var analysis = new StructuralDuplicationCandidatesAnalysis();
+
+        var findings = (await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None)).Findings;
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(statementCount, finding.Metrics["statementCount"]);
+        Assert.Equal(2, finding.Metrics["executableCount"]);
+        Assert.Equal(2, finding.Evidence.Count);
+        Assert.Equal(2, finding.RelatedSymbols.Count);
+        Assert.Equal(new[] { "M:First.Run(System.Int32)", "M:Second.Run(System.Int32)" },
+            finding.RelatedSymbols.Select(static occurrence => occurrence.SymbolId).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
     public async Task ExecuteAsync_UsesRecursiveNestedGenericAndNullableValueTypeKeys()
     {
         var repeated = "var result = new Outer(); string text = result.ToString(); text = "

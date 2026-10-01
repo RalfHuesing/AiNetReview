@@ -50,10 +50,10 @@ public sealed class HostAdapterIntegrationTests
         AssertViewPolicies(allReport, changedReport);
         Assert.Equal(NormalizeForChangedView(allReport), changedReport);
         Assert.Contains("Forwarding path: 2 forwarding edges across 3 types and 3 files", allReport, StringComparison.Ordinal);
-        Assert.True(allReport.IndexOf("`Sample/ZApi.cs`", StringComparison.Ordinal)
-            < allReport.IndexOf("`Sample/BService.cs`", StringComparison.Ordinal));
-        Assert.True(allReport.IndexOf("`Sample/BService.cs`", StringComparison.Ordinal)
-            < allReport.IndexOf("`Sample/ARepository.cs`", StringComparison.Ordinal));
+        Assert.True(allReport.IndexOf("[Sample/ZApi.cs](../../../../Sample/ZApi.cs):", StringComparison.Ordinal)
+            < allReport.IndexOf("[Sample/BService.cs](../../../../Sample/BService.cs):", StringComparison.Ordinal));
+        Assert.True(allReport.IndexOf("[Sample/BService.cs](../../../../Sample/BService.cs):", StringComparison.Ordinal)
+            < allReport.IndexOf("[Sample/ARepository.cs](../../../../Sample/ARepository.cs):", StringComparison.Ordinal));
         Assert.Contains("What responsibility does each forwarding layer add", allReport, StringComparison.Ordinal);
 
         await File.WriteAllTextAsync(servicePath, "public static class BService { public static int Run(int value) { return value; } }");
@@ -134,8 +134,8 @@ public sealed class HostAdapterIntegrationTests
         Assert.Contains("### Project: ProductA/ProductA.csproj (production; 1 files, 1 findings)", exactReport, StringComparison.Ordinal);
         Assert.Contains("#### File: ProductA/First.cs (1 findings)", exactReport, StringComparison.Ordinal);
         Assert.Matches("[0-9]+(?:\\.[0-9]+)?% similarity \\(minimum [0-9]+(?:\\.[0-9]+)?%\\)", exactReport);
-        Assert.Contains("`ProductA/First.cs`: ", exactReport, StringComparison.Ordinal);
-        Assert.Contains("`ProductB/Second.cs`: ", exactReport, StringComparison.Ordinal);
+        Assert.Contains("[ProductA/First.cs](../../../../ProductA/First.cs): ", exactReport, StringComparison.Ordinal);
+        Assert.Contains("[ProductB/Second.cs](../../../../ProductB/Second.cs): ", exactReport, StringComparison.Ordinal);
         Assert.Contains("## Findings", exactReport, StringComparison.Ordinal);
         Assert.DoesNotContain("Metrics", exactReport, StringComparison.Ordinal);
         AssertMarkdownLinksResolve(Path.Combine(projectRoot, "reports", exact.RunId));
@@ -226,8 +226,8 @@ public sealed class HostAdapterIntegrationTests
         Assert.Contains("Total findings: 1 across 1 projects and 1 source files.", structuralReport, StringComparison.Ordinal);
         Assert.Contains("### Project: ProductA/ProductA.csproj (production; 1 files, 1 findings)", structuralReport, StringComparison.Ordinal);
         Assert.Contains("#### File: ProductA/First.cs (1 findings)", structuralReport, StringComparison.Ordinal);
-        Assert.Contains("`ProductA/First.cs`", structuralReport, StringComparison.Ordinal);
-        Assert.Contains("`ProductB/Second.cs`", structuralReport, StringComparison.Ordinal);
+        Assert.Contains("[ProductA/First.cs](../../../../ProductA/First.cs)", structuralReport, StringComparison.Ordinal);
+        Assert.Contains("[ProductB/Second.cs](../../../../ProductB/Second.cs)", structuralReport, StringComparison.Ordinal);
         AssertMarkdownLinksResolve(Path.Combine(projectRoot, "reports", together.RunId));
 
         await WriteStructuralDuplicateConfigAsync(configPath, includeStructural: true, structuralEnabled: false);
@@ -257,8 +257,8 @@ public sealed class HostAdapterIntegrationTests
         Assert.Contains("Total findings: 1 across 1 projects and 1 source files.", changedStructuralReport, StringComparison.Ordinal);
         Assert.Contains("### Project: ProductA/ProductA.csproj (production; 1 files, 1 findings)", changedStructuralReport, StringComparison.Ordinal);
         Assert.Contains("#### File: ProductA/First.cs (1 findings)", changedStructuralReport, StringComparison.Ordinal);
-        Assert.Contains("`ProductA/First.cs`", changedStructuralReport, StringComparison.Ordinal);
-        Assert.Contains("`ProductB/Second.cs`", changedStructuralReport, StringComparison.Ordinal);
+        Assert.Contains("[ProductA/First.cs](../../../../ProductA/First.cs)", changedStructuralReport, StringComparison.Ordinal);
+        Assert.Contains("[ProductB/Second.cs](../../../../ProductB/Second.cs)", changedStructuralReport, StringComparison.Ordinal);
 
     }
 
