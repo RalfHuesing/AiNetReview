@@ -511,6 +511,9 @@ public sealed class MarkdownReportWriter
             .Append("Run: ").Append(FormatCodeSpan(runId))
             .Append("; view: ").Append(FormatCodeSpan(viewName)).Append("; primary findings: **")
             .Append(package.Findings.Count.ToString(CultureInfo.InvariantCulture)).Append("**.\n\n")
+            .Append(viewName == "all-findings"
+                ? "Full-audit scope: This reference view contains every current finding. Inspect it only when the user explicitly requests a full-repository audit.\n\n"
+                : string.Empty)
             .Append("## Assignment\n\n")
             .Append("Inspect every finding assigned to this package using the source, callers, contracts, and tests below. Classify each ID as false positive, acceptable design, needs clarification, or actionable, and record concrete evidence plus unresolved context. This is a technical grouping; it does not establish common cause or independent changeability. Do not claim a full audit when other packages remain unreviewed.\n\n")
             .Append("## Areas\n\n");

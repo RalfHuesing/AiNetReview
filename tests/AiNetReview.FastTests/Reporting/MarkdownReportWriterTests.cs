@@ -157,6 +157,9 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("## File navigation", allPackageMarkdown, StringComparison.Ordinal);
         Assert.Contains("## Symbol navigation", allPackageMarkdown, StringComparison.Ordinal);
         Assert.Contains($"Run: `{report.RunId}`", allPackageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("Full-audit scope: This reference view contains every current finding. Inspect it only when the user explicitly requests a full-repository audit.", allPackageMarkdown, StringComparison.Ordinal);
+        var changedPackageMarkdown = await File.ReadAllTextAsync(changedPackagePath);
+        Assert.DoesNotContain("Full-audit scope:", changedPackageMarkdown, StringComparison.Ordinal);
         var originalReportPath = Path.Combine(runDirectory, "production", "all-findings", "fixture-analysis.md");
         Assert.True(File.Exists(originalReportPath));
         Assert.Equal(1, (await File.ReadAllTextAsync(originalReportPath)).Split("<a id=\"finding-finding-stable\"></a>", StringSplitOptions.None).Length - 1);
