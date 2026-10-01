@@ -8,11 +8,11 @@ AiNetReview helps audit C# code after the usual build, tests, and static analysi
 | --- | --- |
 | `method-control-flow-outliers` | Methods with unusually many decisions or deeply nested decision paths within their project. |
 | `dead-code-candidates` | Types and methods without known uses in the analyzed solution; indirect or external uses may still exist. |
-| `duplicate-code-candidates` | Groups of substantially similar method bodies; similarity does not by itself justify merging them. |
-| `structural-duplication-candidates` | Exact repeated statement fragments after normalizing bound local and parameter names; retained syntax distinctions still matter. |
-| `indirection-drift-candidates` | Current statically declared paths with at least two transparent forwarding edges across three types and three production C# files; runtime dispatch and historical growth are not measured. |
+| `duplicate-code-candidates` | Groups of substantially similar method bodies across production and test projects; similarity does not by itself justify merging them. |
+| `structural-duplication-candidates` | Exact repeated statement fragments across production and test projects after normalizing bound local and parameter names; retained syntax distinctions still matter. |
+| `indirection-drift-candidates` | Current statically declared paths with at least two transparent forwarding edges across three types and three source files in one production or test project; runtime dispatch and historical growth are not measured. |
 | `missing-test-evidence-candidates` | Structurally nontrivial production functions with no static test path, or only an indirect path when both higher complexity thresholds are met; this is not runtime coverage evidence. |
-| `non-ascii-identifiers` | Production declarations whose identifiers contain characters outside the supported ASCII set. |
+| `non-ascii-identifiers` | Production and test declarations whose identifiers contain characters outside the supported ASCII set. |
 | `code-size-candidates` | Executable members, classes, and source files selected by project-relative size and control-flow thresholds for focused review. |
 
 The reports are prompts for an audit, not defect claims. See [Current findings](docs/review/findings.md) for the analyses' scope and limitations.

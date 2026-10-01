@@ -30,7 +30,6 @@ internal static class StructuralDuplicateDetector
         var occurrences = new List<StructuralDuplicateOccurrence>();
         var projects = context.Solution.Projects
             .Where(static project => project.Language == LanguageNames.CSharp)
-            .Where(static project => !ReviewSourceClassifier.IsTestProject(project))
             .OrderBy(static project => project.FilePath, StringComparer.Ordinal)
             .ThenBy(static project => project.Name, StringComparer.Ordinal);
 

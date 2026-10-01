@@ -82,6 +82,22 @@ public sealed class IndirectionDriftCandidatesAnalysisTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_IncludesTestProjectsWhileKeepingForwardingPathsProjectLocal()
+    {
+        using var fixture = CreateFixture("Product.Tests",
+            ("Root.cs", "namespace Xunit { [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class FactAttribute : System.Attribute { public string? Skip { get; set; } } } namespace Sample { public static class Root { [Xunit.Fact(Skip = \"deliberately skipped\")] public static void Run() => Middle.Run(); } }"),
+            ("Middle.cs", "namespace Sample; public static class Middle { public static void Run() => Endpoint.Run(); }"),
+            ("Endpoint.cs", "namespace Sample; public static class Endpoint { public static void Run() { } }"));
+        var analysis = new IndirectionDriftCandidatesAnalysis();
+
+        var finding = Assert.Single((await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None)).Findings);
+
+        Assert.Equal("Product.Tests.csproj", finding.ProjectPath);
+        Assert.Equal(2, finding.Metrics["forwardingEdgeCount"]);
+        Assert.Equal(new[] { "Root.cs", "Middle.cs", "Endpoint.cs" }, finding.Evidence.Select(static evidence => evidence.SourcePath));
+    }
+
+    [Fact]
     public async Task ExecuteAsync_DiscardsCyclesIncludingRootPathsThatEnterACycle()
     {
         using var fixture = CreateFixture(
@@ -120,7 +136,7 @@ public sealed class IndirectionDriftCandidatesAnalysisTests
         var descriptor = new IndirectionDriftCandidatesAnalysis().Descriptor;
 
         Assert.Equal("indirection-drift-candidates", descriptor.AnalysisId);
-        Assert.Equal(1, descriptor.BehaviorVersion);
+        Assert.Equal(2, descriptor.BehaviorVersion);
         Assert.True(descriptor.DefaultEnabled);
         Assert.Empty(descriptor.Options);
         Assert.Contains("statically", descriptor.Measurement, StringComparison.OrdinalIgnoreCase);
@@ -131,6 +147,9 @@ public sealed class IndirectionDriftCandidatesAnalysisTests
         $"{finding.ProjectPath}|{finding.SourcePath}|{finding.SubjectId}|{finding.Discriminator}|{string.Join(',', finding.Evidence.Select(static item => item.SourcePath + ':' + item.Line))}";
 
     private static AnalysisFixture CreateFixture(params (string File, string Source)[] documents)
+        => CreateFixture("Product", documents);
+
+    private static AnalysisFixture CreateFixture(string projectName, params (string File, string Source)[] documents)
     {
         var workspace = new AdhocWorkspace();
         var root = Path.Combine(Path.GetTempPath(), "AiNetReview-Indirection-" + Guid.NewGuid().ToString("N"));
@@ -139,10 +158,10 @@ public sealed class IndirectionDriftCandidatesAnalysisTests
         workspace.AddProject(ProjectInfo.Create(
             projectId,
             VersionStamp.Create(),
-            "Product",
-            "Product",
+            projectName,
+            projectName,
             LanguageNames.CSharp,
-            filePath: Path.Combine(root, "Product.csproj"),
+            filePath: Path.Combine(root, projectName + ".csproj"),
             compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
             parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
             metadataReferences: PlatformReferences()));

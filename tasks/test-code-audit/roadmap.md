@@ -34,7 +34,7 @@ Für Codeänderungen sind die betroffenen Tests und die erforderlichen Gates gem
 
   **Abschlussnachweis:** Projektweise Testoptionen verwenden dieselben Deskriptoren und bewahren explizite/geerbte Herkunft; Größen- und Kontrollflussberichte zeigen effektive Werte. Defaultgenerator, Repository-JSON und Konfigurationsbeispiel enthalten alle acht Analysen und sämtliche verfügbaren Defaults. Verifiziert: `build.ps1` 0 Warnungen/Fehler, `test-fast.ps1` 329/329, `test-integration.ps1` 108/108; `git diff --check` sauber.
 
-- [ ] **3 — Duplikation, Weiterleitung und Bezeichner auf Testcode erweitern**
+- [x] **3 — Duplikation, Weiterleitung und Bezeichner auf Testcode erweitern**
 
   **Intention:** Die vier weiteren Wartbarkeitssignale erfassen Testinfrastruktur und bereichsübergreifende Zusammenhänge mit ihren bestehenden Kriterien.
 
@@ -43,6 +43,8 @@ Für Codeänderungen sind die betroffenen Tests und die erforderlichen Gates gem
   **Nicht-Ziele:** Getrennte Produktions-/Testscans, neue Ähnlichkeitsregeln, Testschwellen für Duplikate, Aufteilen oder Begrenzen von Clustern, projektübergreifende Weiterleitungsgraphen und neue Identifiersignale.
 
   **Abnahme:** Kleine deterministische Lösungen liefern für jede der vier Analysen ein qualifizierendes Test-Finding, auch aus Helpers beziehungsweise deaktivierten Tests; ungeeigneter Code erhält kein künstliches Finding. Beide Duplikationsanalysen erhalten Produktions-, Test- und gemischte Gruppen vollständig und einmal. Bestehende Normalisierungs-, Bindungs- und Fragmentgrenzen bleiben wirksam. Eine Änderung ausschließlich am Testvorkommen wählt das gesamte betroffene Finding in `changed-files` aus. Generated-Dateien/-Symbole bleiben ausgeschlossen. Zuordnungsdaten sind für Paket 5 vollständig. Konzept-Abnahme 2 und 4 ist für diese Analysen auf Analyse-/Runner-Ebene belegt.
+
+  **Abschlussnachweis:** Alle vier Analysen prüfen erkannte Produktions- und Testprojekte; ihre `BehaviorVersion`-Werte sind 2 und Deskriptoren sowie aktuelle Analyse-/Entwicklerdokumentation nennen den erweiterten Scope. FastTests belegen Testhelper und `Fact(Skip)`-Vorkommen, Generated-Ausschlüsse, unveränderte Duplikatnormalisierung sowie strukturelle Bindungs- und Fragmentgrenzen. Jede Duplikationsanalyse erhält genau vollständige Production-only-, Test-only- und Mixed-Gruppen. Ein echter Runnerlauf mit beiden Duplikationsanalysen zeigt bei ausschließlich geänderter Testdatei die vollständigen Findings samt Produktions- und Testvorkommen in `changed-files`; die Weiterleitungsanalyse bildet eine übersprungene Testwurzel mit Helperkette projektintern ab. Verifiziert: `build.ps1` 0 Warnungen/Fehler, `test-fast.ps1` 332/332, `test-integration.ps1` 109/109; `git diff --check` sauber.
 
 - [ ] **4 — Dead-Code-Testscope mit vollständigem Frameworkschutz freigeben**
 

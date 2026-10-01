@@ -22,7 +22,7 @@ public sealed class StructuralDuplicationCandidatesAnalysisTests
         var analysis = new StructuralDuplicationCandidatesAnalysis();
         Assert.Equal("structural-duplication-candidates", analysis.Descriptor.AnalysisId);
         Assert.Equal("Structural Duplication Candidates", analysis.Descriptor.Title);
-        Assert.Equal(1, analysis.Descriptor.BehaviorVersion);
+        Assert.Equal(2, analysis.Descriptor.BehaviorVersion);
         Assert.True(analysis.Descriptor.DefaultEnabled);
         Assert.Empty(analysis.Descriptor.Options);
         Assert.Empty(analysis.Descriptor.ResolveOptions().Values);
@@ -298,7 +298,7 @@ public sealed class StructuralDuplicationCandidatesAnalysisTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_UsesProductionClassifierForTestProjectsGeneratedDocumentsAndSymbols()
+    public async Task ExecuteAsync_IncludesTestProjectFragmentsButExcludesGeneratedDocumentsAndSymbols()
     {
         var body = BuildThresholdStatements((9, false), (8, true), (8, false));
         var generatedSymbolBody = body.Replace("input", "value", StringComparison.Ordinal);
@@ -308,18 +308,46 @@ public sealed class StructuralDuplicationCandidatesAnalysisTests
             + "[System.CodeDom.Compiler.GeneratedCode(\"tool\", \"1\")] public static void Two(int value) { " + generatedSymbolBody + " } }";
         var generatedDocument = WrapStatements("GeneratedDocumentOne", body, "input")
             + WrapStatements("GeneratedDocumentTwo", body, "input");
-        var testProject = WrapStatements("TestOne", body, "input") + WrapStatements("TestTwo", body, "input");
+        var testProject = "public static class TestOne { [Xunit.Fact(Skip = \"deliberately skipped\")] public static void Run(int input) { " + body + " } }"
+            + WrapStatements("TestTwo", body, "input");
         using var fixture = CreateFixture(
             ("Product", "Regular.cs", production),
             ("Product", "Generated.g.cs", generatedDocument),
-            ("Product.Tests", "Tests.cs", testProject));
+            ("Product.Tests", "Tests.cs", testProject),
+            ("Product.Tests", "FactAttribute.cs", "namespace Xunit { [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class FactAttribute : System.Attribute { public string? Skip { get; set; } } }"));
         AssertNoCompilationErrors(fixture.Context);
         var analysis = new StructuralDuplicationCandidatesAnalysis();
 
         var finding = Assert.Single((await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None)).Findings);
 
-        Assert.Equal(2, finding.Metrics["memberCount"]);
-        Assert.All(finding.Evidence, static evidence => Assert.Equal("Regular.cs", evidence.SourcePath));
+        Assert.Equal(4, finding.Metrics["memberCount"]);
+        Assert.Equal(new[] { "Tests.cs", "Tests.cs", "Regular.cs", "Regular.cs" }, finding.Evidence.Select(static evidence => evidence.SourcePath));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_RetainsProductionOnlyTestOnlyAndMixedFragmentGroupsInFull()
+    {
+        var productionFragment = BuildThresholdStatements((9, false), (8, true), (8, false));
+        var testFragment = productionFragment.Replace(" + input", " - input", StringComparison.Ordinal);
+        var mixedFragment = productionFragment.Replace("int value", "long value", StringComparison.Ordinal);
+        using var fixture = CreateFixture(
+            ("Product", "Production.cs", WrapStatements("ProductionOne", productionFragment, "input")
+                + WrapStatements("ProductionTwo", productionFragment, "input")
+                + WrapStatements("MixedProduction", mixedFragment, "input")),
+            ("Product.Tests", "Tests.cs", WrapStatements("TestOne", testFragment, "input")
+                + WrapStatements("TestTwo", testFragment, "input")
+                + WrapStatements("MixedTest", mixedFragment, "input")));
+        AssertNoCompilationErrors(fixture.Context);
+        var analysis = new StructuralDuplicationCandidatesAnalysis();
+
+        var findings = (await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None)).Findings;
+
+        Assert.Equal(new[] { "production,production", "production,tests", "tests,tests" },
+            findings.Select(finding => string.Join(',', finding.Evidence.Select(static evidence =>
+                evidence.SourcePath == "Tests.cs" ? "tests" : "production").Order(StringComparer.Ordinal)))
+                .Order(StringComparer.Ordinal));
+        Assert.All(findings, static finding => Assert.Equal(2, finding.Metrics["memberCount"]));
+        Assert.Equal(6, findings.Sum(static finding => (int)finding.Metrics["memberCount"]));
     }
 
     [Fact]

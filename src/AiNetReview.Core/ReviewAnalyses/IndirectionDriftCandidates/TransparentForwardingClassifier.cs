@@ -24,7 +24,7 @@ internal static class TransparentForwardingClassifier
         ArgumentNullException.ThrowIfNull(project);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (project.Language != LanguageNames.CSharp || ReviewSourceClassifier.IsTestProject(project))
+        if (project.Language != LanguageNames.CSharp)
         {
             return Array.Empty<ForwardingDeclaration>();
         }

@@ -23,7 +23,7 @@ public sealed class NonAsciiIdentifiersAnalysisTests
 
         Assert.Equal("non-ascii-identifiers", descriptor.AnalysisId);
         Assert.Equal("Non-ASCII Identifiers", descriptor.Title);
-        Assert.Equal(1, descriptor.BehaviorVersion);
+        Assert.Equal(2, descriptor.BehaviorVersion);
         Assert.True(descriptor.DefaultEnabled);
         Assert.Empty(descriptor.Options);
         Assert.NotEmpty(descriptor.Purpose);
@@ -132,14 +132,22 @@ public sealed class NonAsciiIdentifiersAnalysisTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_Skips_TestProjects()
+    public async Task ExecuteAsync_IncludesTestProjectsAndHelpers()
     {
         const string source = """
-            namespace Sample.Tests;
-
-            public class Test_Klasse_Mit_Umläuten
+            namespace Xunit
             {
-                public void Test_Größe() { }
+                [System.AttributeUsage(System.AttributeTargets.Method)]
+                public sealed class FactAttribute : System.Attribute { public string? Skip { get; set; } }
+            }
+            namespace Sample.Tests
+            {
+                public class Test_Klasse_Mit_Umläuten
+                {
+                    [Xunit.Fact(Skip = "deliberately skipped")]
+                    public void Test_Größe() { }
+                    public void Helper_Mit_Umläuten() { }
+                }
             }
             """;
 
@@ -148,7 +156,9 @@ public sealed class NonAsciiIdentifiersAnalysisTests
 
         var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
 
-        Assert.Empty(result.Findings);
+        Assert.Contains(result.Findings, static finding => finding.Rationale.Contains("Test_Größe", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.Rationale.Contains("Helper_Mit_Umläuten", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.Rationale.Contains("Test_Klasse_Mit_Umläuten", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -12,7 +12,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
-/// <summary>Reports identifiers that contain non-ASCII characters in production C# code.</summary>
+/// <summary>Reports identifiers that contain non-ASCII characters in production or test C# code.</summary>
 public sealed class NonAsciiIdentifiersAnalysis : IReviewAnalysis
 {
     private static readonly IReadOnlyDictionary<string, double> EmptyMetrics =
@@ -21,9 +21,9 @@ public sealed class NonAsciiIdentifiersAnalysis : IReviewAnalysis
     public ReviewAnalysisDescriptor Descriptor { get; } = new(
         analysisId: "non-ascii-identifiers",
         title: "Non-ASCII Identifiers",
-        behaviorVersion: 1,
-        purpose: "Flags identifiers that contain non-ASCII characters in production C# code.",
-        measurement: "Inspects identifier tokens in namespaces, types (classes, records, structs, interfaces, enums), type members (methods, properties, fields, enum members), parameters, and local functions/variables. Allowed characters are a-z, A-Z, 0-9, and underscore (namespaces additionally allow dot). Verbatim identifiers with '@' prefix ignore the '@'. Test projects and generated code are skipped.",
+        behaviorVersion: 2,
+        purpose: "Flags identifiers that contain non-ASCII characters in production or test C# code.",
+        measurement: "Inspects identifier tokens in namespaces, types (classes, records, structs, interfaces, enums), type members (methods, properties, fields, enum members), parameters, and local functions/variables in both production and test projects. Allowed characters are a-z, A-Z, 0-9, and underscore (namespaces additionally allow dot). Verbatim identifiers with '@' prefix ignore the '@'. Generated code is skipped.",
         reviewQuestions:
         [
             "Does this identifier contain non-ASCII characters that should be replaced with ASCII characters?",
@@ -49,7 +49,7 @@ public sealed class NonAsciiIdentifiersAnalysis : IReviewAnalysis
         foreach (var project in projects)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (ReviewSourceClassifier.IsTestProject(project) || string.IsNullOrWhiteSpace(project.FilePath))
+            if (string.IsNullOrWhiteSpace(project.FilePath))
             {
                 continue;
             }

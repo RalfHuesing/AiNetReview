@@ -16,9 +16,9 @@ public sealed class IndirectionDriftCandidatesAnalysis : IReviewAnalysis
     public ReviewAnalysisDescriptor Descriptor { get; } = new(
         analysisId: "indirection-drift-candidates",
         title: "Indirection Drift Candidates",
-        behaviorVersion: 1,
-        purpose: "Identifies current statically declared paths of transparent forwarding across production C# source files for human review.",
-        measurement: "Reports one finding for each maximal root path with at least two transparent forwarding edges, three distinct containing types, and three distinct project-relative C# source files. Targets are statically bound declarations in the loaded snapshot; runtime dispatch and historical growth are not measured.",
+        behaviorVersion: 2,
+        purpose: "Identifies current statically declared paths of transparent forwarding within production and test C# projects for human review.",
+        measurement: "Reports one finding for each maximal root path with at least two transparent forwarding edges, three distinct containing types, and three distinct project-relative C# source files within one project. Targets are statically bound declarations in the loaded snapshot; runtime dispatch and historical growth are not measured.",
         reviewQuestions: ["What responsibility does each forwarding layer add, and is this path intentional for the architecture?"]);
 
     public async Task<ReviewAnalysisResult> ExecuteAsync(

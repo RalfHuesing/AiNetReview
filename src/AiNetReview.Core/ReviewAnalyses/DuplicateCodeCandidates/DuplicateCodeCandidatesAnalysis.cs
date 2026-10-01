@@ -35,9 +35,9 @@ public sealed class DuplicateCodeCandidatesAnalysis : IReviewAnalysis
     public ReviewAnalysisDescriptor Descriptor { get; } = new(
         analysisId: "duplicate-code-candidates",
         title: "Duplicate Code Candidates",
-        behaviorVersion: 1,
-        purpose: "Flags clusters of substantially similar executable C# method bodies.",
-        measurement: "Methods with at least minTokens body tokens are compared using distinct 5-token n-grams and Jaccard similarity. minimumSimilarity selects exact (0.95), near (0.80), or fuzzy (0.65). Each finding represents a connected cluster formed only from pairs that meet the selected threshold; similarityScore is the lowest qualifying pair score in that cluster. Every member includes its method identity, project-root-relative source location, token count, and source-line evidence.",
+        behaviorVersion: 2,
+        purpose: "Flags clusters of substantially similar executable C# method bodies across production and test projects.",
+        measurement: "Methods in production and test projects with at least minTokens body tokens are compared using distinct 5-token n-grams and Jaccard similarity. minimumSimilarity selects exact (0.95), near (0.80), or fuzzy (0.65). Each finding represents a connected cluster formed only from pairs that meet the selected threshold; similarityScore is the lowest qualifying pair score in that cluster. Every member includes its method identity, project-root-relative source location, token count, and source-line evidence.",
         reviewQuestions:
         [
             "Are these methods intentionally similar, or would a shared implementation improve the code?",

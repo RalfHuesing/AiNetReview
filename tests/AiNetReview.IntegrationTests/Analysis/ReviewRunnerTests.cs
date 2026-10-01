@@ -367,6 +367,43 @@ public sealed class ReviewRunnerTests
         Assert.Equal(new[] { ProjectRole.Production, ProjectRole.Tests }, mixedReview.Occurrences.Select(static item => item.Role));
     }
 
+    [Fact]
+    public async Task RunAsync_SelectsCompleteDuplicateFindingsWhenOnlyTestOccurrenceChanges()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, includeTestProject: true);
+        var statements = string.Join(" ", Enumerable.Range(0, 20).Select(static index =>
+            $"int value{index} = {(index == 0 ? "input" : "value" + (index - 1))} + {index + 1};"));
+        var body = "int Run(int input) { " + statements + " return value19; }";
+        await File.WriteAllTextAsync(Path.Combine(root, "Sample", "FixtureCases.cs"),
+            "namespace Sample; public sealed class ProductionCases { public " + body + " }");
+        var testPath = Path.Combine(root, "tests", "Example", "Scenarios.cs");
+        await File.WriteAllTextAsync(testPath,
+            "namespace Example; public sealed class ScenarioHelpers { public " + body + " }");
+        IReviewAnalysis[] analyses = [new DuplicateCodeCandidatesAnalysis(), new StructuralDuplicationCandidatesAnalysis()];
+        var config = CreateConfig(root, analyses);
+        using var loaded = await new SolutionLoader().LoadAsync(config);
+        var runner = new ReviewRunner();
+        var complete = await runner.RunAsync(config, loaded);
+        Assert.Equal(new[] { "duplicate-code-candidates", "structural-duplication-candidates" },
+            complete.Findings.Select(static item => item.AnalysisId).Order(StringComparer.Ordinal));
+        Assert.All(complete.Findings, static item => Assert.Equal(
+            new[] { ProjectRole.Production, ProjectRole.Tests }, item.Occurrences.Select(static occurrence => occurrence.Role).Order()));
+
+        var baseline = loaded.SourceFiles.ToDictionary(static file => file.Path, static file => file.Sha256, StringComparer.Ordinal);
+        baseline["tests/Example/Scenarios.cs"] = new string('0', 64);
+        var changed = await runner.RunAsync(config, loaded, baselineFiles: baseline);
+
+        Assert.Equal(complete.Findings.Select(static item => item.AnalysisId).Order(StringComparer.Ordinal),
+            changed.Findings.Where(static item => item.IsChanged).Select(static item => item.AnalysisId).Order(StringComparer.Ordinal));
+        Assert.All(changed.Findings.Where(static item => item.IsChanged), static item =>
+        {
+            Assert.Equal(new[] { "tests/Example/Scenarios.cs" }, item.ChangedSourcePaths);
+            Assert.Equal(new[] { "Sample/FixtureCases.cs", "tests/Example/Scenarios.cs" }.Order(StringComparer.Ordinal),
+                item.Occurrences.Select(static occurrence => occurrence.Symbol.SourcePath).Order(StringComparer.Ordinal));
+        });
+    }
+
     [Theory]
     [InlineData("Unknown/Unknown.cs", 1, "Missing")]
     [InlineData("Sample/../Sample/FixtureCases.cs", 4, "FixtureCaseA")]

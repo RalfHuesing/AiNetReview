@@ -53,7 +53,6 @@ internal static class DuplicateCodeDetector
         var result = new List<DuplicateMethodFingerprint>();
         var projects = context.Solution.Projects
             .Where(static project => project.Language == LanguageNames.CSharp)
-            .Where(static project => !ReviewSourceClassifier.IsTestProject(project))
             .OrderBy(static project => project.FilePath, StringComparer.Ordinal)
             .ThenBy(static project => project.Name, StringComparer.Ordinal);
 

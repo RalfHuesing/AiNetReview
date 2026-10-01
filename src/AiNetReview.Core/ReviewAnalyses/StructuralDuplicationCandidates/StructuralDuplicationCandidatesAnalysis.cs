@@ -20,8 +20,8 @@ public sealed class StructuralDuplicationCandidatesAnalysis : IReviewAnalysis
     public ReviewAnalysisDescriptor Descriptor { get; } = new(
         analysisId: "structural-duplication-candidates",
         title: "Structural Duplication Candidates",
-        behaviorVersion: 1,
-        purpose: "Reports exact repeated statement fragments in production C# source after normalizing bound local and parameter names. Statement and control-flow shape, operators, literals, and member names are retained; matching member spelling does not establish equivalent API behavior.",
+        behaviorVersion: 2,
+        purpose: "Reports exact repeated statement fragments in production and test C# source after normalizing bound local and parameter names. Statement and control-flow shape, operators, literals, and member names are retained; matching member spelling does not establish equivalent API behavior.",
         measurement: "Fragments contain at least three direct sibling statements and 60 original syntax tokens. All normalized syntax, binding distinctions, owner exclusions, exact grouping, and containment rules are fixed by the analysis contract; no custom thresholds are supported.",
         reviewQuestions: [ReviewQuestion]);
 
