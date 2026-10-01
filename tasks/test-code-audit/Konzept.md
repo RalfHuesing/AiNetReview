@@ -74,8 +74,8 @@ Ein unbekanntes Testprojekt ohne diese Merkmale gilt als Produktionsprojekt. Umg
 
 | Analyse | Zielverhalten für Testcode | Interpretation im Audit |
 | --- | --- | --- |
-| Größe | Ausführbare Member, Klassen und Dateien in beiden Projektrollen messen. Gleiche Optionen und unabhängige Extremgrenzen. | Szenarien, Assertions, Testdaten und Setup nachvollziehen; Größe allein verlangt kein Aufteilen. |
-| Kontrollfluss | Auch Methoden in Testprojekten messen; Perzentile weiterhin pro Projekt bilden. | Entscheidungen können Verifikationspfade verschleiern oder komplizierte Vorbereitung begründen. Nachprüfen. |
+| Größe | Ausführbare Member, Klassen und Dateien in beiden Projektrollen messen. Gleiche Messdefinitionen und Auswahlregeln; bestehende numerische Optionen für Testprojekte gesondert überschreibbar. | Szenarien, Assertions, Testdaten und Setup nachvollziehen; Größe allein verlangt kein Aufteilen. |
+| Kontrollfluss | Auch Methoden in Testprojekten messen; Perzentile weiterhin pro Projekt bilden. Das bestehende Perzentil für Testprojekte gesondert überschreibbar. | Entscheidungen können Verifikationspfade verschleiern oder komplizierte Vorbereitung begründen. Nachprüfen. |
 | Ähnliche Methoden | Test-Test- und Test-Produktionscode-Paare in den vorhandenen Vergleich einbeziehen. | Wiederholung kann Szenarien lesbar halten. Kopierte Produktionslogik kann ein abhängiges Erwartungsergebnis erzeugen. Beides verlangt Kontext. |
 | Identische Fragmente | Fragmentgruppen über beide Projektrollen mit den bestehenden Grenzen bilden. | Gemeinsames Setup, unabhängige Erwartungsbildung und notwendige explizite Assertions unterscheiden. |
 | Weiterleitungsketten | Auch innerhalb von Testprojekten nach den vorhandenen projektinternen Kriterien suchen. | Jede Fixture-/Helper-Schicht auf ihren Beitrag zu Isolation, Lebenszyklus und verständlichen Szenarien prüfen. |
@@ -89,13 +89,41 @@ Es entstehen keine neuen Analyse-IDs nur für Tests. Die sieben bestehenden Anal
 
 ### Messwerte und Vergleichsgruppen
 
-Die vorhandenen Messdefinitionen und Schwellen bleiben bestehen. Produktionscode und Tests werden nicht zu einer lösungsweiten Perzentilpopulation zusammengelegt; die bereits projektweisen Populationen bleiben projektweise. Eine Testrolle erzeugt weder höhere Freigrenzen noch einen pauschalen Rabatt. Neue, speziell kalibrierte Testschwellen gehören nicht zu diesem Vorhaben.
+Die vorhandenen Messdefinitionen, Auswahlregeln und Standardwerte bleiben bestehen. Produktionscode und Tests werden nicht zu einer lösungsweiten Perzentilpopulation zusammengelegt; die bereits projektweisen Populationen bleiben projektweise. Nach Einbeziehung der Testprojekte beziehen sich deren relative Ausreißer deshalb bereits auf den jeweiligen Testbestand. Eine Testrolle erzeugt keine automatisch höheren Freigrenzen. Explizite Testoptionen können die vorhandenen konfigurierbaren Werte abweichend festlegen; neue, speziell kalibrierte Standardwerte oder ein pauschaler Multiplikator gehören nicht zu diesem Vorhaben.
 
 Für `code-size-candidates` gelten weiterhin die Standardwerte 300 Member-Codezeilen, 800 Typ-Codezeilen und 1.000 physische Dateizeilen als unabhängige Extremgrenzen. Member-/Typ-Codezeilen zählen Token-Anfänge und sind nicht mit physischen Zeilen gleichzusetzen. Eine Methode mit 1.000 ausführbaren Codezeilen wird deshalb unabhängig von ihrem Kontrollfluss gemeldet; 1.000 Zeilen innerhalb eines Rohstrings garantieren kein Member-Finding. Eine nichtgenerierte Testdatei mit mehr als 3.000 physischen Zeilen muss bei Standardoptionen als Datei-Finding erscheinen.
 
 Beide Duplikationsanalysen dürfen ihre vorhandenen Vergleichsalgorithmen auf beide Projektrollen anwenden. Gruppen werden nicht nachträglich aufgeteilt, begrenzt oder nach Rolle unterdrückt. Ein gemischter Cluster ist ein einzelnes Finding mit allen Vorkommen. Ein Zusammenhang über Cluster-Kanten behauptet weiterhin weder paarweise Identität aller Methoden noch semantische Gleichheit.
 
 Weiterleitungsketten bleiben auf ein Projekt beschränkt. Dieses Vorhaben erweitert ihre Kandidatenquelle, nicht die Graphdefinition über Projektgrenzen hinweg.
+
+### Unterschiedliche Bewertung und konfigurierbare Testoptionen
+
+Ein Finding ist zunächst eine Messung mit Auswahlgrund. Die spätere Bewertung erfolgt durch den auditierenden Agenten anhand der Verantwortung des Codes. Ein langer Test kann durch ausführliches Setup oder explizite, verständliche Szenarien begründet sein; ein Test mit vielen Bedingungen kann dagegen die geprüften Fälle und ausgeführten Assertions besonders schwer erkennbar machen. Typ-/Dateigröße, ausführbare Membergröße und Kontrollfluss dürfen deshalb nicht mit einem gemeinsamen „Tests dürfen größer sein“-Faktor behandelt werden.
+
+Die Empfehlung ist eine begrenzte Konfigurationsmöglichkeit für die bereits vorhandenen numerischen Parameter. Der Scope dieses Vorhabens enthält deren Unterstützung; das Vorhandensein eines Overrides in einer konkreten Konfiguration ist freiwillig. Es entstehen weder neue Analyse-IDs noch ein allgemeines Regelsystem für Testprofile.
+
+| Analyse | Unterstützte Einträge in `testOptions` | Unveränderte Grenzen |
+| --- | --- | --- |
+| `code-size-candidates` | `percentile`, `minMemberCodeLines`, `extremeMemberCodeLines`, `minTypeCodeLines`, `extremeTypeCodeLines`, `extremeFileLines`, `extremeFileUtf8Bytes` | Token-Anfangs-/Dateimessung, projektweise Populationen, relative Kontrollflussbedingung und unabhängige Extrem-Auswahl bleiben gleich. |
+| `method-control-flow-outliers` | `percentile` | Die festen unteren Grenzen von acht Entscheidungen und vier Verschachtelungsebenen sowie die bestehende Construct-Bedingung bleiben gleich. |
+
+Für die anderen sechs Analysen wird in diesem Vorhaben kein `testOptions` eingeführt. Insbesondere bleiben die Duplikationskriterien über beide Projektrollen einheitlich; ein gemischter Cluster darf nicht aufgrund widersprüchlicher Rollenprofile entstehen, aufgeteilt oder verschwinden. Unterschiede in der Aussagekraft von Testwiederholung behandelt die Review-Anleitung.
+
+Der geplante Konfigurationsvertrag lautet:
+
+- `testOptions` ist ein optionales Objekt innerhalb des jeweiligen Analyseeintrags unter `analyses`, neben dessen bisherigem `enabled` und dessen bisherigen Optionen.
+- Zuerst werden die bisherigen effektiven Analyseoptionen aus Deskriptordefaults und expliziter Konfiguration ermittelt. Testprojekte übernehmen diese Werte; nur explizit vorhandene `testOptions`-Einträge ersetzen einzelne Werte. Fehlendes oder leeres `testOptions` ist vollständige Vererbung, keine zweite versteckte Defaulttabelle.
+- Die bisherigen Optionen gelten weiterhin für Produktionsprojekte. Die Testüberschreibungen gelten projektweise für sämtlichen eingeschlossenen Code eines zentral als Test klassifizierten Projekts, einschließlich Helpers und Fixtures. Sie sind keine rollenbasierte Einzelmethodenerkennung.
+- Pro Überschreibung gelten dieselben Typen und Wertebereiche wie für die vorhandene Option: Perzentil 50 bis 99, Größenwerte positive 32-Bit-Ganzzahlen. Unbekannte, doppelte oder falsch typisierte Einträge scheitern an der Eingabevalidierung; auch deaktivierte Analysen validieren ihre Konfiguration wie bisher.
+- `enabled`, API-Modi, neue Parameter für feste Kontrollflussbedingungen oder verschachtelte Profile sind in `testOptions` nicht zulässig. Tests bleiben bei aktivierter Analyse reguläre Ziele; es gibt keinen separaten Test-Aus-Schalter.
+- Bestehende Konfigurationen behalten ihre Werte und benötigen keine Ergänzung. Generierte Standardkonfigurationen enthalten weiterhin die vorhandenen Analyseoptionen; sie erzeugen kein `testOptions` mit kopierten Zahlen. Ein Override wird bewusst im Zielprojekt gesetzt.
+- Root-Scope-Übersicht und betroffene Analyseberichte nennen die effektiven Produktions- und Testwerte getrennt, wenn diese voneinander abweichen. Bei identischen Werten genügt eine gemeinsame Darstellung mit explizitem Hinweis auf die Vererbung. Auswahlgründe und Kriterien beziehen sich stets auf die tatsächlich wirksamen Werte.
+- Die Ordnerzuordnung `production`/`tests`/`mixed` steuert keine Analyseoption. Parameterwahl erfolgt anhand der zentral klassifizierten Kandidatenquelle vor der Berichtserstellung.
+
+Ohne Überschreibungen gilt der oben beschriebene Ausgangsfall mit 3.000 Dateizeilen und 1.000 Member-Codezeilen unverändert. Explizit höhere Werte können Findings aus der Auswahl nehmen; die effektiven Werte müssen deshalb sichtbar bleiben. Eine Änderung der Optionen markiert keine unveränderte Quelldatei künstlich als geändert. Die Baseline bleibt dateibasiert; für eine vollständige Neubewertung nach Parameteränderungen wird die vollständige Findings-View benötigt.
+
+Vor abweichenden Testwerten sollte ein repräsentativer Audit zeigen, welcher Messwert welchen unnötigen Prüfaufwand erzeugt. Eine große Sammlung unabhängiger Testfälle oder deklarativer Daten kann andere Datei-/Typgrenzen rechtfertigen; ein schwer nachvollziehbarer 1.000-Zeilen-Test wird nicht durch seine Projektrolle verständlicher. Höhere Standardschwellen sind ohne solche Beobachtungen nicht begründet.
 
 ### Ungenutzter Testcode braucht einen eigenen Schutzvertrag
 
@@ -203,6 +231,7 @@ Auch im Testbereich gelten die bestehenden begründeten Klassifikationen: false 
 - Die sieben Wartbarkeitsanalysen beziehen nichtgenerierten Code beider Projektrollen bei bestehender Aktivierung ein, einschließlich Testinfrastruktur und deaktivierter Tests.
 - `missing-test-evidence-candidates` behält Produktionsfunktionen als Ziel und Testcode als Belegquelle; vorhandene Pfad- und Unsicherheitsgrenzen bleiben ehrlich beschrieben.
 - Die zentrale Klassifikation wird als Herkunft genutzt und transparent erklärt. Sie darf für die sieben Analysen kein pauschaler Ausschluss mehr sein.
+- Die bestehenden numerischen Größenoptionen und das Kontrollfluss-Perzentil können über das definierte `testOptions`-Objekt für Testprojekte überschrieben werden. Vererbung, Validierung und Reportdarstellung sind eindeutig; Standardwerte und Messregeln bleiben identisch.
 - Der definierte Dead-Code-Schutzkatalog für Testframework-Einstiegspunkte, Lebenszyklus und Datenbindungen einschließlich lokaler/breiter Unsicherheit wird automatisiert abgesichert.
 - Reports trennen `production`, `tests` und `mixed` innerhalb eines gemeinsamen Reportlaufs mit je beiden Views. Der Root-Index macht alle drei Bereiche zum regulären Auditumfang; Gruppen erscheinen je View vollständig und einmal. Baseline, Related-Verträge, Sortierung, Zählsemantik und atomare Publikation bleiben erhalten.
 - Die Rolle von AI-geschriebenem gewöhnlichem Code wird von tatsächlich generierten Artefakten unterschieden; bestehende Generated-/Pfadgrenzen bleiben erhalten.
@@ -214,7 +243,8 @@ Auch im Testbereich gelten die bestehenden begründeten Klassifikationen: false 
 - Laufzeitausführung, Runner-Entdeckung oder das Versprechen, alle denkbaren Frameworkbindungen aufzulösen.
 - Separate Test-Baseline, separater CLI-Befehl, Test-Opt-in, rollenbasierte Unterdrückung oder begrenzte Findingzahl.
 - Getrennte Analyseausführungen für Produktions- und Testbestand, doppelte flache Berichtskopien, Änderung alter Reportläufe oder Einführung neuer Agentenworkflows/-rollen.
-- Neue Testschwellen, lösungsweite Perzentile oder Änderung bestehender Größen-/Kontrollflussdefinitionen.
+- Pauschal erhöhte Teststandardwerte, automatische Rollen-Multiplikatoren, neue konfigurierbare Kontrollflussgrenzen, lösungsweite Perzentile oder Änderung bestehender Größen-/Kontrollflussdefinitionen.
+- Testprofile für Duplikation, API-Modi, Bezeichner oder sonstige Analysen, rollenbasierte Einzelmethodenparameter und ein separates `enabled` für Tests.
 - Neue Kandidatenarten nur für Tests, etwa zusätzliche Lambda-/Local-Function-Größenmessung; die bisherigen unterstützten Deklarationsarten bleiben maßgeblich.
 - Projektexterne/unbeladene Tests analysieren oder Projektrollen durch ein neues konfigurierbares Klassifikationssystem ersetzen. Gemischte Projekte werden als Klassifikationsgrenze erklärt.
 - Testframework-Lebenszyklus im vorhandenen Testpfadgraphen neu modellieren oder „Tests für jeden Test“ verlangen.
@@ -236,9 +266,11 @@ Die Abnahme prüft beobachtbares Analyse- und Reportverhalten; vorhandene Tests 
 8. **Baseline:** Ohne Baseline enthalten beide Views alle aktuellen Findings. Testdateiänderungen funktionieren mit bestehender Baseline; unveränderter Testcode wird bei einem gewöhnlichen Datei-basierten Finding nicht künstlich als geändert markiert. Die spezielle Snapshot-Auswahl für fehlende Testpfade bleibt erhalten.
 9. **Produktgrenzen:** Der Reviewlauf bleibt ein Signalbericht; Findings erzeugen weder Refactoring noch Buildfehler. Fehler oder Abbruch veröffentlichen keinen partiellen Report.
 10. **Praktischer Agentenaudit:** Eine repräsentative Lösung mit langen Tests, String-Fixtures, nachvollziehbaren Wiederholungen und Testinfrastruktur wird ausdrücklich als Voll-Audit beauftragt. Der Root-Auftrag umfasst `production`, `tests` und `mixed`; auch bei getrennter Bearbeitung gehen ihre Ergebnisse in die Abschlussbewertung ein. Ein gesonderter Teilauftrag behauptet keinen Voll-Audit und darf relevante Quellen anderer Bereiche als Kontext einbeziehen. Jede Signalart wird anhand konkreter Quellen als nützlich, akzeptables Design, Fehlalarm oder klärungsbedürftig bewertet. Laufzeit und Findingumfang werden zum Erkennen von Vergleichs-/Reportproblemen festgehalten; größere Testbestände dürfen nicht durch stille Top-N-Filter verschwinden. Das prüft Verständlichkeit und Interpretationsrisiken, verspricht aber keine objektive Quote „guter“ Tests.
+11. **Testoptionen:** Alte Konfigurationen, fehlende/leere Overrides und partielle Overrides ergeben die definierte Vererbung. Ein Testoverride ändert qualifizierende Test-Findings, aber keine Produktions-Findings; niedrigere und höhere Grenzen sowie Perzentiländerungen werden an beobachtbaren Auswahlunterschieden geprüft. Beide effektiven Wertesätze erscheinen korrekt im Report. Unbekannte/doppelte Keys, `enabled`, falsche Typen und Grenzwertverletzungen scheitern auch bei deaktivierten Analysen. Andere Analysen akzeptieren kein `testOptions`. Standardgenerierung erzeugt keine zweite kopierte Defaulttabelle; reine Optionsänderungen verändern keine Dateihashes oder Datei-basierte Auswahl.
 
 ## Offene Entscheidungen (nur Draft)
 
 1. **Reportgliederung:** Nach der zusätzlichen Nutzeridee empfiehlt dieser Draft `production`, `tests` und `mixed` mit je `changed-files` und `all-findings` innerhalb desselben Reportlaufs. Die Zustimmung zu dieser Variante einschließlich des dritten Bereichs für gemischte Findings steht aus.
+2. **Testoptionen:** Nach der Frage zur unterschiedlichen Beurteilung empfiehlt dieser Draft explizite Überschreibungen für die bestehenden Größenparameter und das Kontrollfluss-Perzentil, mit vollständiger Vererbung und identischen Standardwerten. Die Zustimmung zu dieser begrenzten Konfigurationsmöglichkeit steht aus.
 
-`status: ready` erfolgt erst nach Schließen dieser Punkte und ausdrücklicher Nutzerfreigabe gemäß [Konzeptrolle](../../.agents/agent-workflow/01-konzept-planung.md). Bis dahin ist dies ein diskutierbarer, persistierter Entwurf.
+Das Ergebnis dieser [Konzeptrolle](../../.agents/agent-workflow/01-konzept-planung.md) bleibt `status: draft`. Die separate [Konzeptprüfung und Freigabe](../../.agents/agent-workflow/02-konzept-pruefung-und-freigabe.md) wird vom Nutzer als Schritt 2 gestartet. Bis dahin ist dies ein diskutierbarer, persistierter Entwurf.
