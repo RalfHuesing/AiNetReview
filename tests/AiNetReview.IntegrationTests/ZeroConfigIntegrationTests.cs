@@ -163,6 +163,27 @@ public sealed class ZeroConfigIntegrationTests
     }
 
     [Fact]
+    public async Task Commands_PreserveAnExistingUserConfiguration()
+    {
+        using var tempDirectory = TestTempDirectory.Create("ainet-cli-preserve-config-");
+        var projectRoot = await CreateProjectAsync(tempDirectory.DirectoryPath);
+        var configPath = Path.Combine(projectRoot, "ainetreview.json");
+        const string userConfiguration = "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"audit-reporting\",\"analyses\":{\"code-size-candidates\":{\"enabled\":false,\"testOptions\":{\"percentile\":75}}}}";
+        await File.WriteAllTextAsync(configPath, userConfiguration);
+        await using var services = BuildServices();
+
+        var review = await InvokeAsync(["review", projectRoot], services);
+        AssertSuccessfulReview(projectRoot, review);
+        Assert.Equal(userConfiguration, await File.ReadAllTextAsync(configPath));
+
+        var baseline = await InvokeAsync(["baseline", projectRoot], services);
+        Assert.Equal(0, baseline.ExitCode);
+        Assert.Empty(baseline.Error);
+        Assert.Contains("\"status\":\"completed\"", baseline.Output, StringComparison.Ordinal);
+        Assert.Equal(userConfiguration, await File.ReadAllTextAsync(configPath));
+    }
+
+    [Fact]
     public async Task ReviewCommand_WithoutSolutionReturnsInvalidInputWithoutCreatingConfig()
     {
         using var tempDirectory = TestTempDirectory.Create("ainet-zero-config-no-solution-");

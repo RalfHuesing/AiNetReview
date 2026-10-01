@@ -461,6 +461,101 @@ public sealed class HostAdapterIntegrationTests
     }
 
     [Fact]
+    public async Task ReviewCommand_AllAnalysesKeepBaselineAndMixedPartialTypeContractsAcrossTheHost()
+    {
+        using var tempDirectory = TestTempDirectory.Create("ainet-host-complete-contracts-");
+        var projectRoot = tempDirectory.GetPath("complete-contracts");
+        var productionDirectory = Path.Combine(projectRoot, "src", "Sample");
+        var testDirectory = Path.Combine(projectRoot, "tests", "Sample.Tests");
+        Directory.CreateDirectory(productionDirectory);
+        Directory.CreateDirectory(testDirectory);
+        const string projectFileContent = "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>";
+        var productionProject = Path.Combine(productionDirectory, "Sample.csproj");
+        var testProject = Path.Combine(testDirectory, "Sample.Tests.csproj");
+        await File.WriteAllTextAsync(productionProject, projectFileContent);
+        await File.WriteAllTextAsync(testProject,
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup><ItemGroup><ProjectReference Include=\"../../src/Sample/Sample.csproj\" /></ItemGroup></Project>");
+        var duplicateBody = BuildDuplicateBody();
+        await File.WriteAllTextAsync(Path.Combine(productionDirectory, "Production.cs"),
+            $"namespace Sample; public partial class Shared {{ public int ProductionClone(int value) {{ {duplicateBody} }} }} public sealed class UnusedHelpers {{ private void Helper() {{ var unused = 1; }} }}");
+        await File.WriteAllTextAsync(Path.Combine(testDirectory, "CasesA.cs"),
+            $"namespace Sample; public partial class Shared {{ public int TestCloneA(int value) {{ {duplicateBody} }} public void Prüfe() {{ }} }}");
+        var secondPartialPath = Path.Combine(testDirectory, "CasesB.cs");
+        await File.WriteAllTextAsync(secondPartialPath,
+            $"namespace Sample; public partial class Shared {{ public int TestCloneB(int value) {{ {duplicateBody} }} }}");
+        await RestoreProjectAsync(productionProject, productionDirectory);
+        await RestoreProjectAsync(testProject, testDirectory);
+        await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
+            "<Solution><Project Path=\"src/Sample/Sample.csproj\" /><Project Path=\"tests/Sample.Tests/Sample.Tests.csproj\" /></Solution>");
+        var configPath = Path.Combine(projectRoot, "ainetreview.json");
+        const string fullConfig = "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"code-size-candidates\":{},\"dead-code-candidates\":{},\"duplicate-code-candidates\":{},\"indirection-drift-candidates\":{},\"method-control-flow-outliers\":{},\"missing-test-evidence-candidates\":{},\"non-ascii-identifiers\":{},\"structural-duplication-candidates\":{}}}";
+        await File.WriteAllTextAsync(configPath, fullConfig);
+
+        var first = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, first.ExitCode);
+        using var firstResponse = JsonDocument.Parse(first.Output);
+        var firstRunDirectory = Path.Combine(projectRoot, "reports", firstResponse.RootElement.GetProperty("runId").GetString()!);
+        var rootIndex = await File.ReadAllTextAsync(Path.Combine(firstRunDirectory, "index.md"));
+        foreach (var analysisId in new[]
+        {
+            "code-size-candidates", "dead-code-candidates", "duplicate-code-candidates", "indirection-drift-candidates",
+            "method-control-flow-outliers", "missing-test-evidence-candidates", "non-ascii-identifiers", "structural-duplication-candidates",
+        })
+        {
+            Assert.Contains($"| `{analysisId}` | yes |", rootIndex, StringComparison.Ordinal);
+        }
+
+        foreach (var area in new[] { "production", "tests", "mixed" })
+        {
+            var changedReports = Directory.GetFiles(Path.Combine(firstRunDirectory, area, "changed-files"), "*.md")
+                .Select(Path.GetFileName).Where(static name => name != "index.md").Order(StringComparer.Ordinal).ToArray();
+            var completeReports = Directory.GetFiles(Path.Combine(firstRunDirectory, area, "all-findings"), "*.md")
+                .Select(Path.GetFileName).Where(static name => name != "index.md").Order(StringComparer.Ordinal).ToArray();
+            Assert.Equal(completeReports, changedReports);
+        }
+
+        var mixedAll = Path.Combine(firstRunDirectory, "mixed", "all-findings", "duplicate-code-candidates.md");
+        Assert.True(File.Exists(mixedAll));
+        var mixedAllReport = await File.ReadAllTextAsync(mixedAll);
+        Assert.Contains("Production.cs", mixedAllReport, StringComparison.Ordinal);
+        Assert.Contains("CasesA.cs", mixedAllReport, StringComparison.Ordinal);
+        Assert.Contains("CasesB.cs", mixedAllReport, StringComparison.Ordinal);
+        var testFinding = Path.Combine(firstRunDirectory, "tests", "all-findings", "non-ascii-identifiers.md");
+        Assert.True(File.Exists(testFinding));
+        Assert.True(File.Exists(Path.Combine(firstRunDirectory, "tests", "changed-files", "non-ascii-identifiers.md")));
+        Assert.True(File.Exists(Path.Combine(firstRunDirectory, "mixed", "changed-files", "duplicate-code-candidates.md")));
+
+        await File.WriteAllTextAsync(configPath,
+            fullConfig.Replace("\"non-ascii-identifiers\":{}", "\"non-ascii-identifiers\":{\"enabled\":false}", StringComparison.Ordinal));
+        var baseline = await InvokeProductionCommandAsync(["baseline", projectRoot]);
+        Assert.Equal(0, baseline.ExitCode);
+        var baselineBytes = await File.ReadAllBytesAsync(Path.Combine(projectRoot, "reports", "baseline.json"));
+        await File.WriteAllTextAsync(configPath, fullConfig);
+        var unchanged = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, unchanged.ExitCode);
+        using var unchangedResponse = JsonDocument.Parse(unchanged.Output);
+        var unchangedRunDirectory = Path.Combine(projectRoot, "reports", unchangedResponse.RootElement.GetProperty("runId").GetString()!);
+        Assert.True(File.Exists(Path.Combine(unchangedRunDirectory, "tests", "all-findings", "non-ascii-identifiers.md")));
+        Assert.False(File.Exists(Path.Combine(unchangedRunDirectory, "tests", "changed-files", "non-ascii-identifiers.md")));
+        Assert.True(File.Exists(Path.Combine(unchangedRunDirectory, "mixed", "all-findings", "duplicate-code-candidates.md")));
+        Assert.False(File.Exists(Path.Combine(unchangedRunDirectory, "mixed", "changed-files", "duplicate-code-candidates.md")));
+        Assert.Equal(baselineBytes, await File.ReadAllBytesAsync(Path.Combine(projectRoot, "reports", "baseline.json")));
+
+        await File.AppendAllTextAsync(secondPartialPath, " // changed test-only file");
+        var changedTest = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, changedTest.ExitCode);
+        using var changedResponse = JsonDocument.Parse(changedTest.Output);
+        var changedRunDirectory = Path.Combine(projectRoot, "reports", changedResponse.RootElement.GetProperty("runId").GetString()!);
+        var changedMixedReport = Path.Combine(changedRunDirectory, "mixed", "changed-files", "duplicate-code-candidates.md");
+        Assert.True(File.Exists(changedMixedReport));
+        var changedReport = await File.ReadAllTextAsync(changedMixedReport);
+        Assert.Contains("Production.cs", changedReport, StringComparison.Ordinal);
+        Assert.Contains("CasesA.cs", changedReport, StringComparison.Ordinal);
+        Assert.Contains("CasesB.cs", changedReport, StringComparison.Ordinal);
+        Assert.Equal(fullConfig, await File.ReadAllTextAsync(configPath));
+    }
+
+    [Fact]
     public async Task ReviewCommand_RepeatedFixtureScansUseCurrentSourcesAndOptions()
     {
         using var tempDirectory = TestTempDirectory.Create("ainet-host-adapter-repeated-");
