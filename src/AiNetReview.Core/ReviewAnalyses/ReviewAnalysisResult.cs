@@ -25,4 +25,10 @@ public sealed class ReviewAnalysisResult
     public static ReviewAnalysisResult Empty { get; } = new(Array.Empty<FindingDraft>());
 
     public IReadOnlyList<FindingDraft> Findings => findings;
+
+    /// <summary>Conservative project-area exclusions caused by binding uncertainty.</summary>
+    public IReadOnlyList<ReviewAnalysisScopeExclusion> ScopeExclusions { get; init; } = Array.Empty<ReviewAnalysisScopeExclusion>();
 }
+
+/// <summary>A project area excluded from candidate selection, with the binding reason.</summary>
+public sealed record ReviewAnalysisScopeExclusion(string ProjectPath, string Reason);

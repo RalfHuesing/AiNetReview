@@ -343,7 +343,7 @@ public sealed class DeadCodeCandidatesAnalysisTests
     {
         var descriptor = new DeadCodeCandidatesAnalysis().Descriptor;
 
-        Assert.Equal(2, descriptor.BehaviorVersion);
+        Assert.Equal(3, descriptor.BehaviorVersion);
         Assert.Equal("external_library", descriptor.ResolveOptions()["apiSurface"].GetString());
         Assert.Empty(descriptor.ResolveOptions()["entryPointAttributes"].EnumerateArray());
         Assert.Equal("closed_solution", descriptor.ResolveOptions([
@@ -552,17 +552,336 @@ public sealed class DeadCodeCandidatesAnalysisTests
         Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Independent", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task ExecuteAsync_ProtectsXunitV2V3DerivedTestsFixturesLifecycleAndDataBindingsButNotHelpers()
+    {
+        var framework = CreateMetadataReference("xunit.v3.core", XunitMetadata);
+        using var fixture = CreateFixtureWithReferences([framework], ("Product.Tests", "Product.Tests", """
+            using System;
+            using System.Collections.Generic;
+            using System.Threading.Tasks;
+            using Xunit;
+            [assembly: Xunit.v3.AssemblyFixture(typeof(SharedFixture))]
+            public sealed class CustomFactAttribute : FactAttribute { }
+            public sealed class CustomV3FactAttribute : Attribute, Xunit.v3.IFactAttribute { }
+            public sealed class Tests : IClassFixture<SharedFixture>
+            {
+                [CustomFact(Skip = "disabled")]
+                public void Skipped() { }
+                [CustomV3Fact] public void V3InterfaceTest() { }
+                [MemberData("Rows")] public void Theory(int value) { }
+                [MemberData("ExternalRows", MemberType = typeof(DataProvider))] public void ExternalTheory(int value) { }
+                [ClassData(typeof(DataProvider))] public void ClassTheory(int value) { }
+                public static IEnumerable<object[]> Rows() => Array.Empty<object[]>();
+                private void UnusedHelper() { }
+            }
+            public class BaseTests
+            {
+                [Theory, MemberData("BaseRows")] public void InheritedTheory(int value) { }
+                public static IEnumerable<object[]> BaseRows() => Array.Empty<object[]>();
+                private void InheritedHelper() { }
+            }
+            public sealed class DerivedTests : BaseTests { }
+            [CollectionDefinition("shared")]
+            public sealed class SharedCollection : ICollectionFixture<SharedFixture> { }
+            [Collection("shared")]
+            public sealed class CollectionTests
+            {
+                [Fact] public void CollectionEntry() { }
+                private void CollectionHelper() { }
+            }
+            public sealed class SharedFixture : IDisposable, IAsyncDisposable, IAsyncLifetime
+            {
+                public void Dispose() { }
+                public Task InitializeAsync() => Task.CompletedTask;
+                public Task DisposeAsync() => Task.CompletedTask;
+                ValueTask IAsyncDisposable.DisposeAsync() => ValueTask.CompletedTask;
+                public void OrdinaryCandidate() { }
+            }
+            public sealed class DataProvider : IEnumerable<object[]>
+            {
+                public static IEnumerable<object[]> ExternalRows() => Array.Empty<object[]>();
+                public IEnumerator<object[]> GetEnumerator() => Array.Empty<object[]>().AsEnumerable().GetEnumerator();
+                System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+                public void HelperCandidate() { }
+            }
+            """, null));
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var result = await analysis.ExecuteAsync(fixture.Context,
+            analysis.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]),
+            CancellationToken.None);
+
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Tests", StringComparison.Ordinal)
+            && finding.Discriminator == "type-candidate");
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Skipped", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("V3InterfaceTest", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("CollectionEntry", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId == "T:CollectionTests");
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Rows", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("ExternalRows", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("InheritedTheory", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("SharedFixture", StringComparison.Ordinal)
+            && finding.Discriminator == "type-candidate");
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Dispose", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("InitializeAsync", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("GetEnumerator", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("UnusedHelper", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("InheritedHelper", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("CollectionHelper", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("OrdinaryCandidate", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("HelperCandidate", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ProtectsNunitTestsHooksFixtureSourcesAndNamedDataProviders()
+    {
+        var framework = CreateMetadataReference("nunit.framework", NUnitMetadata);
+        using var fixture = CreateFixtureWithReferences([framework], ("Product.Tests", "Product.Tests", """
+            using System;
+            using NUnit.Framework;
+            [TestFixture, TestFixtureSource(typeof(FixtureData), "FixtureRows")]
+            public sealed class Tests : HookBase
+            {
+                [SetUp] private void BeforeEach() { }
+                [TearDown] private void AfterEach() { }
+                [Explicit, CustomCase, TestCaseSource(typeof(Cases), "Rows")] public void Case(int value) { }
+                [TestCaseSource(typeof(TypeOnlyData))] public void TypeOnlyCase(int value) { }
+                [Ignore("disabled"), Test] public void IgnoredTest() { }
+                [Theory] public void DataPoint([ValueSource(typeof(Cases), "Values")] int value) { }
+                public void OrdinaryHelper() { }
+            }
+            [SetUpFixture] public sealed class GlobalFixture { public void Helper() { } }
+            public abstract class HookBase
+            {
+                [OneTimeSetUp] public void BeforeAll() { }
+                [OneTimeTearDown] public void AfterAll() { }
+                [TestFixtureSetUp] public void LegacyBeforeAll() { }
+                [TestFixtureTearDown] public void LegacyAfterAll() { }
+            }
+            public sealed class CustomCaseAttribute : TestAttribute { }
+            public sealed class Cases
+            {
+                public static object[] Rows(int value) => [value];
+                public static int[] Values => [1];
+                [Datapoint] public static int Point = 1;
+                [DatapointSource] public static int[] Points => [2];
+                public static void Unrelated() { }
+            }
+            public sealed class FixtureData { public static object[] FixtureRows => [new object()]; }
+            public sealed class TypeOnlyData { public static object[] Cases => [new object()]; private static void PrivateHelper() { } }
+            """, null));
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var result = await analysis.ExecuteAsync(fixture.Context,
+            analysis.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]),
+            CancellationToken.None);
+
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Tests", StringComparison.Ordinal)
+            && finding.Discriminator == "type-candidate");
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("BeforeEach", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("AfterEach", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("BeforeAll", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("AfterAll", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("LegacyBeforeAll", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("LegacyAfterAll", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Rows", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Values", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Point", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("FixtureRows", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("TypeOnlyCase", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("IgnoredTest", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("GlobalFixture", StringComparison.Ordinal)
+            && finding.Discriminator == "type-candidate");
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("OrdinaryHelper", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Unrelated", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("PrivateHelper", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ProtectsMstestMethodsLifecycleDataAndFixtureProviderBindings()
+    {
+        var framework = CreateMetadataReference("Microsoft.VisualStudio.TestPlatform.TestFramework", MsTestMetadata);
+        using var fixture = CreateFixtureWithReferences([framework], ("Product.Tests", "Product.Tests", """
+            using System;
+            using Microsoft.VisualStudio.TestTools.UnitTesting;
+            [assembly: AssemblyFixtureProvider(typeof(FixtureProvider))]
+            [TestClass]
+            public sealed class Tests
+            {
+                [TestMethod] public void Basic() { }
+                [DataTestMethod, DynamicData("Rows", typeof(Data), DynamicDataSourceType.AutoDetect, DynamicDataDisplayName = nameof(Data.DisplayName), DynamicDataDisplayNameDeclaringType = typeof(Data))]
+                public void Data(int value) { }
+                [TestInitialize] public void Before() { }
+                [TestCleanup] public void After() { }
+                public void DynamicName(object value) { }
+                public void Helper() { }
+            }
+            public sealed class Data
+            {
+                public static object[] Rows => [1];
+                public static string DisplayName(object value) => "case";
+            }
+            public static class FixtureProvider
+            {
+                [AssemblyInitialize] public static void Setup() { }
+                [AssemblyCleanup] public static void Cleanup() { }
+                public static object[] Fixtures => [];
+                public static void Helper() { }
+            }
+            """, null));
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var result = await analysis.ExecuteAsync(fixture.Context,
+            analysis.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]),
+            CancellationToken.None);
+
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Tests", StringComparison.Ordinal)
+            && finding.Discriminator == "type-candidate");
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Basic", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Before", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("After", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Rows", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("DisplayName", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("FixtureProvider", StringComparison.Ordinal)
+            && finding.Discriminator == "type-candidate");
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Helper", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_LocalLookalikeFrameworkAttributeDoesNotProtectTheMethodOrNeighboringHelper()
+    {
+        var framework = CreateMetadataReference("xunit.v3.core", XunitMetadata);
+        using var fixture = CreateFixtureWithReferences([framework], ("Product.Tests", "Product.Tests", """
+            using System;
+            namespace Xunit { public sealed class FactAttribute : Attribute { } }
+            public sealed class Lookalike
+            {
+                [Xunit.Fact] private void Imitation() { }
+                private void NeighboringHelper() { }
+            }
+            public sealed class Consumer { public System.Type UsedType => typeof(Lookalike); }
+            """, null));
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var result = await analysis.ExecuteAsync(fixture.Context,
+            analysis.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]),
+            CancellationToken.None);
+
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Imitation", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("NeighboringHelper", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_UncertainProviderNameStaysLocalToPlausibleSourceType()
+    {
+        var framework = CreateMetadataReference("xunit.v3.core", XunitMetadata);
+        using var fixture = CreateFixtureWithReferences([framework], ("Product.Tests", "Product.Tests", """
+            using Xunit;
+            public sealed class Tests
+            {
+                [Theory, MemberData("Rows")] public void Case(int value) { }
+                public static System.Collections.Generic.IEnumerable<object[]> Rows() => [];
+                public static System.Collections.Generic.IEnumerable<object[]> Rows(int count) => [];
+                private void TestHelper() { }
+            }
+            public sealed class Independent { private void Candidate() { } }
+            """, null));
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var result = await analysis.ExecuteAsync(fixture.Context,
+            analysis.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]),
+            CancellationToken.None);
+
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("TestHelper", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId == "T:Independent");
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId == "T:Tests");
+    }
+
+    [Theory]
+    [InlineData("external_library", false)]
+    [InlineData("closed_solution", true)]
+    public async Task ExecuteAsync_ProtectsXunitV2DerivedSkippedTestsAndKeepsApiSurfaceForTestProjects(string apiSurface, bool includesPublicCandidates)
+    {
+        var framework = CreateMetadataReference("xunit.core", XunitV2Metadata);
+        using var fixture = CreateFixtureWithReferences([framework], ("Product.Tests", "Product.Tests", """
+            using Xunit;
+            public sealed class CustomFactAttribute : FactAttribute { }
+            public sealed class Tests
+            {
+                [CustomFact(Skip = "temporarily disabled")] public void SkippedTest() { }
+                private void OrdinaryHelper() { }
+            }
+            public sealed class PublicUnused
+            {
+                public void PublicMethod() { }
+            }
+            """, null));
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var result = await analysis.ExecuteAsync(fixture.Context,
+            analysis.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement(apiSurface))]),
+            CancellationToken.None);
+
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("SkippedTest", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("OrdinaryHelper", StringComparison.Ordinal));
+        Assert.Equal(includesPublicCandidates,
+            result.Findings.Any(static finding => finding.SubjectId == "T:PublicUnused"));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_BroadUnknownProviderTypeExcludesOnlyItsReachableProjectAreaAndReportsTheReason()
+    {
+        var framework = CreateMetadataReference("xunit.v3.core", XunitMetadata);
+        using var fixture = CreateFixtureWithReferences([framework],
+            ("Product", "Product", "namespace Product; public sealed class ProductClass { private void Candidate() { } }", null),
+            ("Product.Tests", "Product.Tests", """
+                using Xunit;
+                public sealed class Tests
+                {
+                    [Theory, MemberData("Rows", MemberType = typeof(Missing.Provider))]
+                    public void Case(int value) { }
+                }
+                """, null),
+            ("Isolated", "Isolated", "namespace Isolated; public sealed class Independent { private void Candidate() { } }", null));
+        var solution = fixture.Context.Solution;
+        var isolated = solution.Projects.Single(static project => project.Name == "Isolated");
+        var product = solution.Projects.Single(static project => project.Name == "Product");
+        Assert.Contains(solution.Projects.Single(static project => project.Name == "Product.Tests").ProjectReferences,
+            reference => reference.ProjectId == product.Id);
+        var testProject = solution.Projects.Single(static project => project.Name == "Product.Tests");
+        Assert.Contains(solution.GetProject(testProject.ProjectReferences.Single().ProjectId)!.Name, new[] { "Product" });
+        solution = solution.RemoveProjectReference(isolated.Id, new ProjectReference(product.Id));
+        var context = new ReviewContext(solution, fixture.Context.ProjectRoot);
+        var analysis = new DeadCodeCandidatesAnalysis();
+        var result = await analysis.ExecuteAsync(context,
+            analysis.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]),
+            CancellationToken.None);
+
+        Assert.Empty(result.Findings.Where(static finding => finding.ProjectPath is "Product.csproj" or "Product.Tests.csproj"));
+        Assert.Contains(result.Findings, static finding => finding.ProjectPath == "Isolated.csproj");
+        Assert.Equal(new[] { "Product.Tests.csproj", "Product.csproj" },
+            result.ScopeExclusions.Select(static exclusion => exclusion.ProjectPath).OrderBy(static path => path, StringComparer.Ordinal));
+        Assert.All(result.ScopeExclusions, static exclusion => Assert.Contains("statically resolvable", exclusion.Reason, StringComparison.Ordinal));
+    }
+
     private static AnalysisFixture CreateFixture(params (string Name, string Assembly, string Source, string? FileName)[] projects)
-        => CreateFixture(OutputKind.DynamicallyLinkedLibrary, projects);
+        => CreateFixture(OutputKind.DynamicallyLinkedLibrary, mainTypeName: null, additionalReferences: null, projects: projects);
 
     private static AnalysisFixture CreateFixture(
         OutputKind outputKind,
         params (string Name, string Assembly, string Source, string? FileName)[] projects)
-        => CreateFixture(outputKind, mainTypeName: null, projects);
+        => CreateFixture(outputKind, mainTypeName: null, additionalReferences: null, projects: projects);
 
     private static AnalysisFixture CreateFixture(
         OutputKind outputKind,
         string? mainTypeName,
+        params (string Name, string Assembly, string Source, string? FileName)[] projects)
+        => CreateFixture(outputKind, mainTypeName, additionalReferences: null, projects: projects);
+
+    private static AnalysisFixture CreateFixtureWithReferences(
+        IEnumerable<MetadataReference> additionalReferences,
+        params (string Name, string Assembly, string Source, string? FileName)[] projects)
+        => CreateFixture(OutputKind.DynamicallyLinkedLibrary, mainTypeName: null, additionalReferences: additionalReferences, projects: projects);
+
+    private static AnalysisFixture CreateFixture(
+        OutputKind outputKind,
+        string? mainTypeName,
+        IEnumerable<MetadataReference>? additionalReferences,
         params (string Name, string Assembly, string Source, string? FileName)[] projects)
     {
         var workspace = new AdhocWorkspace();
@@ -580,7 +899,8 @@ public sealed class DeadCodeCandidatesAnalysisTests
                 compilationOptions: new CSharpCompilationOptions(outputKind, mainTypeName: mainTypeName),
                 parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
                 metadataReferences: PlatformReferences().Append(
-                    MetadataReference.CreateFromFile(typeof(Microsoft.JSInterop.JSInvokableAttribute).Assembly.Location))));
+                    MetadataReference.CreateFromFile(typeof(Microsoft.JSInterop.JSInvokableAttribute).Assembly.Location))
+                    .Concat(additionalReferences ?? Array.Empty<MetadataReference>())));
         }
 
         foreach (var spec in projects)
@@ -603,6 +923,124 @@ public sealed class DeadCodeCandidatesAnalysisTests
         Assert.True(workspace.TryApplyChanges(solution));
         return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root.DirectoryPath), root);
     }
+
+    private static MetadataReference CreateMetadataReference(string assemblyName, string source)
+    {
+        var compilation = CSharpCompilation.Create(
+            assemblyName,
+            [CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.Preview))],
+            PlatformReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        using var image = new MemoryStream();
+        var emit = compilation.Emit(image);
+        Assert.True(emit.Success, string.Join(Environment.NewLine, emit.Diagnostics));
+        return MetadataReference.CreateFromImage(image.ToArray());
+    }
+
+    private const string XunitV2Metadata = """
+        namespace Xunit
+        {
+            [System.AttributeUsage(System.AttributeTargets.Method, Inherited = true)]
+            public class FactAttribute : System.Attribute { public string? Skip { get; set; } }
+            public class TheoryAttribute : FactAttribute { }
+            public sealed class MemberDataAttribute(string memberName) : System.Attribute { public System.Type? MemberType { get; set; } }
+            public sealed class ClassDataAttribute(System.Type classType) : System.Attribute { }
+            public interface IClassFixture<T> { }
+            public interface ICollectionFixture<T> { }
+            public interface IAsyncLifetime { System.Threading.Tasks.Task InitializeAsync(); System.Threading.Tasks.Task DisposeAsync(); }
+        }
+        """;
+
+    private const string XunitMetadata = """
+        namespace Xunit
+        {
+            [System.AttributeUsage(System.AttributeTargets.Method, Inherited = true)]
+            public class FactAttribute : System.Attribute { public string? Skip { get; set; } }
+            public class TheoryAttribute : FactAttribute { }
+            public sealed class MemberDataAttribute(string memberName) : System.Attribute { public System.Type? MemberType { get; set; } }
+            public sealed class ClassDataAttribute(System.Type classType) : System.Attribute { }
+            public sealed class CollectionAttribute(string name) : System.Attribute { }
+            public sealed class CollectionDefinitionAttribute(string name) : System.Attribute { }
+            public interface IClassFixture<T> { }
+            public interface ICollectionFixture<T> { }
+            public interface IAsyncLifetime { System.Threading.Tasks.Task InitializeAsync(); System.Threading.Tasks.Task DisposeAsync(); }
+        }
+        namespace Xunit.v3
+        {
+            public interface IFactAttribute { }
+            [System.AttributeUsage(System.AttributeTargets.Assembly)]
+            public sealed class AssemblyFixtureAttribute(System.Type fixtureType) : System.Attribute { }
+        }
+        """;
+
+    private const string NUnitMetadata = """
+        namespace NUnit.Framework
+        {
+            [System.AttributeUsage(System.AttributeTargets.Method, Inherited = true)] public class TestAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class ExplicitAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class IgnoreAttribute(string reason) : System.Attribute { }
+            public sealed class TheoryAttribute : TestAttribute { }
+            public sealed class TestCaseAttribute(params object[] values) : TestAttribute { }
+            public sealed class TestCaseSourceAttribute : System.Attribute
+            {
+                public TestCaseSourceAttribute(string sourceName) { }
+                public TestCaseSourceAttribute(System.Type sourceType, string sourceName) { }
+                public TestCaseSourceAttribute(System.Type sourceType) { }
+                public System.Type? SourceType { get; }
+            }
+            [System.AttributeUsage(System.AttributeTargets.Class)] public sealed class TestFixtureAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Class)] public sealed class TestFixtureSourceAttribute : System.Attribute
+            {
+                public TestFixtureSourceAttribute(string sourceName) { }
+                public TestFixtureSourceAttribute(System.Type sourceType, string sourceName) { }
+                public TestFixtureSourceAttribute(System.Type sourceType) { }
+                public System.Type? SourceType { get; }
+            }
+            [System.AttributeUsage(System.AttributeTargets.Class)] public sealed class SetUpFixtureAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class SetUpAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class TearDownAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class OneTimeSetUpAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class OneTimeTearDownAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class TestFixtureSetUpAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class TestFixtureTearDownAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Parameter)] public sealed class ValueSourceAttribute : System.Attribute
+            {
+                public ValueSourceAttribute(string sourceName) { }
+                public ValueSourceAttribute(System.Type sourceType, string sourceName) { }
+                public System.Type? SourceType { get; }
+            }
+            [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Property)] public sealed class DatapointAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Property)] public sealed class DatapointSourceAttribute : System.Attribute { }
+        }
+        """;
+
+    private const string MsTestMetadata = """
+        namespace Microsoft.VisualStudio.TestTools.UnitTesting
+        {
+            [System.AttributeUsage(System.AttributeTargets.Class)] public sealed class TestClassAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public class TestMethodAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class DataTestMethodAttribute : TestMethodAttribute { }
+            public enum DynamicDataSourceType { AutoDetect, Property, Method, Field }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class DynamicDataAttribute : System.Attribute
+            {
+                public DynamicDataAttribute(string name) { }
+                public DynamicDataAttribute(string name, DynamicDataSourceType sourceKind) { }
+                public DynamicDataAttribute(string name, System.Type sourceType, DynamicDataSourceType sourceKind) { }
+                public DynamicDataAttribute(string name, System.Type sourceType, params object[] args) { }
+                public System.Type? DynamicDataDisplayNameDeclaringType { get; set; }
+                public string? DynamicDataDisplayName { get; set; }
+            }
+            [System.AttributeUsage(System.AttributeTargets.Assembly)] public sealed class AssemblyFixtureProviderAttribute(System.Type fixtureType) : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class AssemblyInitializeAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class AssemblyCleanupAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class ClassInitializeAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class ClassCleanupAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class TestInitializeAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class TestCleanupAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class GlobalTestInitializeAttribute : System.Attribute { }
+            [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class GlobalTestCleanupAttribute : System.Attribute { }
+        }
+        """;
 
     private static IEnumerable<MetadataReference> PlatformReferences() =>
         ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))!

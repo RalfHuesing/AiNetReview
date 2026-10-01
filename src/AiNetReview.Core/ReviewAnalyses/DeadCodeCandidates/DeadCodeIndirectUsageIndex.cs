@@ -19,6 +19,8 @@ internal sealed class DeadCodeIndirectUsageIndex
     ];
 
     private readonly DeadCodeSymbolTracker symbols = new();
+    private readonly List<ReviewAnalysisScopeExclusion> scopeExclusions = [];
+    private readonly HashSet<ProjectId> broadlyExcludedProjects = [];
 
     private DeadCodeIndirectUsageIndex()
     {
@@ -27,6 +29,10 @@ internal sealed class DeadCodeIndirectUsageIndex
     public bool IsProtected(ISymbol symbol) => symbols.IsProtected(symbol);
 
     public bool HasUncertainty(ISymbol symbol) => symbols.HasUncertainty(symbol);
+
+    public IReadOnlyList<ReviewAnalysisScopeExclusion> ScopeExclusions => scopeExclusions;
+
+    public bool IsBroadlyExcluded(Project project) => broadlyExcludedProjects.Contains(project.Id);
 
     private void Merge(DeadCodeMarkupUsage markupUsage) => symbols.UnionWith(markupUsage);
 
@@ -72,6 +78,25 @@ internal sealed class DeadCodeIndirectUsageIndex
                 index.CollectEntryPointAttributes(root, model, attributeTypes, cancellationToken);
                 index.CollectInvocations(root, model, cancellationToken);
             }
+
+            await DeadCodeTestFrameworkUsageCollector.CollectAsync(
+                project,
+                compilation,
+                index.Protect,
+                index.MarkUncertain,
+                (reason, affectedProject) =>
+                {
+                    foreach (var reachableProject in GetReferenceArea(context.Solution, affectedProject))
+                    {
+                        index.broadlyExcludedProjects.Add(reachableProject.Id);
+                        index.scopeExclusions.Add(new ReviewAnalysisScopeExclusion(
+                            string.IsNullOrWhiteSpace(reachableProject.FilePath)
+                                ? reachableProject.Name
+                                : context.GetProjectRelativePath(reachableProject.FilePath),
+                            reason));
+                    }
+                },
+                cancellationToken).ConfigureAwait(false);
         }
 
         var markupUsage = await DeadCodeMarkupUsageCollector.CollectAsync(
@@ -79,6 +104,33 @@ internal sealed class DeadCodeIndirectUsageIndex
         index.Merge(markupUsage);
 
         return index;
+    }
+
+    private static IReadOnlyCollection<Project> GetReferenceArea(Solution solution, Project origin)
+    {
+        var projects = solution.Projects.Where(static item => item.Language == LanguageNames.CSharp).ToArray();
+        var visited = new HashSet<ProjectId> { origin.Id };
+        var queue = new Queue<ProjectId>();
+        queue.Enqueue(origin.Id);
+        while (queue.TryDequeue(out var currentId))
+        {
+            var current = solution.GetProject(currentId);
+            if (current is null)
+            {
+                continue;
+            }
+
+            foreach (var reference in current.ProjectReferences)
+            {
+                if (visited.Add(reference.ProjectId))
+                {
+                    queue.Enqueue(reference.ProjectId);
+                }
+            }
+
+        }
+
+        return projects.Where(project => visited.Contains(project.Id)).ToArray();
     }
 
     private void CollectEntryPointAttributes(

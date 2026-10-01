@@ -38,11 +38,11 @@ public sealed class DeadCodeCandidatesAnalysis : IReviewAnalysis
     public ReviewAnalysisDescriptor Descriptor { get; } = new(
         "dead-code-candidates",
         "Dead Code Candidates",
-        2,
-        "Flags types and methods without known direct or recognized indirect use in the loaded solution.",
-        "A candidate has no known direct semantic reference or recognized indirect binding in production, test, generated C#, or captured markup. This is a review signal, not proof that the declaration is unused.",
+        3,
+        "Flags types and methods without known direct or recognized indirect use in production and test projects.",
+        "A candidate has no known direct semantic reference or recognized indirect binding in production, test, generated C#, or captured markup. Recognized xUnit v2/v3, NUnit, and MSTest entry points, lifecycle contracts, fixtures, and statically bound data providers are protected. Custom runners and unresolved bindings still require manual review; this signal does not prove a declaration is unused.",
         [
-            "Is the declaration reached through reflection, dependency injection, framework conventions, or markup?",
+            "Is the declaration reached through reflection, dependency injection, framework or markup conventions, or a statically bound test framework contract?",
             "Does code outside the analyzed solution use this declaration?",
         ],
         [ApiSurfaceOption, EntryPointAttributesOption]);
@@ -65,7 +65,7 @@ public sealed class DeadCodeCandidatesAnalysis : IReviewAnalysis
         var findings = new List<FindingDraft>();
         var projects = context.Solution.Projects
             .Where(static project => project.Language == LanguageNames.CSharp)
-            .Where(static project => !ReviewSourceClassifier.IsTestProject(project))
+            .Where(project => !indirectUsage.IsBroadlyExcluded(project))
             .OrderBy(static project => project.FilePath, StringComparer.Ordinal)
             .ThenBy(static project => project.Name, StringComparer.Ordinal);
 
@@ -152,7 +152,14 @@ public sealed class DeadCodeCandidatesAnalysis : IReviewAnalysis
             .OrderBy(static finding => finding.ProjectPath, StringComparer.Ordinal)
             .ThenBy(static finding => finding.SourcePath, StringComparer.Ordinal)
             .ThenBy(static finding => finding.StartLine)
-            .ThenBy(static finding => finding.SubjectId, StringComparer.Ordinal));
+            .ThenBy(static finding => finding.SubjectId, StringComparer.Ordinal))
+        {
+            ScopeExclusions = indirectUsage.ScopeExclusions
+                .Distinct()
+                .OrderBy(static exclusion => exclusion.ProjectPath, StringComparer.Ordinal)
+                .ThenBy(static exclusion => exclusion.Reason, StringComparer.Ordinal)
+                .ToArray(),
+        };
     }
 
     private static async Task<DeclarationSet> CollectDeclarationsAsync(
