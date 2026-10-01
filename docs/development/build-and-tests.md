@@ -34,7 +34,7 @@ pwsh -File ./scripts/build.ps1
 
 TreatWarningsAsErrors and Nullable reference types are enabled across all projects in `Directory.Build.props`.
 
-`MarkdownReportWriterTests` verify the two Markdown audit-map views, exact package counts, direct stable finding anchors, source and symbol navigation, context-area anchors, exact project/file/line/occurrence assignment for multiple production and test owners, explicit empty views, and that changed-files output omits excluded finding details. Host integration tests exercise generated package links for structural fragments and cross-project findings, external audit output roots, production CLI publication, and the existing cancellation/failure guarantees for complete atomic runs.
+`MarkdownReportWriterTests` verify the two Markdown audit-map views, exact package counts, direct stable finding anchors, source and symbol navigation, project/source-folder area navigation, same-named types across projects, partial source locations, shared primary packages, context-only and overlapping context areas, full-audit guards, deterministic enumeration, exact project/file/line/occurrence assignment for multiple production and test owners, explicit empty views, and that changed-files output omits excluded finding details. Host integration tests exercise generated package links for structural fragments and cross-project findings, external audit output roots, production CLI publication, and the existing cancellation/failure guarantees for complete atomic runs.
 
 ## Host Logging
 

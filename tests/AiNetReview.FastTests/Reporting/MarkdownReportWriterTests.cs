@@ -213,15 +213,28 @@ public sealed class MarkdownReportWriterTests
 
     private static void AssertMarkdownReportLinksResolve(string runDirectory)
     {
-        var linkPattern = new Regex(@"\]\((?<target>[^)#]+\.md)(?:#[^)]+)?\)", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+        var linkPattern = new Regex(@"\]\((?<target>[^)]+)\)", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
         foreach (var reportPath in Directory.EnumerateFiles(Path.Combine(runDirectory, "audit-map"), "*.md", SearchOption.AllDirectories))
         {
             var content = File.ReadAllText(reportPath);
+            var anchors = Regex.Matches(content, "<a id=\\\"(?<id>[^\\\"]+)\\\"></a>", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1))
+                .Select(static match => match.Groups["id"].Value).ToArray();
+            Assert.Equal(anchors.Length, anchors.Distinct(StringComparer.Ordinal).Count());
             foreach (Match link in linkPattern.Matches(content))
             {
-                var target = Uri.UnescapeDataString(link.Groups["target"].Value);
-                var resolved = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(reportPath)!, target.Replace('/', Path.DirectorySeparatorChar)));
+                var target = link.Groups["target"].Value;
+                var separator = target.IndexOf('#');
+                var targetPath = separator < 0 ? target : target[..separator];
+                if (!targetPath.EndsWith(".md", StringComparison.OrdinalIgnoreCase)) continue;
+                targetPath = Uri.UnescapeDataString(targetPath);
+                var resolved = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(reportPath)!, targetPath.Replace('/', Path.DirectorySeparatorChar)));
                 Assert.True(File.Exists(resolved), $"Markdown report link does not resolve: '{target}' from '{reportPath}'.");
+                if (separator >= 0)
+                {
+                    var targetContent = File.ReadAllText(resolved);
+                    var anchor = Uri.UnescapeDataString(target[(separator + 1)..]);
+                    Assert.Contains($"id=\"{anchor}\"", targetContent, StringComparison.Ordinal);
+                }
             }
         }
     }
@@ -388,7 +401,10 @@ public sealed class MarkdownReportWriterTests
         var allPackageMarkdown = await File.ReadAllTextAsync(allPackagePath);
         Assert.Contains("Unique findings: **1**", changedIndex, StringComparison.Ordinal);
         Assert.Contains("[package-test](package-test.md)", changedIndex, StringComparison.Ordinal);
-        Assert.Contains("Context only", await File.ReadAllTextAsync(allIndexPath), StringComparison.Ordinal);
+        Assert.DoesNotContain("area-context-test", await File.ReadAllTextAsync(allIndexPath), StringComparison.Ordinal);
+        Assert.Contains("Context only", string.Join('\n', await Task.WhenAll(Directory.GetFiles(
+            Path.Combine(runDirectory, "audit-map", "all-findings", "area-navigation"), "folder-*.md", SearchOption.AllDirectories)
+            .Select(path => File.ReadAllTextAsync(path)))), StringComparison.Ordinal);
         Assert.Contains("Unique findings: **2**", await File.ReadAllTextAsync(allIndexPath), StringComparison.Ordinal);
         Assert.Contains("Original finding, including rationale, metrics and evidence:", allPackageMarkdown, StringComparison.Ordinal);
         Assert.DoesNotContain("Original rationale:", allPackageMarkdown, StringComparison.Ordinal);
@@ -410,6 +426,115 @@ public sealed class MarkdownReportWriterTests
         var rootIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
         Assert.Contains("(audit-map/changed-files/index.md)", rootIndex, StringComparison.Ordinal);
         Assert.Contains("Do not claim a full audit", allPackageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("Context only", allPackageMarkdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("index.md#area-area-context-test", allPackageMarkdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AuditMapNavigation_IsCompleteDeterministicAndKeepsSharedAndContextAreasAsNavigation()
+    {
+        using var temp = TestTempDirectory.Create();
+        var projectRoot = temp.GetPath("repository");
+        Directory.CreateDirectory(projectRoot);
+        var analysis = new ReportAnalysis("navigation-analysis", "Navigation analysis", "default");
+        var config = CreateConfig(projectRoot, analysis);
+        const string packageId = "package-shared-widget";
+        var sharedFirst = new AuditFindingArea("area-a-widget", "src/A/A.csproj", ProjectRole.Production, "Widget", "T:Widget", null,
+            [new AuditSourceLocation("src folder/one/Widget.cs", default, 1, 1, 3, 1),
+             new AuditSourceLocation("src folder/two/Widget.cs", default, 7, 1, 9, 1)], "source type", [], []);
+        var sharedSecond = new AuditFindingArea("area-b-widget", "src/B/B.csproj", ProjectRole.Production, "Widget", "T:Widget", null,
+            [new AuditSourceLocation("lib/Widget.cs", default, 2, 1, 4, 1),
+             new AuditSourceLocation("src folder/one/Widget.cs", default, 11, 1, 13, 1)], "source type", [], []);
+        var contextArea = new AuditFindingArea("area-context-source", "tests/T.Tests.csproj", ProjectRole.Tests, "WidgetTests", null,
+            "tests/WidgetTests.cs", [], "file fallback", [], [sharedFirst.Id]);
+        var notRepresented = new AuditFindingArea("area-unrepresented", "src/C/C.csproj", ProjectRole.Production, "Hidden", "T:Hidden", null,
+            [new AuditSourceLocation("hidden/Hidden.cs", default, 1, 1, 2, 1)], "source type", [], []);
+        var draft = new FindingDraft("src/A/A.csproj", "src folder/one/Widget.cs", "T:Widget", "type", 1,
+            "Shared finding.", new Dictionary<string, double>(), []);
+        var finding = new ReviewFinding(analysis.Descriptor.AnalysisId, draft, ["src folder/one/Widget.cs"], [], ["src folder/one/Widget.cs"])
+        {
+            SubjectOccurrences = [new ReviewFindingOccurrence(new FindingSymbol("src/A/A.csproj", "src folder/one/Widget.cs", "T:Widget", 1), ProjectRole.Production)],
+        };
+        var packagedFinding = new AuditPackagedFinding("finding-shared", finding, [sharedFirst.Id, sharedSecond.Id], []);
+        var package = new AuditFindingPackage(packageId, [sharedSecond, sharedFirst], [packagedFinding], [], [], [], []);
+        const string secondaryPackageId = "package-secondary-widget";
+        var secondaryDraft = new FindingDraft("src/B/B.csproj", "lib/Widget.cs", "T:Widget", "type", 2,
+            "Secondary finding.", new Dictionary<string, double>(), []);
+        var secondaryFinding = new ReviewFinding(analysis.Descriptor.AnalysisId, secondaryDraft, ["lib/Widget.cs"], [], ["lib/Widget.cs"])
+        {
+            SubjectOccurrences = [new ReviewFindingOccurrence(new FindingSymbol("src/B/B.csproj", "lib/Widget.cs", "T:Widget", 2), ProjectRole.Production)],
+        };
+        var secondaryPackagedFinding = new AuditPackagedFinding("finding-secondary", secondaryFinding, [sharedSecond.Id], []);
+        var secondaryPackage = new AuditFindingPackage(secondaryPackageId, [sharedSecond], [secondaryPackagedFinding], [], [], [], []);
+        var view = new AuditFindingPackageView(true, [sharedFirst, sharedSecond, contextArea, notRepresented], [package, secondaryPackage],
+            [new AuditPackageContextArea(contextArea, true, packageId), new AuditPackageContextArea(sharedFirst, false, secondaryPackageId)], 2, true);
+        var views = new AuditFindingPackageViews(view, view with { IsChangedFiles = false });
+        var firstRoot = temp.GetPath("central audit/first");
+        var secondRoot = temp.GetPath("central audit/second");
+        Directory.CreateDirectory(firstRoot);
+        await File.WriteAllTextAsync(Path.Combine(firstRoot, "index.md"), "# Root\n");
+        Directory.CreateDirectory(secondRoot);
+        await File.WriteAllTextAsync(Path.Combine(secondRoot, "index.md"), "# Root\n");
+        var originalReport = Path.Combine(firstRoot, "production", "all-findings", analysis.Descriptor.AnalysisId + ".md");
+        Directory.CreateDirectory(Path.GetDirectoryName(originalReport)!);
+        await File.WriteAllTextAsync(originalReport, "<a id=\"finding-finding-shared\"></a>\n<a id=\"finding-finding-secondary\"></a>\n");
+        await AuditMapReportWriter.WriteAuditMapAsync(firstRoot, "fixed-run", projectRoot, views, "all-findings", CancellationToken.None);
+        var reversedPackage = package with { Areas = package.Areas.Reverse().ToArray() };
+        var reversedView = view with
+        {
+            Areas = view.Areas.Reverse().ToArray(),
+            Packages = [secondaryPackage, reversedPackage],
+            ContextAreas = view.ContextAreas.Reverse().ToArray(),
+        };
+        await AuditMapReportWriter.WriteAuditMapAsync(secondRoot, "fixed-run", projectRoot,
+            new AuditFindingPackageViews(reversedView with { IsChangedFiles = true }, reversedView with { IsChangedFiles = false }),
+            "all-findings", CancellationToken.None);
+
+        var firstDirectory = Path.Combine(firstRoot, "audit-map", "all-findings");
+        var secondDirectory = Path.Combine(secondRoot, "audit-map", "all-findings");
+        var index = await File.ReadAllTextAsync(Path.Combine(firstDirectory, "index.md"));
+        Assert.Equal(1, index.Split("[package-shared-widget](package-shared-widget.md)", StringSplitOptions.None).Length - 1);
+        Assert.Equal(1, index.Split("[package-secondary-widget](package-secondary-widget.md)", StringSplitOptions.None).Length - 1);
+        Assert.Contains("Unique findings: **2**", index, StringComparison.Ordinal);
+        Assert.Contains("| 2 | 1 |", index, StringComparison.Ordinal);
+        Assert.Contains("Project navigation", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("area-a-widget", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("area-context-source", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("hidden/Hidden.cs", index, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(firstDirectory, "package-a-widget.md")));
+        Assert.False(File.Exists(Path.Combine(firstDirectory, "package-b-widget.md")));
+
+        var folderPages = Directory.GetFiles(Path.Combine(firstDirectory, "area-navigation"), "folder-*.md", SearchOption.AllDirectories);
+        Assert.Equal(5, folderPages.Length);
+        var folderContents = await Task.WhenAll(folderPages.Select(path => File.ReadAllTextAsync(path)));
+        var joinedFolders = string.Join('\n', folderContents);
+        Assert.Contains("src folder/one/Widget.cs", joinedFolders, StringComparison.Ordinal);
+        Assert.Contains("src folder/two/Widget.cs", joinedFolders, StringComparison.Ordinal);
+        Assert.Contains("lib/Widget.cs", joinedFolders, StringComparison.Ordinal);
+        Assert.Contains("tests/WidgetTests.cs", joinedFolders, StringComparison.Ordinal);
+        Assert.Contains("Context only: WidgetTests", joinedFolders, StringComparison.Ordinal);
+        Assert.Contains("package-shared-widget", joinedFolders, StringComparison.Ordinal);
+        Assert.Contains("Primary package: [package-shared-widget]", joinedFolders, StringComparison.Ordinal);
+        Assert.Contains("Context package: [package-secondary-widget]", joinedFolders, StringComparison.Ordinal);
+        Assert.DoesNotContain("Hidden", joinedFolders, StringComparison.Ordinal);
+        Assert.Contains(folderContents, content => content.Contains("area-a-widget", StringComparison.Ordinal)
+            && content.Contains("src folder/one/Widget.cs", StringComparison.Ordinal));
+        Assert.Contains(folderContents, content => content.Contains("area-b-widget", StringComparison.Ordinal)
+            && content.Contains("src folder/one/Widget.cs", StringComparison.Ordinal));
+        Assert.Contains("[source folder]", await File.ReadAllTextAsync(Path.Combine(firstDirectory, packageId + ".md")), StringComparison.Ordinal);
+        AssertMarkdownReportLinksResolve(firstRoot);
+
+        var firstFiles = Directory.GetFiles(firstDirectory, "*.md", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(firstDirectory, path)).Order(StringComparer.Ordinal).ToArray();
+        var secondFiles = Directory.GetFiles(secondDirectory, "*.md", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(secondDirectory, path)).Order(StringComparer.Ordinal).ToArray();
+        Assert.Equal(firstFiles, secondFiles);
+        Assert.Equal(await Task.WhenAll(firstFiles.Select(path => File.ReadAllTextAsync(Path.Combine(firstDirectory, path)))),
+            await Task.WhenAll(secondFiles.Select(path => File.ReadAllTextAsync(Path.Combine(secondDirectory, path)))));
+        foreach (var path in Directory.GetFiles(firstDirectory, "*.md", SearchOption.AllDirectories))
+        {
+            Assert.Contains("Full-audit scope:", await File.ReadAllTextAsync(path), StringComparison.Ordinal);
+        }
     }
 
     [Fact]

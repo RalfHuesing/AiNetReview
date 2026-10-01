@@ -4,6 +4,7 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,6 +25,7 @@ internal static class AuditMapReportWriter
         var view = viewName == "changed-files" ? views?.ChangedFiles : views?.AllFindings;
         var directory = Path.Combine(runDirectory, "audit-map", viewName);
         Directory.CreateDirectory(directory);
+        var navigation = CreateAreaNavigation(view, directory);
         var builder = new StringBuilder()
             .Append("# Audit map — ").Append(viewName).Append("\n\n")
             .Append("Run: ").Append(MarkdownReportWriter.FormatCodeSpan(runId)).Append("; view: ")
@@ -40,58 +42,38 @@ internal static class AuditMapReportWriter
         }
         else
         {
-            builder.Append("## Packages\n\n| Package | Technical area | Primary findings | Analyses |\n| --- | --- | ---: | --- |\n");
-            foreach (var package in view.Packages.OrderBy(static item => item.Id, StringComparer.Ordinal))
+            builder.Append("## Primary packages\n\nThe navigation entry is a deterministic starting point for each package; it does not assert ownership. Primary areas counts every area participating in the package, and each area links to the same package assignment.\n\n| Package | Navigation entry | Primary areas | Findings | Analyses |\n| --- | --- | ---: | ---: | --- |\n");
+            foreach (var package in view.Packages
+                         .Select(item => (Package: item, Primary: GetPrimaryArea(item)))
+                         .OrderBy(static item => item.Primary.Area.ProjectPath, StringComparer.Ordinal)
+                         .ThenBy(static item => item.Primary.SourceFolder, StringComparer.Ordinal)
+                         .ThenBy(static item => item.Primary.Area.Name, StringComparer.Ordinal)
+                         .ThenBy(static item => item.Package.Id, StringComparer.Ordinal))
             {
-                var packageFile = MarkdownReportWriter.EncodePathSegment(package.Id) + ".md";
-                var areas = string.Join("; ", package.Areas.Select(area => MarkdownReportWriter.EscapeInline(area.Name + " — " + area.ProjectPath)));
-                var analyses = string.Join(", ", package.Findings.Select(static finding => finding.Finding.AnalysisId).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
-                builder.Append("| [").Append(package.Id).Append("](").Append(packageFile).Append(") | ")
-                    .Append(areas).Append(" | ").Append(package.Findings.Count.ToString(CultureInfo.InvariantCulture)).Append(" | ")
+                var packageFile = MarkdownReportWriter.EncodePathSegment(package.Package.Id) + ".md";
+                var analyses = string.Join(", ", package.Package.Findings.Select(static finding => finding.Finding.AnalysisId).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
+                builder.Append("| [").Append(package.Package.Id).Append("](").Append(packageFile).Append(") | ")
+                    .Append(MarkdownReportWriter.EscapeInline(package.Primary.Area.Name)).Append(" — ")
+                    .Append(MarkdownReportWriter.FormatCodeSpan(package.Primary.Area.ProjectPath)).Append(" / ")
+                    .Append(MarkdownReportWriter.EscapeInline(package.Primary.SourceFolder)).Append(" | ")
+                    .Append(package.Package.Areas.Count.ToString(CultureInfo.InvariantCulture)).Append(" | ")
+                    .Append(package.Package.Findings.Count.ToString(CultureInfo.InvariantCulture)).Append(" | ")
                     .Append(MarkdownReportWriter.FormatCodeSpan(analyses)).Append(" |\n");
             }
 
-            var mapRows = view.ContextAreas.Select(static row => (row.Area, row.IsContextOnly, row.PackageId))
-                .Concat(view.Packages.SelectMany(package => package.Areas.Select(area => (Area: area, IsContextOnly: false, PackageId: package.Id))))
-                .GroupBy(static row => row.Area.Id, StringComparer.Ordinal)
-                .Select(group => (Area: group.First().Area, IsContextOnly: group.All(static row => row.IsContextOnly),
-                    IsShared: view.ContextAreas.Any(context => context.Area.Id == group.Key && !context.IsContextOnly),
-                    PackageIds: group.Select(static row => row.PackageId).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray()))
-                .OrderBy(static row => row.Area.ProjectPath, StringComparer.Ordinal).ThenBy(static row => row.Area.Name, StringComparer.Ordinal).ToArray();
-            if (mapRows.Length > 0)
+            if (navigation.Projects.Count > 0)
             {
-                builder.Append("\n## Areas and context navigation\n\n")
-                    .Append("These entries provide navigation only. Context-only areas have no primary finding in this view; shared areas participate in a package that owns the listed findings.\n\n");
-                foreach (var row in mapRows)
+                builder.Append("\n## Project navigation\n\n");
+                foreach (var project in navigation.Projects)
                 {
-                    builder.Append("<a id=\"area-").Append(row.Area.Id).Append("\"></a>\n")
-                        .Append("- **").Append(row.IsContextOnly ? "Context only" : row.IsShared ? "Shared area" : "Primary area").Append(": ")
-                        .Append(MarkdownReportWriter.EscapeInline(row.Area.Name)).Append("** (").Append(MarkdownReportWriter.FormatCodeSpan(row.Area.ProjectPath)).Append(')');
-                    if (row.Area.FilePath is not null)
-                    {
-                        builder.Append(" — [source](").Append(MarkdownReportWriter.FormatSourceLink(Path.Combine(directory, "index.md"), projectRoot, row.Area.FilePath)).Append(')');
-                    }
-                    else
-                    {
-                        foreach (var location in row.Area.Declarations)
-                        {
-                            builder.Append(" — [").Append(MarkdownReportWriter.EscapeLinkText(location.Path)).Append(':').Append(location.StartLine.ToString(CultureInfo.InvariantCulture))
-                                .Append("](").Append(MarkdownReportWriter.FormatSourceLink(Path.Combine(directory, "index.md"), projectRoot, location.Path)).Append('#')
-                                .Append("L").Append(location.StartLine.ToString(CultureInfo.InvariantCulture)).Append(')');
-                        }
-                    }
-
-                    builder.Append("; package ").Append(string.Join(", ", row.PackageIds.Select(packageId => "[" + packageId + "](" + MarkdownReportWriter.EncodePathSegment(packageId) + ".md)")));
-                    if (row.Area.ContextTypeAreaIds.Count > 0)
-                    {
-                        builder.Append("; type/file fallback: ").Append(MarkdownReportWriter.EscapeInline(row.Area.IdentityReason));
-                    }
-                    builder.Append("\n");
+                    builder.Append("- [").Append(MarkdownReportWriter.EscapeLinkText(project.ProjectPath)).Append("](")
+                        .Append(ToMarkdownLink(Path.Combine(directory, "index.md"), project.IndexPath)).Append(")\n");
                 }
             }
         }
 
         await MarkdownReportWriter.WriteUtf8Async(Path.Combine(directory, "index.md"), builder.ToString(), cancellationToken).ConfigureAwait(false);
+        await WriteAreaNavigationAsync(view, projectRoot, navigation, viewName, runId, cancellationToken).ConfigureAwait(false);
         if (view is null)
         {
             return;
@@ -101,8 +83,183 @@ internal static class AuditMapReportWriter
         {
             cancellationToken.ThrowIfCancellationRequested();
             var reportPath = Path.Combine(directory, package.Id + ".md");
-            await MarkdownReportWriter.WriteUtf8Async(reportPath, await FormatAuditPackageAsync(runId, projectRoot, reportPath, viewName, package, view, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+            await MarkdownReportWriter.WriteUtf8Async(reportPath, await FormatAuditPackageAsync(runId, projectRoot, reportPath, viewName, package, view, navigation, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private static AreaNavigation CreateAreaNavigation(AuditFindingPackageView? view, string directory)
+    {
+        if (view is null)
+        {
+            return AreaNavigation.Empty;
+        }
+
+        var rows = view.ContextAreas.Select(static row => (row.Area, row.IsContextOnly, row.PackageId, IsPrimary: false))
+            .Concat(view.Packages.SelectMany(package => package.Areas.Select(area => (Area: area, IsContextOnly: false, PackageId: package.Id, IsPrimary: true))))
+            .GroupBy(static row => row.Area.Id, StringComparer.Ordinal)
+            .Select(group => new AreaNavigationArea(group.First().Area, group.All(static row => row.IsContextOnly),
+                group.Where(static row => row.IsPrimary).Select(static row => row.PackageId).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(),
+                group.Where(static row => !row.IsPrimary).Select(static row => row.PackageId).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray()))
+            .OrderBy(static row => row.Area.ProjectPath, StringComparer.Ordinal)
+            .ThenBy(static row => row.Area.Name, StringComparer.Ordinal)
+            .ThenBy(static row => row.Area.Id, StringComparer.Ordinal)
+            .ToArray();
+
+        var entries = rows.SelectMany(row => GetSourceFolders(row.Area).Select(folder =>
+            new AreaNavigationEntry(row.Area, row.IsContextOnly, row.PrimaryPackageIds, row.ContextPackageIds, folder))).ToArray();
+        var projects = entries.GroupBy(static entry => entry.Area.ProjectPath, StringComparer.Ordinal)
+            .OrderBy(static group => group.Key, StringComparer.Ordinal)
+            .Select(group =>
+            {
+                var projectDirectory = Path.Combine(directory, "area-navigation", "project-" + StablePathId(group.Key));
+                return new AreaNavigationProject(group.Key, Path.Combine(projectDirectory, "index.md"), group.ToArray());
+            }).ToArray();
+        var areaPagePaths = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var project in projects)
+        {
+            foreach (var group in project.Entries.GroupBy(static entry => entry.SourceFolder, StringComparer.Ordinal))
+            {
+                var pagePath = Path.Combine(Path.GetDirectoryName(project.IndexPath)!, "folder-" + StablePathId(group.Key) + ".md");
+                foreach (var entry in group)
+                {
+                    if (!areaPagePaths.TryGetValue(entry.Area.Id, out var paths))
+                    {
+                        paths = [];
+                        areaPagePaths.Add(entry.Area.Id, paths);
+                    }
+                    if (!paths.Contains(pagePath, StringComparer.Ordinal)) paths.Add(pagePath);
+                }
+            }
+        }
+
+        return new AreaNavigation(projects,
+            areaPagePaths.ToDictionary(static pair => pair.Key,
+                static pair => (IReadOnlyList<string>)pair.Value.Order(StringComparer.Ordinal).ToArray(), StringComparer.Ordinal));
+    }
+
+    private static (AuditFindingArea Area, string SourceFolder) GetPrimaryArea(AuditFindingPackage package)
+    {
+        var area = package.Areas.OrderBy(static item => item.ProjectPath, StringComparer.Ordinal)
+            .ThenBy(GetPrimaryFolder, StringComparer.Ordinal).ThenBy(static item => item.Name, StringComparer.Ordinal)
+            .ThenBy(static item => item.Id, StringComparer.Ordinal).First();
+        return (area, GetPrimaryFolder(area));
+    }
+
+    private static string GetPrimaryFolder(AuditFindingArea area)
+    {
+        var path = area.FilePath ?? area.Declarations.Select(static location => location.Path).Order(StringComparer.Ordinal).FirstOrDefault();
+        return path is null ? "(source folder unavailable)" : GetSourceFolder(path);
+    }
+
+    private static string[] GetSourceFolders(AuditFindingArea area)
+    {
+        var sourcePaths = area.FilePath is not null ? [area.FilePath] : area.Declarations.Select(static location => location.Path).Distinct(StringComparer.Ordinal).ToArray();
+        if (sourcePaths.Length == 0) return ["(source folder unavailable)"];
+        return sourcePaths.Select(GetSourceFolder).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+    }
+
+    private static string GetSourceFolder(string sourcePath)
+    {
+        var normalized = sourcePath.Replace('\\', '/');
+        var separator = normalized.LastIndexOf('/');
+        return separator < 0 ? "." : separator == 0 ? "/" : normalized[..separator];
+    }
+
+    private static string StablePathId(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+
+    private static string ToMarkdownLink(string sourceMarkdownPath, string targetMarkdownPath)
+    {
+        var relative = Path.GetRelativePath(Path.GetDirectoryName(sourceMarkdownPath)!, targetMarkdownPath).Replace('\\', '/');
+        return string.Join('/', relative.Split('/').Select(static segment => segment is "." or ".." ? segment : MarkdownReportWriter.EncodePathSegment(segment)));
+    }
+
+    private static async Task WriteAreaNavigationAsync(AuditFindingPackageView? view, string projectRoot, AreaNavigation navigation,
+        string viewName, string runId, CancellationToken cancellationToken)
+    {
+        if (view is null) return;
+        foreach (var project in navigation.Projects)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Directory.CreateDirectory(Path.GetDirectoryName(project.IndexPath)!);
+            var projectBuilder = new StringBuilder().Append("# Project navigation\n\nProject: ")
+                .Append(MarkdownReportWriter.FormatCodeSpan(project.ProjectPath)).Append("\n\n");
+            AppendNavigationGuard(projectBuilder, runId, viewName);
+            foreach (var folder in project.Entries.Select(static entry => entry.SourceFolder).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
+            {
+                var pagePath = Path.Combine(Path.GetDirectoryName(project.IndexPath)!, "folder-" + StablePathId(folder) + ".md");
+                projectBuilder.Append("- [").Append(MarkdownReportWriter.EscapeLinkText(folder)).Append("](")
+                    .Append(ToMarkdownLink(project.IndexPath, pagePath)).Append(")\n");
+            }
+            await MarkdownReportWriter.WriteUtf8Async(project.IndexPath, projectBuilder.ToString(), cancellationToken).ConfigureAwait(false);
+
+            foreach (var group in project.Entries.GroupBy(static entry => entry.SourceFolder, StringComparer.Ordinal))
+            {
+                var pagePath = Path.Combine(Path.GetDirectoryName(project.IndexPath)!, "folder-" + StablePathId(group.Key) + ".md");
+                var folderBuilder = new StringBuilder().Append("# Source folder navigation\n\nProject: ")
+                    .Append(MarkdownReportWriter.FormatCodeSpan(project.ProjectPath)).Append("; source folder: ")
+                    .Append(MarkdownReportWriter.FormatCodeSpan(group.Key)).Append("\n\n")
+                    .Append("[Main audit map](../../index.md) · [Project navigation](index.md)\n\n");
+                AppendNavigationGuard(folderBuilder, runId, viewName);
+                foreach (var entry in group.OrderBy(static item => item.Area.Name, StringComparer.Ordinal).ThenBy(static item => item.Area.Id, StringComparer.Ordinal))
+                {
+                    folderBuilder.Append("<a id=\"area-").Append(entry.Area.Id).Append("\"></a>\n- **")
+                        .Append(entry.IsContextOnly ? "Context only: " : "Area: ")
+                        .Append(MarkdownReportWriter.EscapeInline(entry.Area.Name)).Append("** — ")
+                        .Append(MarkdownReportWriter.EscapeInline(entry.Area.IdentityReason)).Append("\n");
+                    if (entry.Area.TypeId is not null)
+                    {
+                        folderBuilder.Append("  - Type: ").Append(MarkdownReportWriter.FormatCodeSpan(entry.Area.TypeId)).Append("\n");
+                    }
+                    var sourceLocations = entry.Area.FilePath is not null
+                        ? entry.Area.Declarations.Count == 0
+                            ? [(Path: entry.Area.FilePath, Line: (int?)null)]
+                            : entry.Area.Declarations.Select(static location => (Path: location.Path, Line: (int?)location.StartLine)).Distinct().ToArray()
+                        : entry.Area.Declarations.Select(static location => (Path: location.Path, Line: (int?)location.StartLine)).Distinct().ToArray();
+                    foreach (var source in sourceLocations.OrderBy(static location => location.Path, StringComparer.Ordinal).ThenBy(static location => location.Line))
+                    {
+                        folderBuilder.Append("  - Source: [").Append(MarkdownReportWriter.EscapeLinkText(source.Path));
+                        if (source.Line is not null) folderBuilder.Append(':').Append(source.Line.Value.ToString(CultureInfo.InvariantCulture));
+                        folderBuilder.Append("](").Append(MarkdownReportWriter.FormatSourceLink(pagePath, projectRoot, source.Path));
+                        if (source.Line is not null) folderBuilder.Append("#L").Append(source.Line.Value.ToString(CultureInfo.InvariantCulture));
+                        folderBuilder.Append(")\n");
+                    }
+                    foreach (var packageId in entry.PrimaryPackageIds)
+                    {
+                        folderBuilder.Append("  - Primary package")
+                            .Append(": [").Append(packageId).Append("](")
+                            .Append(ToMarkdownLink(pagePath, Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(pagePath)!)!)!, packageId + ".md")))
+                            .Append(")\n");
+                    }
+                    foreach (var packageId in entry.ContextPackageIds.Except(entry.PrimaryPackageIds, StringComparer.Ordinal))
+                    {
+                        folderBuilder.Append("  - Context package: [").Append(packageId).Append("](")
+                            .Append(ToMarkdownLink(pagePath, Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(pagePath)!)!)!, packageId + ".md")))
+                            .Append(")\n");
+                    }
+                }
+                await MarkdownReportWriter.WriteUtf8Async(pagePath, folderBuilder.ToString(), cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static void AppendNavigationGuard(StringBuilder builder, string runId, string viewName)
+    {
+        builder.Append("Run: ").Append(MarkdownReportWriter.FormatCodeSpan(runId)).Append("; view: ")
+            .Append(MarkdownReportWriter.FormatCodeSpan(viewName)).Append(".\n\n");
+        if (viewName == "all-findings")
+        {
+            builder.Append("> **Full-audit scope:** This reference navigation contains every current finding. Inspect it only when the user explicitly requests a full-repository audit.\n\n");
+        }
+    }
+
+    private sealed record AreaNavigationArea(AuditFindingArea Area, bool IsContextOnly,
+        IReadOnlyList<string> PrimaryPackageIds, IReadOnlyList<string> ContextPackageIds);
+    private sealed record AreaNavigationEntry(AuditFindingArea Area, bool IsContextOnly,
+        IReadOnlyList<string> PrimaryPackageIds, IReadOnlyList<string> ContextPackageIds, string SourceFolder);
+    private sealed record AreaNavigationProject(string ProjectPath, string IndexPath, IReadOnlyList<AreaNavigationEntry> Entries);
+    private sealed record AreaNavigation(IReadOnlyList<AreaNavigationProject> Projects, IReadOnlyDictionary<string, IReadOnlyList<string>> AreaPagePaths)
+    {
+        internal static AreaNavigation Empty { get; } = new([], new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal));
     }
 
     private static async Task<string> FormatAuditPackageAsync(
@@ -112,6 +269,7 @@ internal static class AuditMapReportWriter
         string viewName,
         AuditFindingPackage package,
         AuditFindingPackageView view,
+        AreaNavigation navigation,
         CancellationToken cancellationToken)
     {
         var builder = new StringBuilder()
@@ -125,7 +283,9 @@ internal static class AuditMapReportWriter
             .Append("## Assignment\n\n")
             .Append("Inspect every finding assigned to this package using the source, callers, contracts, and tests below. Classify each ID as false positive, acceptable design, needs clarification, or actionable, and record concrete evidence plus unresolved context. This is a technical grouping; it does not establish common cause or independent changeability. Do not claim a full audit when other packages remain unreviewed. Shared audit guidance: [run index](../../index.md).\n\n")
             .Append("## Areas\n\n");
-        foreach (var area in package.Areas)
+        foreach (var area in package.Areas.OrderBy(static item => item.ProjectPath, StringComparer.Ordinal)
+                     .ThenBy(GetPrimaryFolder, StringComparer.Ordinal).ThenBy(static item => item.Name, StringComparer.Ordinal)
+                     .ThenBy(static item => item.Id, StringComparer.Ordinal))
         {
             builder.Append("- **").Append(MarkdownReportWriter.EscapeInline(area.Name)).Append("** (").Append(MarkdownReportWriter.FormatCodeSpan(area.ProjectPath)).Append("; ")
                 .Append(MarkdownReportWriter.EscapeInline(area.Role == ProjectRole.Tests ? "tests" : "production")).Append("; ")
@@ -276,9 +436,16 @@ internal static class AuditMapReportWriter
             builder.Append("## Context areas\n\n");
             foreach (var row in contextRows)
             {
-                builder.Append("- ").Append(row.IsContextOnly ? "Context only" : "Shared area").Append(": [")
-                    .Append(MarkdownReportWriter.EscapeLinkText(row.Area.Name)).Append("](index.md#area-").Append(row.Area.Id).Append(") — ")
-                    .Append(MarkdownReportWriter.EscapeInline(row.Area.ProjectPath)).Append("; ").Append(MarkdownReportWriter.EscapeInline(row.Area.IdentityReason)).Append('\n');
+                var links = navigation.AreaPagePaths.GetValueOrDefault(row.Area.Id, []);
+                builder.Append("- ").Append(row.IsContextOnly ? "Context only" : "Shared area").Append(": ")
+                    .Append(MarkdownReportWriter.EscapeInline(row.Area.Name)).Append(" (")
+                    .Append(MarkdownReportWriter.FormatCodeSpan(row.Area.ProjectPath)).Append("); ")
+                    .Append(MarkdownReportWriter.EscapeInline(row.Area.IdentityReason));
+                if (links.Count > 0)
+                {
+                    builder.Append(" — navigation: ").Append(string.Join(", ", links.Select(path => "[source folder](" + ToMarkdownLink(reportPath, path) + ")")));
+                }
+                builder.Append('\n');
             }
             builder.Append('\n');
         }
