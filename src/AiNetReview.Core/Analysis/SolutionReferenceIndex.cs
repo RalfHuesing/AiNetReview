@@ -15,6 +15,7 @@ public sealed class SolutionReferenceIndex
 {
     private readonly Dictionary<string, List<SolutionSymbolReference>> references = new(StringComparer.Ordinal);
     private readonly HashSet<string> uncertainSymbols = new(StringComparer.Ordinal);
+    private readonly List<SolutionSymbolReferenceUncertainty> uncertainties = [];
 
     private SolutionReferenceIndex()
     {
@@ -121,6 +122,14 @@ public sealed class SolutionReferenceIndex
         return new SolutionSymbolReferenceCoverage(entries, uncertainSymbols.Contains(definition));
     }
 
+    /// <summary>Gets unresolved type and method candidates with the source location that introduced each uncertainty.</summary>
+    internal IReadOnlyList<SolutionSymbolReferenceUncertainty> GetUncertainties() => Array.AsReadOnly(uncertainties
+        .OrderBy(static uncertainty => uncertainty.SourceFilePath ?? uncertainty.DocumentName, StringComparer.Ordinal)
+        .ThenBy(static uncertainty => uncertainty.SourceSpan.Start)
+        .ThenBy(static uncertainty => uncertainty.ProjectName, StringComparer.Ordinal)
+        .ThenBy(static uncertainty => GetKey(uncertainty.CandidateSymbol), StringComparer.Ordinal)
+        .ToArray());
+
     private void IndexReference(
         SemanticModel semanticModel,
         SimpleNameSyntax name,
@@ -146,6 +155,20 @@ public sealed class SolutionReferenceIndex
                 if (candidateDefinition is INamedTypeSymbol or IMethodSymbol)
                 {
                     uncertainSymbols.Add(GetKey(candidateDefinition));
+                    var uncertainEnclosingSymbol = semanticModel.GetEnclosingSymbol(name.SpanStart, cancellationToken);
+                    var uncertainEnclosingType = uncertainEnclosingSymbol as INamedTypeSymbol ?? uncertainEnclosingSymbol?.ContainingType;
+                    uncertainties.Add(new SolutionSymbolReferenceUncertainty(
+                        candidateDefinition,
+                        uncertainEnclosingSymbol,
+                        uncertainEnclosingType,
+                        projectId,
+                        projectName,
+                        document.Id,
+                        document.Name,
+                        document.FilePath,
+                        name.Span,
+                        projectRole,
+                        isGenerated));
                 }
             }
 
@@ -278,6 +301,20 @@ public sealed record SolutionSymbolReference(
     SolutionReferenceProjectRole ProjectRole,
     bool IsGeneratedCode,
     bool IsSelfReference);
+
+/// <summary>One unresolved candidate and the source location where its binding became uncertain.</summary>
+internal sealed record SolutionSymbolReferenceUncertainty(
+    ISymbol CandidateSymbol,
+    ISymbol? EnclosingSymbol,
+    INamedTypeSymbol? EnclosingType,
+    ProjectId ProjectId,
+    string ProjectName,
+    DocumentId DocumentId,
+    string DocumentName,
+    string? SourceFilePath,
+    TextSpan SourceSpan,
+    SolutionReferenceProjectRole ProjectRole,
+    bool IsGeneratedCode);
 
 /// <summary>Known references plus uncertainty local to one symbol.</summary>
 public sealed class SolutionSymbolReferenceCoverage
