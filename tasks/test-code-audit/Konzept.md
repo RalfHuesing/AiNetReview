@@ -123,15 +123,47 @@ Dieser Schutz wird für die Dead-Code-Analyse verwendet. Er ersetzt nicht die be
 
 ## Reporting für einen auditierenden Agenten
 
-### Empfehlung: gemeinsame Analyseberichte mit sichtbaren Bereichen
+### Empfehlung: getrennte Arbeitsbereiche innerhalb eines gemeinsamen Reportlaufs
 
-Die bestehende Struktur aus `changed-files/`, `all-findings/`, ihren Indizes und je einem Bericht pro Analyse bleibt erhalten. Innerhalb jedes nichtleeren Analyseberichts werden Findings unter `Production code`, `Test code` und, sofern nötig, `Mixed production/test code` dargestellt. Leere Bereiche erzeugen keine leeren Findings-Abschnitte.
+Für gesonderte agentische Audit-Schritte erhält jeder Reportlauf eine zusätzliche Ebene für die Herkunft seiner Findings. Die empfohlenen Namen sind `production`, `tests` und `mixed`. Ausgeschriebene Namen machen den Auftrag deutlicher als `prod`/`test`; `mixed` bezeichnet ausschließlich Findings, die Produktions- und Testcode als Analysegegenstand zusammen enthalten, nicht allgemein wiederverwendbare Helpers.
 
-Innerhalb eines Bereichs bleibt die Navigation nach Projekt und Datei mit deterministischer Sortierung erhalten. Jedes Finding erscheint genau einmal. Die Gesamtsumme und die drei Bereichssummen zählen Findings und müssen übereinstimmen. Globale Projekt-/Dateizahlen bleiben die eindeutigen repräsentativen Projekt-/Dateipaare gemäß bestehendem Zählvertrag; Bereichszahlen dürfen wegen gemischter Gruppen nicht unbesehen addiert werden. Die Zusammenfassung weist diese Bedeutung aus.
+```text
+<output-directory>/
+  baseline.json
+  <run-id>/
+    index.md
+    production/
+      changed-files/index.md
+      all-findings/index.md
+    tests/
+      changed-files/index.md
+      all-findings/index.md
+    mixed/
+      changed-files/index.md
+      all-findings/index.md
+```
 
-Die Herkunft wird aus der zentralen Klassifikation der geladenen Projekte bereitgestellt, nicht aus einer erneuten Namensinterpretation im ReportWriter. Projektüberschriften kennzeichnen ihre erkannte Rolle. Bei Gruppen erhält jedes beteiligte Vorkommen seine Projektrolle. `Mixed` wird aus den tatsächlich repräsentierten Symbolen/Vorkommen bestimmt, nicht aus beliebigen Belegdateien: Ein Produktions-Finding zu einem fehlenden Testpfad wird durch einen Testpfad als Evidenz nicht zu einem gemischten Finding.
+Nichtleere Analyseberichte liegen neben dem jeweiligen View-Index, beispielsweise `tests/changed-files/code-size-candidates.md`. Alle sechs View-Indizes werden erzeugt, auch wenn ihr Bereich leer ist. Sie benennen dann den leeren Arbeitsumfang, ohne künstliche Findings oder leere Analyseberichte anzulegen. Der Root-Index unterscheidet weiterhin einen Lauf ohne aktive Analysen von einem ausgeführten Lauf ohne Findings.
 
-Root- und View-Indizes zeigen bei jeder verlinkten Analyse die Anzahl Produktions-, Test- und gemischter Findings. Test-Findings sind ausdrücklich gleichwertiger Bestandteil des beauftragten Arbeitsumfangs. Es gibt keine nachrangige „nur bei Zeit“-Testliste und keinen zusätzlichen Voll-Audit-Schritt nur für Tests.
+Diese Verzeichnisse liegen innerhalb des bestehenden unveränderlichen Run-Verzeichnisses. Es entstehen weder mehrere Analyseausführungen noch getrennte Snapshots, Baselines oder Publikationen. Der CLI-Verweis bleibt der gemeinsame `<run-id>/index.md`; alle Bereiche werden gemeinsam atomar veröffentlicht. Bestehende veröffentlichte Läufe bleiben unverändert. Neue Läufe erzeugen die bisher direkt unter `<run-id>/` liegenden beiden Views nicht zusätzlich als doppelte Berichtskopien.
+
+Innerhalb eines Bereichs bleibt die Navigation nach Analyse, Projekt und Datei mit deterministischer Sortierung erhalten. Jedes Finding erscheint pro View genau einmal, entweder unter `production`, `tests` oder `mixed`. Die Gesamtsumme und die drei Bereichssummen müssen je View übereinstimmen; `all-findings` und `changed-files` werden nicht miteinander addiert. Globale Projekt-/Dateizahlen bleiben die eindeutigen repräsentativen Projekt-/Dateipaare gemäß bestehendem Zählvertrag; Bereichszahlen dürfen nicht unbesehen addiert werden. Die Zusammenfassung weist diese Bedeutung aus.
+
+Die Herkunft wird aus der zentralen Klassifikation der geladenen Projekte bereitgestellt, nicht aus einer erneuten Namensinterpretation im ReportWriter. Projektüberschriften kennzeichnen ihre erkannte Rolle. Bei Gruppen erhält jedes beteiligte Vorkommen seine Projektrolle. Die Zuordnung nach `mixed` wird aus den tatsächlich repräsentierten Symbolen/Vorkommen bestimmt, nicht aus beliebigen Belegdateien: Ein Produktions-Finding zu einem fehlenden Testpfad bleibt unter `production`, auch wenn ein Testpfad als Evidenz enthalten ist. Ein Test-Test-Duplikationscluster gehört nach `tests`; ein Cluster mit Test- und Produktionsmitgliedern gehört vollständig und einmal nach `mixed`. Seine repräsentative Datei bestimmt nicht allein die Zuordnung.
+
+Der Root-Index ist der Einstieg in den Auditauftrag. Er zeigt die drei Arbeitsbereiche mit Findingzahlen getrennt für beide Views und verlinkt zuerst die drei `changed-files`-Indizes als gemeinsamen normalen Arbeitsumfang. Jeder Bereichs-/Analysebericht verlinkt zur gemeinsamen Review-Anleitung. Seine `all-findings`-Policy erfordert weiterhin einen ausdrücklich beauftragten Voll-Audit. Verweise und Related-Angaben funktionieren über Bereichsgrenzen hinweg; „in dieser View sichtbar“ bezieht sich auf alle drei Bereiche derselben View. Ein Related-Finding in einem anderen Bereich gehört damit nicht automatisch zu `all-findings`.
+
+Test-Findings sind gleichwertiger Bestandteil eines normalen unbeschränkten Audits. Der Root-Index darf nicht nur einen Produktionsauftrag vermitteln und die übrigen Bereiche als Zusatzprüfung erscheinen lassen.
+
+### Getrennte Audit-Schritte und gemeinsame Zusammenhänge
+
+Die Struktur unterstützt unterschiedliche beauftragte Arbeitspakete: Produktionscode auf Verhalten und Verantwortlichkeiten prüfen, Testcode auf die Verständlichkeit der Szenarien und Aussagekraft der Verifikation prüfen und gemischte Findings im Zusammenhang beurteilen. Sie schreibt keine zwingende Reihenfolge vor. Ein übergreifendes Finding wird einmal als Ganzes untersucht; sein Ergebnis muss in eine gemeinsame Abschlussbewertung eingehen.
+
+Ein Agent darf für jeden Auftrag relevante Quellen aus allen Bereichen als Kontext lesen. „Nur Test-Findings bearbeiten“ bedeutet deshalb nicht, dass er den getesteten Produktionscode ignorieren muss. Ebenso kann ein Produktionsaudit Testquellen benötigen, ohne damit einen vollständigen Audit aller Test-Findings zu starten. Der beauftragte Findingumfang und der zum Verstehen nötige Quellkontext sind unterschiedliche Grenzen.
+
+Wenn der Nutzer ausdrücklich nur einen Bereich beauftragt, dokumentiert der Agent diese Beschränkung. Er erklärt einen solchen Teilauftrag nicht als vollständigen Audit der Lösung. Ein unbeschränkter Auftrag umfasst dagegen alle drei Bereiche der gewählten View. Fehlende oder ausgelassene Bereichsbearbeitung darf nicht als abgeschlossen gelten. `mixed` ist kein nachrangiger Restordner: Seine Einbeziehung muss beim normalen Audit sichtbar sein; bei einem auf `production` oder `tests` beschränkten Auftrag ist es als nicht bearbeiteter eigener Umfang auszuweisen.
+
+Für die spätere Umsetzung ist das eine Reporting- und Review-Anleitungsanforderung. Neue Agentenrollen, Workflowdateien, automatische Delegation, Bearbeitungsstatus-Dateien oder Scheduler werden in diesem Vorhaben nicht eingeführt.
 
 Eine knappe Scope-Übersicht im Root-Index nennt die geladenen C#-Projekte, ihre erkannte Rolle mit Klassifikationsgrund sowie die aktivierten Analysen und ihre Anwendbarkeit auf Testcode. Sie ist auch ohne Findings verfügbar. So kann ein Agent „Testcode einbezogen, kein Signal“ von „Analyse deaktiviert“ oder „Analyse fachlich nur für Produktionscode“ unterscheiden. Diese Übersicht behauptet keine vollständige Statement-, Runner- oder Laufzeitabdeckung; vorhandene Beschränkungen der Kandidatenarten und generierten Quellen bleiben ausdrücklich sichtbar.
 
@@ -139,11 +171,13 @@ Die Baseline-Semantik gilt gleichberechtigt für beide Projektrollen. Veränderu
 
 Bereits vorhandene Baselines enthalten Testdateien. Nach der Scope-Erweiterung können Findings aus unverändertem Testcode daher zunächst nur in `all-findings` stehen. Der Root-Index erklärt allgemein: `changed-files` bezieht sich auf Dateiänderungen, nicht auf neue Analysefähigkeiten. Ein vollständiger erster Audit nach einer Scope-Erweiterung braucht einen ausdrücklichen Auftrag; Findings werden nicht als Dateiänderungen ausgegeben.
 
-### Kosten der Alternative
+### Nutzen, Kosten und Alternative
 
-Eigene Testberichte innerhalb derselben Views könnten kürzere Einzeldateien liefern. Dafür entstehen zusätzliche Links, Berichtsnamen und Regeln für gemischte Gruppen; der Agent muss mehrere Arbeitslisten zusammenführen. Tests könnten versehentlich als separater oder nachrangiger Auftrag behandelt werden. Ein vollständig separater Testaudit mit eigener Baseline verschärft diese Probleme und gehört nicht zum empfohlenen Ergebnis.
+Die zusätzliche Verzeichnisebene macht begrenzte Agentenaufträge konkret referenzierbar, hält Einzelberichte kleiner und verhindert, dass viele Test-Findings Produktions-Findings in denselben Dateien überlagern. Unterschiedliche Review-Fragen lassen sich pro Bereich deutlicher formulieren. Die Ebene Herkunft vor der Ebene View unterstützt besonders die vorgeschlagene Bearbeitung nach Codebereich; die Root-Anleitung muss dafür die normale `changed-files`-Grenze besonders klar vermitteln.
 
-Die Bereichsdarstellung ist eine ausstehende Nutzerentscheidung. Bis zu einer Antwort dokumentiert dieser Draft die empfohlene Variante.
+Die Kosten sind sechs statt zwei View-Indizes, neue Berichtspfade und zusätzliche Navigation. Integrationsprüfungen, Dokumentation und direkte Pfadannahmen müssen angepasst werden. Ein Agent kann durch die Trennung Zusammenhänge übersehen oder zu früh Abschluss melden; dagegen helfen der gemeinsame Einstieg, vollständige gemischte Findings und bereichsübergreifende Related-Verweise. Produktions- und Testbestand isoliert zu analysieren würde dagegen Testpfade, Referenzen und gemischte Duplikate verlieren und gehört nicht zum Ergebnis.
+
+Die Alternative wären gemeinsame Analyseberichte mit drei Abschnitten innerhalb der bisherigen Views. Das hält Navigation und Pfade einfacher, unterstützt aber separate Arbeitspakete weniger deutlich und kann deutlich größere Berichte erzeugen. Für die vom Nutzer erwogenen gesonderten Audit-Schritte empfiehlt dieser Draft die Verzeichnisvariante. Sie ist noch kein freigegebener Vertrag.
 
 ### Was ein Agent erwarten soll
 
@@ -170,7 +204,7 @@ Auch im Testbereich gelten die bestehenden begründeten Klassifikationen: false 
 - `missing-test-evidence-candidates` behält Produktionsfunktionen als Ziel und Testcode als Belegquelle; vorhandene Pfad- und Unsicherheitsgrenzen bleiben ehrlich beschrieben.
 - Die zentrale Klassifikation wird als Herkunft genutzt und transparent erklärt. Sie darf für die sieben Analysen kein pauschaler Ausschluss mehr sein.
 - Der definierte Dead-Code-Schutzkatalog für Testframework-Einstiegspunkte, Lebenszyklus und Datenbindungen einschließlich lokaler/breiter Unsicherheit wird automatisiert abgesichert.
-- Reports machen Testcode zu einem regulären Arbeitsauftrag, zeigen Gruppen vollständig und behalten die Baseline-, Related-, Sortierungs-, Zähl- und Publikationsverträge bei.
+- Reports trennen `production`, `tests` und `mixed` innerhalb eines gemeinsamen Reportlaufs mit je beiden Views. Der Root-Index macht alle drei Bereiche zum regulären Auditumfang; Gruppen erscheinen je View vollständig und einmal. Baseline, Related-Verträge, Sortierung, Zählsemantik und atomare Publikation bleiben erhalten.
 - Die Rolle von AI-geschriebenem gewöhnlichem Code wird von tatsächlich generierten Artefakten unterschieden; bestehende Generated-/Pfadgrenzen bleiben erhalten.
 - Die spätere Umsetzung aktualisiert die betroffenen aktuellen Dokumente, Entwickleranleitung, Analysedeskriptoren und Reporttexte und ersetzt bestehende Ausschlusstests durch passende Einschluss-/Schutztests. Implementierte Aussagen werden erst dann in `docs/` geändert.
 
@@ -179,6 +213,7 @@ Auch im Testbereich gelten die bestehenden begründeten Klassifikationen: false 
 - Neue automatische Analysen für Assertions, Flakiness, Sleeps, Mocks, Coverage, Mutation Testing oder Testqualität.
 - Laufzeitausführung, Runner-Entdeckung oder das Versprechen, alle denkbaren Frameworkbindungen aufzulösen.
 - Separate Test-Baseline, separater CLI-Befehl, Test-Opt-in, rollenbasierte Unterdrückung oder begrenzte Findingzahl.
+- Getrennte Analyseausführungen für Produktions- und Testbestand, doppelte flache Berichtskopien, Änderung alter Reportläufe oder Einführung neuer Agentenworkflows/-rollen.
 - Neue Testschwellen, lösungsweite Perzentile oder Änderung bestehender Größen-/Kontrollflussdefinitionen.
 - Neue Kandidatenarten nur für Tests, etwa zusätzliche Lambda-/Local-Function-Größenmessung; die bisherigen unterstützten Deklarationsarten bleiben maßgeblich.
 - Projektexterne/unbeladene Tests analysieren oder Projektrollen durch ein neues konfigurierbares Klassifikationssystem ersetzen. Gemischte Projekte werden als Klassifikationsgrenze erklärt.
@@ -197,13 +232,13 @@ Die Abnahme prüft beobachtbares Analyse- und Reportverhalten; vorhandene Tests 
 4. **Duplikate:** Test-Test-, Produktions-Produktions- und gemischte Gruppen werden vollständig und einmal berichtet. Unterschiede gemäß vorhandener Syntax-/Tokenverträge bleiben bestehen; eine Änderung nur am Testvorkommen wählt die ganze Gruppe im normalen Arbeitsumfang aus.
 5. **Dead Code:** Der definierte Schutzkatalog wird für alle drei Frameworkfamilien einschließlich abgeleiteter Attribute, geerbter Hooks, deaktivierter Tests, Fixture-/Provider-Typen und String-/Type-Datenbindungen geprüft. Lokale Lookalike-Attribute schützen keine gewöhnlichen Helpers. Ein unreferenzierter privater Helper neben einem gültigen Test bleibt Kandidat. Beide API-Modi und lokale/breite Unsicherheit halten ihren definierten Vertrag ein; breite Ausschlüsse sind im Report sichtbar.
 6. **Rollen und Grenzen:** Klassifikation über Referenz, Namen und Pfad ist in der Scope-Übersicht nachvollziehbar. Ohne Testmarker bleibt Code trotzdem Wartbarkeitsziel. Generierte Dateien/Symbole und externe generierte Testquellen behalten ihre bisherigen Grenzen.
-7. **Reporting:** Root- und View-Indizes, Bereichssummen, repräsentative Projekt-/Dateizahlen, Vorkommensrollen, Related-Verweise und Sortierung bleiben widerspruchsfrei. Ein Produktions-Finding mit Testevidenz wird nicht als gemischtes Wartbarkeits-Finding eingeordnet. Eine aktive Analyse ohne Findings und eine deaktivierte Analyse sind in der Scope-Übersicht unterscheidbar.
+7. **Reporting:** Der gemeinsame Root-Index und die sechs View-Indizes zeigen die drei Bereiche einschließlich leerer Arbeitsumfänge. Nichtleere Analyseberichte liegen ausschließlich im passenden Bereich und in der passenden View; Summen, repräsentative Projekt-/Dateizahlen, Vorkommensrollen, bereichsübergreifende Related-Verweise und Sortierung bleiben widerspruchsfrei. Ein Produktions-Finding mit Testevidenz bleibt unter `production`; ein gemischter Duplikationscluster steht vollständig und einmal pro View unter `mixed`. Relative Links zur Root-Anleitung, zwischen Bereichen und zu den Full-Audit-Views funktionieren. Eine aktive Analyse ohne Findings und eine deaktivierte Analyse sind in der Scope-Übersicht unterscheidbar.
 8. **Baseline:** Ohne Baseline enthalten beide Views alle aktuellen Findings. Testdateiänderungen funktionieren mit bestehender Baseline; unveränderter Testcode wird bei einem gewöhnlichen Datei-basierten Finding nicht künstlich als geändert markiert. Die spezielle Snapshot-Auswahl für fehlende Testpfade bleibt erhalten.
 9. **Produktgrenzen:** Der Reviewlauf bleibt ein Signalbericht; Findings erzeugen weder Refactoring noch Buildfehler. Fehler oder Abbruch veröffentlichen keinen partiellen Report.
-10. **Praktischer Agentenaudit:** Eine repräsentative Lösung mit langen Tests, String-Fixtures, nachvollziehbaren Wiederholungen und Testinfrastruktur wird ausdrücklich als Voll-Audit beauftragt. Jede Signalart wird anhand konkreter Quellen als nützlich, akzeptables Design, Fehlalarm oder klärungsbedürftig bewertet. Laufzeit und Findingumfang werden zum Erkennen von Vergleichs-/Reportproblemen festgehalten; größere Testbestände dürfen nicht durch stille Top-N-Filter verschwinden. Das prüft Verständlichkeit und Interpretationsrisiken, verspricht aber keine objektive Quote „guter“ Tests.
+10. **Praktischer Agentenaudit:** Eine repräsentative Lösung mit langen Tests, String-Fixtures, nachvollziehbaren Wiederholungen und Testinfrastruktur wird ausdrücklich als Voll-Audit beauftragt. Der Root-Auftrag umfasst `production`, `tests` und `mixed`; auch bei getrennter Bearbeitung gehen ihre Ergebnisse in die Abschlussbewertung ein. Ein gesonderter Teilauftrag behauptet keinen Voll-Audit und darf relevante Quellen anderer Bereiche als Kontext einbeziehen. Jede Signalart wird anhand konkreter Quellen als nützlich, akzeptables Design, Fehlalarm oder klärungsbedürftig bewertet. Laufzeit und Findingumfang werden zum Erkennen von Vergleichs-/Reportproblemen festgehalten; größere Testbestände dürfen nicht durch stille Top-N-Filter verschwinden. Das prüft Verständlichkeit und Interpretationsrisiken, verspricht aber keine objektive Quote „guter“ Tests.
 
 ## Offene Entscheidungen (nur Draft)
 
-1. **Reportgliederung:** Empfohlen sind gemeinsame Analyseberichte mit getrennten Bereichen für Produktions-, Test- und gemischten Code. Die Nutzerantwort auf diese Variante steht aus.
+1. **Reportgliederung:** Nach der zusätzlichen Nutzeridee empfiehlt dieser Draft `production`, `tests` und `mixed` mit je `changed-files` und `all-findings` innerhalb desselben Reportlaufs. Die Zustimmung zu dieser Variante einschließlich des dritten Bereichs für gemischte Findings steht aus.
 
 `status: ready` erfolgt erst nach Schließen dieser Punkte und ausdrücklicher Nutzerfreigabe gemäß [Konzeptrolle](../../.agents/agent-workflow/01-konzept-planung.md). Bis dahin ist dies ein diskutierbarer, persistierter Entwurf.
