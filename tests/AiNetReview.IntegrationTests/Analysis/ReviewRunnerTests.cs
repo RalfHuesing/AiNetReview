@@ -314,6 +314,59 @@ public sealed class ReviewRunnerTests
         Assert.Equal(4, sameFileChangedRun.Findings.Count(static item => item.IsChanged));
     }
 
+    [Fact]
+    public async Task RunAsync_ProvidesProjectClassificationsAndAttributesFindingOriginsFromRepresentedSymbols()
+    {
+        using var temp = TestTempDirectory.Create();
+        var root = await CreateProjectAsync(temp, includeSecondProject: true, includeTestProject: true);
+        var production = new FindingSymbol("Sample/Sample.csproj", "Sample/FixtureCases.cs", "M:Sample.FixtureCases.FixtureCaseA", 4);
+        var testA = new FindingSymbol("tests/Example/Example.csproj", "tests/Example/Scenarios.cs", "M:Example.Scenarios.TestA", 4);
+        var testB = new FindingSymbol("tests/Example/Example.csproj", "tests/Example/Scenarios.cs", "M:Example.Scenarios.TestB", 5);
+        var testAOccurrenceOne = new FindingSymbol(testA.ProjectPath, testA.SourcePath, testA.SymbolId, testA.Line, "fragment:10:20");
+        var testAOccurrenceTwo = new FindingSymbol(testA.ProjectPath, testA.SourcePath, testA.SymbolId, testA.Line, "fragment:30:20");
+        var productionWithTestEvidence = new FindingDraft(
+            production.ProjectPath, production.SourcePath, "production-with-test-evidence", "case", 4, "Production finding with test evidence.",
+            new Dictionary<string, double>(),
+            [new FindingEvidence("tests/Example/Scenarios.cs", 4, "Test evidence", "Evidence is not finding origin.", "TestA")],
+            [production]);
+        var testCluster = new FindingDraft(
+            testA.ProjectPath, testA.SourcePath, "test-cluster", "cluster", 1, "Test-only cluster.",
+            new Dictionary<string, double>(),
+            [new FindingEvidence(testA.SourcePath, 4, "Member", "First test member.", "TestA"),
+             new FindingEvidence(testB.SourcePath, 5, "Member", "Second test member.", "TestB")],
+            [testAOccurrenceOne, testAOccurrenceTwo, testB]);
+        var mixedCluster = new FindingDraft(
+            testA.ProjectPath, testA.SourcePath, "mixed-cluster", "cluster", 1, "Mixed cluster represented by a test occurrence.",
+            new Dictionary<string, double>(),
+            [new FindingEvidence(testA.SourcePath, 4, "Test member", "Test occurrence.", "TestA"),
+             new FindingEvidence(production.SourcePath, 4, "Production member", "Production occurrence.", "FixtureCaseA")],
+            [testA, production]);
+        var config = CreateConfig(root, [new TestFindingAnalysis("origin-analysis", [productionWithTestEvidence, testCluster, mixedCluster])]);
+        using var loaded = await new SolutionLoader().LoadAsync(config);
+
+        var result = await new ReviewRunner().RunAsync(config, loaded);
+
+        Assert.Equal(result.ProjectClassifications.Select(static item => item.ProjectPath).Order(StringComparer.Ordinal),
+            result.ProjectClassifications.Select(static item => item.ProjectPath));
+        Assert.Contains(result.ProjectClassifications, item => item.ProjectPath == "Sample/Sample.csproj"
+            && item.Role == ProjectRole.Production && item.Reason == ProjectClassificationReason.NoTestMarker);
+        Assert.Contains(result.ProjectClassifications, item => item.ProjectPath == "tests/Example/Example.csproj"
+            && item.Role == ProjectRole.Tests && item.Reason == ProjectClassificationReason.ProjectPathSegment);
+        Assert.Contains(result.ProjectClassifications, item => item.ProjectPath == "Other/Other.csproj"
+            && item.Role == ProjectRole.Production && item.Reason == ProjectClassificationReason.NoTestMarker);
+        Assert.Contains(result.ProjectClassifications, item => item.ProjectPath == "Empty/Empty.csproj"
+            && item.Role == ProjectRole.Production && item.Reason == ProjectClassificationReason.NoTestMarker);
+
+        var productionReview = Assert.Single(result.Findings.Where(item => item.Finding.SubjectId == "production-with-test-evidence"));
+        Assert.Equal(new[] { ProjectRole.Production }, productionReview.Occurrences.Select(static item => item.Role));
+        Assert.Equal(new[] { "tests/Example/Scenarios.cs", "Sample/FixtureCases.cs" }.Order(StringComparer.Ordinal), productionReview.SourcePaths.Order(StringComparer.Ordinal));
+        var testReview = Assert.Single(result.Findings.Where(item => item.Finding.SubjectId == "test-cluster"));
+        Assert.Equal(new[] { ProjectRole.Tests, ProjectRole.Tests, ProjectRole.Tests }, testReview.Occurrences.Select(static item => item.Role));
+        Assert.Equal(new[] { "fragment:10:20", "fragment:30:20", null }, testReview.Occurrences.Select(static item => item.Symbol.OccurrenceId));
+        var mixedReview = Assert.Single(result.Findings.Where(item => item.Finding.SubjectId == "mixed-cluster"));
+        Assert.Equal(new[] { ProjectRole.Production, ProjectRole.Tests }, mixedReview.Occurrences.Select(static item => item.Role));
+    }
+
     [Theory]
     [InlineData("Unknown/Unknown.cs", 1, "Missing")]
     [InlineData("Sample/../Sample/FixtureCases.cs", 4, "FixtureCaseA")]
@@ -419,7 +472,7 @@ public sealed class ReviewRunnerTests
         return new ReviewConfigValidator(registry).Validate(root, json);
     }
 
-    private static async Task<string> CreateProjectAsync(TestTempDirectory temp, bool includeSecondProject = false)
+    private static async Task<string> CreateProjectAsync(TestTempDirectory temp, bool includeSecondProject = false, bool includeTestProject = false)
     {
         var root = temp.GetPath("runner-project");
         var projectDirectory = Path.Combine(root, "Sample");
@@ -448,6 +501,33 @@ public sealed class ReviewRunnerTests
                 """namespace Other; public sealed class Other { public int Value => "LoadedOtherValue".Length; }""");
             await RestoreAsync(otherProject, otherDirectory);
             solutionProjects += "<Project Path=\"Other/Other.csproj\" />";
+        }
+
+        if (includeTestProject)
+        {
+            var testDirectory = Path.Combine(root, "tests", "Example");
+            Directory.CreateDirectory(testDirectory);
+            var testProject = Path.Combine(testDirectory, "Example.csproj");
+            await File.WriteAllTextAsync(testProject,
+                "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
+            await File.WriteAllTextAsync(Path.Combine(testDirectory, "Scenarios.cs"), """
+                namespace Example;
+                public sealed class Scenarios
+                {
+                    public void TestA() { }
+                    public void TestB() { }
+                }
+                """);
+            await RestoreAsync(testProject, testDirectory);
+            solutionProjects += "<Project Path=\"tests/Example/Example.csproj\" />";
+
+            var emptyDirectory = Path.Combine(root, "Empty");
+            Directory.CreateDirectory(emptyDirectory);
+            var emptyProject = Path.Combine(emptyDirectory, "Empty.csproj");
+            await File.WriteAllTextAsync(emptyProject,
+                "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
+            await RestoreAsync(emptyProject, emptyDirectory);
+            solutionProjects += "<Project Path=\"Empty/Empty.csproj\" />";
         }
 
         await File.WriteAllTextAsync(Path.Combine(root, "Sample.slnx"), $"<Solution>{solutionProjects}</Solution>");

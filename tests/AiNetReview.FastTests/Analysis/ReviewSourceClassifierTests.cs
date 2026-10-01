@@ -30,6 +30,22 @@ public sealed class ReviewSourceClassifierTests
         Assert.True(ReviewSourceClassifier.IsTestProject(byName));
         Assert.True(ReviewSourceClassifier.IsTestProject(byPath));
         Assert.True(ReviewSourceClassifier.IsTestProject(byReference));
+        Assert.Equal(ProjectClassificationReason.ProjectNameSuffix, ReviewSourceClassifier.ClassifyProject(byName).Reason);
+        Assert.Equal(ProjectClassificationReason.ProjectPathSegment, ReviewSourceClassifier.ClassifyProject(byPath).Reason);
+        Assert.Equal(ProjectClassificationReason.TestReferenceAssembly, ReviewSourceClassifier.ClassifyProject(byReference).Reason);
+    }
+
+    [Fact]
+    public void ClassifyProject_ExplainsProjectFileNameAndMissingMarkers()
+    {
+        using var workspace = new AdhocWorkspace();
+        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-Classification");
+        var byFileName = AddProject(workspace, "Example", Path.Combine(root, "src", "Example.UnitTests.csproj"));
+        var ordinary = AddProject(workspace, "Contest", Path.Combine(root, "src", "Contest.csproj"));
+
+        Assert.Equal(ProjectClassificationReason.ProjectFileNameSuffix, ReviewSourceClassifier.ClassifyProject(byFileName).Reason);
+        Assert.Equal(ProjectRole.Production, ReviewSourceClassifier.ClassifyProject(ordinary).Role);
+        Assert.Equal(ProjectClassificationReason.NoTestMarker, ReviewSourceClassifier.ClassifyProject(ordinary).Reason);
     }
 
     [Fact]

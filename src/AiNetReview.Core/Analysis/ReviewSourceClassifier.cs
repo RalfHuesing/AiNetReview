@@ -50,18 +50,18 @@ internal static class ReviewSourceClassifier
         "specs",
     ];
 
-    public static bool IsTestProject(Project project)
+    public static ProjectClassificationResult ClassifyProject(Project project)
     {
         ArgumentNullException.ThrowIfNull(project);
 
         if (project.MetadataReferences.Any(static reference => IsTestReferenceAssembly(reference.Display)))
         {
-            return true;
+            return new ProjectClassificationResult(ProjectRole.Tests, ProjectClassificationReason.TestReferenceAssembly);
         }
 
         if (HasTestProjectSuffix(project.Name))
         {
-            return true;
+            return new ProjectClassificationResult(ProjectRole.Tests, ProjectClassificationReason.ProjectNameSuffix);
         }
 
         if (!string.IsNullOrWhiteSpace(project.FilePath))
@@ -69,15 +69,20 @@ internal static class ReviewSourceClassifier
             var normalizedPath = NormalizeSeparators(project.FilePath);
             if (HasTestProjectSuffix(Path.GetFileNameWithoutExtension(normalizedPath)))
             {
-                return true;
+                return new ProjectClassificationResult(ProjectRole.Tests, ProjectClassificationReason.ProjectFileNameSuffix);
             }
 
-            return normalizedPath.Split('/', StringSplitOptions.RemoveEmptyEntries)
-                .Any(static segment => TestPathSegments.Contains(segment, StringComparer.OrdinalIgnoreCase));
+            if (normalizedPath.Split('/', StringSplitOptions.RemoveEmptyEntries)
+                .Any(static segment => TestPathSegments.Contains(segment, StringComparer.OrdinalIgnoreCase)))
+            {
+                return new ProjectClassificationResult(ProjectRole.Tests, ProjectClassificationReason.ProjectPathSegment);
+            }
         }
 
-        return false;
+        return new ProjectClassificationResult(ProjectRole.Production, ProjectClassificationReason.NoTestMarker);
     }
+
+    public static bool IsTestProject(Project project) => ClassifyProject(project).Role == ProjectRole.Tests;
 
     public static async Task<bool> IsGeneratedDocumentAsync(Document document, CancellationToken cancellationToken)
     {

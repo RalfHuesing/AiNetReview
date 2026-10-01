@@ -10,8 +10,11 @@ internal static class ReviewFindingBuilder
     internal static IReadOnlyList<ReviewFinding> Build(
         IReadOnlyList<ReviewAnalysisRunResult> analyses,
         IReadOnlyList<SourceFileSnapshot> sourceFiles,
-        IReadOnlyDictionary<string, string>? baselineFiles)
+        IReadOnlyDictionary<string, string>? baselineFiles,
+        IReadOnlyList<ProjectClassification> projectClassifications)
     {
+        var projectRoles = projectClassifications.ToDictionary(static project => project.ProjectPath, static project => project.Role,
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         var changedPaths = new HashSet<string>(pathComparer);
         foreach (var sourceFile in sourceFiles)
@@ -85,7 +88,12 @@ internal static class ReviewFindingBuilder
                 entry.Finding,
                 Array.AsReadOnly(sourcePaths),
                 Array.AsReadOnly(related),
-                Array.AsReadOnly(changedFindingPaths)));
+                Array.AsReadOnly(changedFindingPaths))
+            {
+                Occurrences = Array.AsReadOnly(entry.Finding.RelatedSymbols
+                    .Select(symbol => new ReviewFindingOccurrence(symbol, projectRoles[symbol.ProjectPath]))
+                    .ToArray()),
+            });
         }
 
         return Array.AsReadOnly(result.ToArray());
@@ -116,8 +124,17 @@ internal static class ReviewFindingBuilder
             || (left is not null && right is not null
                 && left.AnalysisId == right.AnalysisId
                 && ReferenceEquals(left.Finding, right.Finding)
-                && left.Symbol == right.Symbol);
+                && left.Symbol.ProjectPath == right.Symbol.ProjectPath
+                && left.Symbol.SourcePath == right.Symbol.SourcePath
+                && left.Symbol.SymbolId == right.Symbol.SymbolId
+                && left.Symbol.Line == right.Symbol.Line);
 
-        public int GetHashCode(FindingReference value) => HashCode.Combine(value.AnalysisId, value.Finding, value.Symbol);
+        public int GetHashCode(FindingReference value) => HashCode.Combine(
+            value.AnalysisId,
+            value.Finding,
+            value.Symbol.ProjectPath,
+            value.Symbol.SourcePath,
+            value.Symbol.SymbolId,
+            value.Symbol.Line);
     }
 }

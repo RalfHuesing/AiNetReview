@@ -51,7 +51,8 @@ public sealed class StructuralDuplicationCandidatesAnalysis : IReviewAnalysis
                 occurrence.ProjectPath,
                 occurrence.SourcePath,
                 occurrence.OwnerId,
-                GetFirstLine(occurrence)));
+                GetFirstLine(occurrence),
+                occurrence.StartOffset.ToString(CultureInfo.InvariantCulture) + ":" + occurrence.SpanLength.ToString(CultureInfo.InvariantCulture)));
             var executableCount = occurrences.Select(static occurrence => occurrence.OwnerKey).Distinct().Count();
             findings.Add(new FindingDraft(
                 representative.ProjectPath,

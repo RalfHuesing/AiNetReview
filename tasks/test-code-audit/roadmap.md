@@ -10,7 +10,7 @@ Für Codeänderungen sind die betroffenen Tests und die erforderlichen Gates gem
 
 ## Geordnete Arbeitspakete
 
-- [ ] **1 — Zentrale Projektrollen und Findingherkunft bereitstellen**
+- [x] **1 — Zentrale Projektrollen und Findingherkunft bereitstellen**
 
   **Intention:** Analysen, Optionsauswahl und Reporting nutzen dieselbe nachvollziehbare Herkunft, auch wenn die repräsentative Datei eines Findings allein dessen Bereich nicht bestimmt.
 
@@ -19,6 +19,8 @@ Für Codeänderungen sind die betroffenen Tests und die erforderlichen Gates gem
   **Nicht-Ziele:** Neue Projektmarker, MSBuild-Erkennung, Klassifikationskonfiguration, methodenweise Rollen oder bereits das neue Verzeichnislayout. Kandidatenfilter werden in diesem Paket nicht entfernt.
 
   **Abnahme:** Vertragsprüfungen belegen Referenz-, Namens- und Pfadklassifikation samt Grund und unveränderte Generated-/Projektgrenzen. Ein Produktions-Finding mit Testevidenz hat Produktionsherkunft; ein Test-Test-Cluster hat ausschließlich Testherkunft; ein gemischter Cluster trägt beide Rollen mit sämtlichen Vorkommen, unabhängig vom Repräsentanten. Projekte ohne Marker und leere Projekte bleiben sichtbar. Bestehende Findingvalidierung, Identitäten und Auswahlverträge funktionieren weiterhin. Damit ist die Herkunft für die folgenden Pakete nutzbar, ohne Namensheuristik im Writer zu duplizieren.
+
+  **Abschlussnachweis:** ReviewRunResult liefert sortierte Klassifikationen aller geladenen C#-Projekte mit Rolle und Grund; jedes Finding führt die Rolle aller vertretenen Symbole/Vorkommen und ignoriert Evidenz bei der Herkunft. Gleichzeilige strukturelle Fragmente bleiben über OccurrenceId getrennt; Finding- und Related-Identität sowie Baselineauswahl bleiben davon unberührt. Verifiziert: Build 0 Warnungen/Fehler, FastTests 320/320, IntegrationTests 106/106; `git diff --check` sauber.
 
 - [ ] **2 — Größen- und Kontrollflussanalysen einschließlich Testoptionen umsetzen**
 

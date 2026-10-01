@@ -6,6 +6,8 @@
 
 ## Solution Structure
 
+The shared source-classifier tests also verify the reason for each existing test-project marker. `ReviewRunnerTests` verify that every loaded C# project appears in the run's classification overview, including a project with no recognized test marker and a project with no findings, and that finding occurrence roles come from represented symbols independently of evidence files. Multiple represented occurrences remain separate even when they share the same owner and line.
+
 The solution `AiNetReview.slnx` contains five projects:
 
 - `src/AiNetReview.Core/`: Core library for configuration, analysis, analyses, and current finding results.

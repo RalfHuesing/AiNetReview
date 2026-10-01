@@ -34,6 +34,23 @@ public sealed class ReviewRunner
 
         cancellationToken.ThrowIfCancellationRequested();
         var context = new ReviewContext(solution, config.ProjectRoot, loadedSolution.MarkupDocuments);
+        var projectClassifications = solution.Projects
+            .Where(static project => project.Language == Microsoft.CodeAnalysis.LanguageNames.CSharp)
+            .Select(project =>
+            {
+                if (string.IsNullOrWhiteSpace(project.FilePath))
+                {
+                    throw new AnalysisFailedException("A C# project has no project file path.");
+                }
+
+                var classification = ReviewSourceClassifier.ClassifyProject(project);
+                return new ProjectClassification(
+                    context.GetProjectRelativePath(project.FilePath),
+                    classification.Role,
+                    classification.Reason);
+            })
+            .OrderBy(static classification => classification.ProjectPath, StringComparer.Ordinal)
+            .ToArray();
         var results = new List<ReviewAnalysisRunResult>();
         foreach (var configuredAnalysis in config.Analyses.OrderBy(static analysis => analysis.AnalysisId, StringComparer.Ordinal))
         {
@@ -71,7 +88,8 @@ public sealed class ReviewRunner
 
         return new ReviewRunResult(Array.AsReadOnly(results.ToArray()))
         {
-            Findings = ReviewFindingBuilder.Build(results, loadedSolution.SourceFiles, baselineFiles),
+            Findings = ReviewFindingBuilder.Build(results, loadedSolution.SourceFiles, baselineFiles, projectClassifications),
+            ProjectClassifications = Array.AsReadOnly(projectClassifications),
             HasCSharpSnapshotChanges = baselineFiles is null ? null : HasCSharpSnapshotChanges(loadedSolution.SourceFiles, baselineFiles),
         };
     }
@@ -114,6 +132,9 @@ public sealed record ReviewRunResult(IReadOnlyList<ReviewAnalysisRunResult> Anal
 
     /// <summary>Per-finding source, comparison, and cross-analysis relationships for report generation.</summary>
     public IReadOnlyList<ReviewFinding> Findings { get; init; } = Array.Empty<ReviewFinding>();
+
+    /// <summary>Classification of every loaded C# project, including projects without findings.</summary>
+    public IReadOnlyList<ProjectClassification> ProjectClassifications { get; init; } = Array.Empty<ProjectClassification>();
 
     /// <summary>Null means no baseline; otherwise indicates whether any C# snapshot path was added, changed, or deleted.</summary>
     public bool? HasCSharpSnapshotChanges { get; init; }

@@ -30,6 +30,8 @@ public sealed class FindingDraft
             .OrderBy(static symbol => symbol.ProjectPath, System.StringComparer.Ordinal)
             .ThenBy(static symbol => symbol.SourcePath, System.StringComparer.Ordinal)
             .ThenBy(static symbol => symbol.SymbolId, System.StringComparer.Ordinal)
+            .ThenBy(static symbol => symbol.Line)
+            .ThenBy(static symbol => symbol.OccurrenceId, System.StringComparer.Ordinal)
             .ToArray());
     }
 
@@ -56,4 +58,5 @@ public sealed class FindingDraft
 
 public sealed record FindingEvidence(string SourcePath, int Line, string Label, string Detail, string Snippet);
 
-public sealed record FindingSymbol(string ProjectPath, string SourcePath, string SymbolId, int Line);
+/// <param name="OccurrenceId">Optional range identity for multiple occurrences of one symbol; it does not change symbol identity.</param>
+public sealed record FindingSymbol(string ProjectPath, string SourcePath, string SymbolId, int Line, string? OccurrenceId = null);

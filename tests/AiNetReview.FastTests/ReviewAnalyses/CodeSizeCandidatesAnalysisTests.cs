@@ -474,7 +474,12 @@ public sealed class CodeSizeCandidatesAnalysisTests
             ["Example/Ledger.g.cs"] = "same",
         };
         var reviewed = ReviewFindingBuilder.Build(
-            [new ReviewAnalysisRunResult("code-size-candidates", result)], loadedPaths, baseline);
+            [new ReviewAnalysisRunResult("code-size-candidates", result)], loadedPaths, baseline,
+            findings.SelectMany(static finding => finding.RelatedSymbols)
+                .Select(static symbol => symbol.ProjectPath)
+                .Distinct(StringComparer.Ordinal)
+                .Select(static projectPath => new ProjectClassification(projectPath, ProjectRole.Production, ProjectClassificationReason.NoTestMarker))
+                .ToArray());
         Assert.Equal(new[] { "Example/B.cs" }, Assert.Single(reviewed.Where(item => item.Finding.SubjectId == ledger.SubjectId)).ChangedSourcePaths);
         var validatedTypes = await new CurrentFindingValidator().ValidateAndSortAsync(
             "code-size-candidates", fixture.Context, findings);
