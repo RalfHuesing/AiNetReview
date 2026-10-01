@@ -7,6 +7,8 @@ alwaysApply: true
 # Product boundaries
 
 - Do not treat task specifications as proof of implemented behavior; verify code before describing it as current state.
+- Use information-dense Markdown for human- and agent-read audit reports and navigation. Do not propose or add parallel JSON manifests, machine-readable finding exports, or other duplicate report formats unless the user explicitly requests them. IDs, counts, tables, and links belong in the Markdown; internal validation does not require an exported second representation.
+- This report-format rule does not change existing configuration, baseline, or CLI response contracts.
 - Do not turn review findings into build failures or automatically refactor reviewed code.
 - Do not make architecture, size, complexity, coupling, or context-dependent performance advice a build-breaking analyzer diagnostic. Reserve analyzer errors for concrete technical defects.
 - Do not add dynamic review analysis loading, a separate daemon, or a dependency from Core to CLI or MCP. Follow the contracts in `docs/`.

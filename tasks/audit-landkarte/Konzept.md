@@ -35,7 +35,7 @@ Ein reiner Prompt würde Zuordnung, Vollständigkeitskontrolle und Navigation be
 
 #### Zusätzliche Sicht und unveränderter Prüfauftrag
 
-- Jeder neue Review-Lauf veröffentlicht zusätzlich `audit-map/changed-files/index.md`, Paketberichte und ein JSON-Manifest. Eine getrennte `audit-map/all-findings/`-Sicht verwendet denselben Vertrag für den vollständigen Findings-Bestand.
+- Jeder neue Review-Lauf veröffentlicht zusätzlich `audit-map/changed-files/index.md` und informationsdichte Markdown-Paketberichte. Eine getrennte `audit-map/all-findings/`-Sicht verwendet denselben Vertrag für den vollständigen Findings-Bestand. Die Landkarte wird ausschließlich als Markdown ausgegeben.
 - Der bestehende Root-Index verlinkt die zusätzliche Navigation. Bestehende Analyseberichte, Herkunftsbereiche, CLI-Antwort und Baseline-Verhalten bleiben gültig. Die Landkarte ist eine weitere Sicht auf dieselben validierten Findings, keine neue Review-Analyse.
 - `changed-files` verwendet exakt die vorhandene Reporting-Auswahl, einschließlich der snapshotweiten Auswahl für `missing-test-evidence-candidates`. Die vollständige Sicht benötigt weiterhin einen ausdrücklich beauftragten vollständigen Audit.
 - Quellen ohne eigenes Finding dürfen als Prüfkontext erscheinen. Das erweitert den Finding-Auftrag nicht. Verweise auf Findings außerhalb der gewählten Sicht müssen als außerhalb des Auftrags erkennbar sein und dürfen deren Details nicht in die begrenzte Sicht übernehmen.
@@ -56,15 +56,16 @@ Ein reiner Prompt würde Zuordnung, Vollständigkeitskontrolle und Navigation be
 #### Agententaugliche Ausgabe
 
 - Jedes Finding erhält eine eindeutige ID aus seiner vorhandenen Identität: Analyse, Projekt, repräsentative Quelle, Subject-ID und Discriminator. Paket-IDs ergeben sich aus der Bereichsidentität beziehungsweise der sortierten Bereichsmenge. IDs bleiben bei identischen Eingaben gleich; Umbenennungen und Verschiebungen versprechen keine historische Identität.
-- Paketberichte zeigen ID, Name, Sicht, zuständige Finding-IDs, Analysearten, Quellen, Testkontext, Zuordnungsgründe und Beziehungen zu anderen Paketen. Sie behalten die Originalsignale, Messwerte, Belege, Herkunft und Unsicherheiten bei. Links beziehungsweise Anker führen zu konkreten Findings, nicht ausschließlich zu einer gesamten Analysedatei.
+- Paketberichte zeigen ID, Name, Sicht, zuständige Finding-IDs, Analysearten, Quellen, Testkontext, Zuordnungsgründe und Beziehungen zu anderen Paketen. Kompakte Signale bewahren die ursprüngliche Aussage einschließlich Herkunft und Unsicherheiten; vollständige Messwerte und Belege bleiben über direkte Finding-Links erreichbar. Links beziehungsweise Anker führen zu konkreten Findings, nicht ausschließlich zu einer gesamten Analysedatei.
 - Die Ausgabe kennzeichnet den Zuschnitt als technische Vorgruppierung, nennt angewendete Rückfälle und erkannte Unsicherheiten und macht ausdrücklich, dass statisch nicht belegte Beziehungen fehlen können. Eine gemeinsame Paketzuordnung behauptet weder eine gemeinsame Fehlerursache noch eine unabhängige Änderbarkeit. Der Agent erhält eine belastbare Grundlage, keine fertige fachliche Bewertung.
-- Das versionierte JSON-Manifest enthält Lauf und Sicht, die Findings samt ihren Originalidentitäten und relevanten Belegen, die Paketzuordnung, ausgewiesenen Kontext und Paketbeziehungen. Markdown und JSON entstehen aus derselben Aufbereitung; ein Agent muss Markdown nicht zur Vollständigkeitskontrolle parsen.
+- Markdown enthält alle für den Paketauftrag nötigen Zuordnungen: Lauf, Sicht, Paket- und Finding-IDs, kompakte Signale, Quellen, Testbezüge, Zuordnungsgründe und Paketbeziehungen. Tabellen, Listen und konkrete Links halten die Ausgabe informationsdicht; wiederholte Anleitungstexte und vollständige Kopien bestehender Detailberichte werden vermieden. Originalberichte bleiben die maßgebliche Detailquelle und erhalten direkt adressierbare Findings. Vollständigkeit und konsistente Links werden auf der internen Aufbereitung und den erzeugten Markdown-Berichten geprüft; dafür ist kein zusätzliches Exportformat nötig.
 - Die Paketübersicht nennt eindeutige Findings-Zahlen und macht eine leere Sicht ausdrücklich sichtbar. Die Summe der primär zugeordneten Findings entspricht exakt der Findings-Zahl der Sicht. Überlappender Kontext wird nicht als zusätzlicher Finding-Bestand gezählt.
 - Die gemeinsame Audit-Anleitung enthält einen konkreten Paketauftrag, etwa: „Prüfe im Lauf X, Sicht changed-files, Paket Y alle zuständigen Findings anhand von Implementierung, Aufrufern, Verträgen und Tests. Begründe jede Einstufung und benenne offenen Kontext sowie nicht geprüfte Pakete.“ Ein Paketauftrag ist keine automatische Freigabe zu Änderungen.
 - Die vorhandenen Fragen und Einstufungen gelten weiter: false positive, acceptable design, needs clarification oder actionable. Der Agent untersucht verwandte Signale gemeinsam, hält seine Begründung aber für jedes Finding nachvollziehbar. Ein teilweise bearbeiteter Paketauftrag darf keinen vollständigen Audit behaupten.
 
 ### Nicht
 
+- Kein JSON-Manifest, paralleler maschinenlesbarer Findings-Export oder zweites Ausgabeformat für die Audit-Landkarte.
 - Keine separate Vorstudie, kein wegwerfbarer PoC und keine quantitativ belegte Zeitersparnis als Umsetzungsvoraussetzung.
 - Keine LLM-Abhängigkeit, externe Dienste, MCP-Laufzeitabhängigkeit oder automatische Deutung von Geschäftsdomänen in der Berichtserzeugung.
 - Keine Erkennung von Anwendungskategorien und keine für MCP, Blazor oder andere Frameworks fest eingebauten Paketregeln. Vorhandene Analysebelege bleiben erhalten; daraus folgt keine vollständige Gruppierung von Razor-, XAML-, JavaScript- oder anderen Nicht-C#-Quellen.
@@ -89,7 +90,7 @@ Die automatisierte Abnahme deckt mindestens ab:
 - Keine transitive Verschmelzung durch gemeinsame Testhelfer oder andere Paketbeziehungen; vollständige Vorkommen in gemeinsamen Paketen.
 - Nachvollziehbare direkte Referenzorte als begrenzter Kontext, auch für Quellen ohne eigenes Finding; keine rekursive Kontextausweitung und sichtbare Rückfälle beziehungsweise Unsicherheiten.
 - Unveränderte Baseline- und Scope-Auswahl, insbesondere snapshotweite Testpfadsignale und keine Übernahme ausgeschlossener Finding-Details in `changed-files`.
-- Übereinstimmung zwischen Manifest, Übersicht und Paketberichten; auflösbare Finding-Links, sichere Pfade und vollständige Veröffentlichung auch bei externen Auditwurzeln.
+- Übereinstimmung zwischen interner Zuordnung, Markdown-Übersicht, Paketberichten und originalen Findings; auflösbare Finding-Links, sichere Pfade und vollständige Veröffentlichung auch bei externen Auditwurzeln. Die Landkarte erzeugt ausschließlich Markdown-Dateien.
 - Keine veröffentlichte Teilmenge bei Fehler oder Abbruch und Erhaltung bisheriger Berichtspfade sowie älterer Läufe.
 
 Bei der ersten realen Anwendung wird für ein repräsentatives Paket geprüft, ob ein Agent vom Paketbericht aus die zuständigen Findings, Quellen und zugeordneten Tests untersuchen und jede Einstufung unter ihrer ID berichten kann. Diese begrenzte Untersuchung ist Teil der Umsetzung und ihrer Abnahme, kein Auftrag zur Behebung sämtlicher Repository-Findings.
