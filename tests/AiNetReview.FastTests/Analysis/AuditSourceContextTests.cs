@@ -232,7 +232,7 @@ public sealed class AuditSourceContextTests
         filePath: path,
         compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
         parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
-        metadataReferences: PlatformReferences());
+        metadataReferences: FastTestReferences.CreatePlatformReferences());
 
     private static void AddDocument(AdhocWorkspace workspace, ProjectId projectId, string root, string relativePath, string source) =>
         workspace.AddDocument(DocumentInfo.Create(
@@ -240,22 +240,6 @@ public sealed class AuditSourceContextTests
             Path.GetFileName(relativePath),
             filePath: Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar)),
             loader: TextLoader.From(TextAndVersion.Create(SourceText.From(source), VersionStamp.Create()))));
-
-    private static IEnumerable<MetadataReference> PlatformReferences() =>
-        ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))!
-        .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-        .Where(static path =>
-        {
-            var name = Path.GetFileNameWithoutExtension(path);
-            return !name.StartsWith("xunit", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("nunit", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("mstest", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("microsoft.testplatform", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("microsoft.visualstudio.testplatform", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("microsoft.visualstudio.testtools.unittesting", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("microsoft.testing", StringComparison.OrdinalIgnoreCase);
-        })
-        .Select(static path => MetadataReference.CreateFromFile(path));
 
     private sealed class Fixture(AdhocWorkspace workspace, TestTempDirectory root, ReviewContext context) : IDisposable
     {

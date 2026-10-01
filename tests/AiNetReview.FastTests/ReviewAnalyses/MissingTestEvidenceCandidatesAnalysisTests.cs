@@ -265,7 +265,7 @@ public sealed class MissingTestEvidenceCandidatesAnalysisTests
 #pragma warning restore CA2000
         var root = Path.Combine(Path.GetTempPath(), "AiNetReview-MissingTestEvidenceAnalysis", Guid.NewGuid().ToString("N"));
         var productionId = ProjectId.CreateNewId();
-        var references = PlatformReferences().ToArray();
+        var references = FastTestReferences.CreatePlatformReferences().ToArray();
         workspace.AddProject(ProjectInfo.Create(productionId, VersionStamp.Create(), "Example.Core", "Example.Core", LanguageNames.CSharp,
             filePath: Path.Combine(root, "Example.Core.csproj"),
             compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary), metadataReferences: references));
@@ -289,22 +289,6 @@ public sealed class MissingTestEvidenceCandidatesAnalysisTests
         workspace.AddDocument(DocumentInfo.Create(DocumentId.CreateNewId(projectId), name, filePath: path,
             loader: TextLoader.From(TextAndVersion.Create(SourceText.From(source), VersionStamp.Create()))));
 
-    private static IEnumerable<MetadataReference> PlatformReferences() =>
-        ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))!
-        .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-        .Where(static path =>
-        {
-            var name = Path.GetFileNameWithoutExtension(path);
-            return !name.StartsWith("xunit", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("nunit", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("mstest", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("microsoft.testplatform", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("microsoft.visualstudio.testplatform", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("microsoft.visualstudio.testtools.unittesting", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("microsoft.testing", StringComparison.OrdinalIgnoreCase);
-        })
-        .Select(static path => MetadataReference.CreateFromFile(path));
-
     private sealed class Fixture(AdhocWorkspace workspace, ReviewContext context) : IDisposable
     {
         public ReviewContext Context { get; } = context;
@@ -320,7 +304,7 @@ public sealed class MissingTestEvidenceCandidatesAnalysisTests
 
         private static MetadataReference CreateReference()
         {
-            var compilation = CSharpCompilation.Create("xunit.analysis.contracts", [CSharpSyntaxTree.ParseText(Source)], PlatformReferences(),
+            var compilation = CSharpCompilation.Create("xunit.analysis.contracts", [CSharpSyntaxTree.ParseText(Source)], FastTestReferences.CreatePlatformReferences(),
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
             using var assembly = new MemoryStream();
             var result = compilation.Emit(assembly);

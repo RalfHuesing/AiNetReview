@@ -215,7 +215,7 @@ public sealed class TransparentForwardingClassifierTests
                 filePath: Path.Combine(root.DirectoryPath, name + ".csproj"),
                 compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
                 parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
-                metadataReferences: PlatformReferences()));
+                metadataReferences: FastTestReferences.CreatePlatformReferences()));
         }
 
         foreach (var source in sources)
@@ -234,22 +234,6 @@ public sealed class TransparentForwardingClassifierTests
 
         return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root.DirectoryPath), root);
     }
-
-    private static MetadataReference[] PlatformReferences() =>
-        ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))!
-            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-            .Where(static path =>
-            {
-                var name = Path.GetFileNameWithoutExtension(path);
-                return !name.StartsWith("xunit", StringComparison.OrdinalIgnoreCase)
-                    && !name.StartsWith("nunit", StringComparison.OrdinalIgnoreCase)
-                    && !name.StartsWith("mstest", StringComparison.OrdinalIgnoreCase)
-                    && !name.StartsWith("microsoft.testplatform", StringComparison.OrdinalIgnoreCase)
-                    && !name.StartsWith("microsoft.visualstudio.testplatform", StringComparison.OrdinalIgnoreCase)
-                    && !name.StartsWith("microsoft.testing", StringComparison.OrdinalIgnoreCase);
-            })
-            .Select(static path => MetadataReference.CreateFromFile(path))
-            .ToArray();
 
     private sealed class AnalysisFixture(AdhocWorkspace workspace, ReviewContext context, IDisposable root) : IDisposable
     {

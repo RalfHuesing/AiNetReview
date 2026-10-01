@@ -153,7 +153,7 @@ public sealed class SolutionReferenceIndexTests
             filePath: Path.Combine(root.DirectoryPath, projectName + ".csproj"),
             compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
             parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
-            metadataReferences: PlatformReferences()));
+            metadataReferences: FastTestReferences.CreatePlatformReferences()));
         workspace.AddDocument(DocumentInfo.Create(
             DocumentId.CreateNewId(projectId),
             "Source.cs",
@@ -212,7 +212,7 @@ public sealed class SolutionReferenceIndexTests
         filePath: Path.Combine(root, name + ".csproj"),
         compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
         parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
-        metadataReferences: PlatformReferences());
+        metadataReferences: FastTestReferences.CreatePlatformReferences());
 
     private static void AddDocument(AdhocWorkspace workspace, ProjectId projectId, string root, string name, string source) =>
         workspace.AddDocument(DocumentInfo.Create(
@@ -226,22 +226,6 @@ public sealed class SolutionReferenceIndexTests
         var compilation = await project.GetCompilationAsync();
         return compilation!.GetTypeByMetadataName(name == "Widget" ? "Product.Widget" : name)!;
     }
-
-    private static IEnumerable<MetadataReference> PlatformReferences() =>
-        ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))!
-        .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-        .Where(static assemblyPath =>
-        {
-            var assemblyName = Path.GetFileNameWithoutExtension(assemblyPath);
-            return !assemblyName.StartsWith("xunit", StringComparison.OrdinalIgnoreCase)
-                && !assemblyName.StartsWith("nunit", StringComparison.OrdinalIgnoreCase)
-                && !assemblyName.StartsWith("mstest", StringComparison.OrdinalIgnoreCase)
-                && !assemblyName.StartsWith("microsoft.testplatform", StringComparison.OrdinalIgnoreCase)
-                && !assemblyName.StartsWith("microsoft.visualstudio.testplatform", StringComparison.OrdinalIgnoreCase)
-                && !assemblyName.StartsWith("microsoft.visualstudio.testtools.unittesting", StringComparison.OrdinalIgnoreCase)
-                && !assemblyName.StartsWith("microsoft.testing", StringComparison.OrdinalIgnoreCase);
-        })
-        .Select(static assemblyPath => MetadataReference.CreateFromFile(assemblyPath));
 
     private sealed class ProjectFixture : IDisposable
     {

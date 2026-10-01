@@ -199,20 +199,7 @@ public sealed class MissingTestEvidenceCandidateSelectorTests
     {
         var root = Path.Combine(Path.GetTempPath(), "AiNetReview-MissingTestEvidence-" + Guid.NewGuid().ToString("N"));
         var projectId = ProjectId.CreateNewId();
-        var references = ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))!
-            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-            .Where(static path =>
-            {
-                var name = Path.GetFileNameWithoutExtension(path);
-                return !name.StartsWith("xunit", StringComparison.OrdinalIgnoreCase)
-                    && !name.StartsWith("nunit", StringComparison.OrdinalIgnoreCase)
-                    && !name.StartsWith("mstest", StringComparison.OrdinalIgnoreCase)
-                    && !name.StartsWith("microsoft.testplatform", StringComparison.OrdinalIgnoreCase)
-                    && !name.StartsWith("microsoft.visualstudio.testplatform", StringComparison.OrdinalIgnoreCase)
-                    && !name.StartsWith("microsoft.visualstudio.testtools.unittesting", StringComparison.OrdinalIgnoreCase)
-                    && !name.StartsWith("microsoft.testing", StringComparison.OrdinalIgnoreCase);
-            })
-            .Select(static path => MetadataReference.CreateFromFile(path));
+        var references = FastTestReferences.CreatePlatformReferences();
         workspace.AddProject(ProjectInfo.Create(
             projectId,
             VersionStamp.Create(),

@@ -946,7 +946,7 @@ public sealed class DeadCodeCandidatesAnalysisTests
                 filePath: Path.Combine(root.DirectoryPath, spec.Name + ".csproj"),
                 compilationOptions: new CSharpCompilationOptions(outputKind, mainTypeName: mainTypeName),
                 parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
-                metadataReferences: PlatformReferences().Append(
+                metadataReferences: FastTestReferences.CreatePlatformReferences().Append(
                     MetadataReference.CreateFromFile(typeof(Microsoft.JSInterop.JSInvokableAttribute).Assembly.Location))
                     .Concat(additionalReferences ?? Array.Empty<MetadataReference>())));
         }
@@ -977,7 +977,7 @@ public sealed class DeadCodeCandidatesAnalysisTests
         var compilation = CSharpCompilation.Create(
             assemblyName,
             [CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.Preview))],
-            PlatformReferences(),
+            FastTestReferences.CreatePlatformReferences(),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         using var image = new MemoryStream();
         var emit = compilation.Emit(image);
@@ -1089,22 +1089,6 @@ public sealed class DeadCodeCandidatesAnalysisTests
             [System.AttributeUsage(System.AttributeTargets.Method)] public sealed class GlobalTestCleanupAttribute : System.Attribute { }
         }
         """;
-
-    private static IEnumerable<MetadataReference> PlatformReferences() =>
-        ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))!
-        .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-        .Where(static path =>
-        {
-            var name = Path.GetFileNameWithoutExtension(path);
-            return !name.StartsWith("xunit", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("nunit", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("mstest", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("microsoft.testplatform", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("microsoft.visualstudio.testplatform", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("microsoft.visualstudio.testtools.unittesting", StringComparison.OrdinalIgnoreCase)
-                && !name.StartsWith("microsoft.testing", StringComparison.OrdinalIgnoreCase);
-        })
-        .Select(static path => MetadataReference.CreateFromFile(path));
 
     private sealed class AnalysisFixture(AdhocWorkspace workspace, ReviewContext context, IDisposable root) : IDisposable
     {

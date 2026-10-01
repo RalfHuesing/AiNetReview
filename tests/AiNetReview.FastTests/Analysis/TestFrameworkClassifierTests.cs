@@ -272,7 +272,7 @@ public sealed class TestFrameworkClassifierTests
         bool includeFrameworkMetadata = true,
         string projectName = "Example.Tests")
     {
-        var references = PlatformReferences().ToList();
+        var references = FastTestReferences.CreatePlatformReferences().ToList();
         if (includeFrameworkMetadata)
         {
             references.Add(TestFrameworkMetadata.Reference);
@@ -305,20 +305,6 @@ public sealed class TestFrameworkClassifierTests
         Assert.Empty(errors);
         return new CompilationFixture(workspace, project, project.GetDocument(documentId)!);
     }
-
-    private static IEnumerable<MetadataReference> PlatformReferences() =>
-        ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))!
-        .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-        .Where(static path =>
-        {
-            var assemblyName = Path.GetFileName(path);
-            return !assemblyName.StartsWith("xunit", StringComparison.OrdinalIgnoreCase)
-                && !assemblyName.StartsWith("nunit", StringComparison.OrdinalIgnoreCase)
-                && !assemblyName.StartsWith("mstest", StringComparison.OrdinalIgnoreCase)
-                && !assemblyName.StartsWith("Microsoft.VisualStudio.TestPlatform", StringComparison.OrdinalIgnoreCase)
-                && !assemblyName.StartsWith("Microsoft.VisualStudio.TestTools.UnitTesting", StringComparison.OrdinalIgnoreCase);
-        })
-        .Select(static path => MetadataReference.CreateFromFile(path));
 
     private sealed class CompilationFixture(AdhocWorkspace workspace, Project project, Document document) : IDisposable
     {
@@ -423,7 +409,7 @@ public sealed class TestFrameworkClassifierTests
             var compilation = CSharpCompilation.Create(
                 "FrameworkContracts",
                 [syntaxTree],
-                PlatformReferences(),
+                FastTestReferences.CreatePlatformReferences(),
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
             using var assembly = new MemoryStream();
             var emit = compilation.Emit(assembly);

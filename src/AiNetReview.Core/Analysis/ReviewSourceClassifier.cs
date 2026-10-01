@@ -119,7 +119,7 @@ internal static class ReviewSourceClassifier
         return false;
     }
 
-    private static bool IsTestReferenceAssembly(string? display)
+    internal static bool IsTestReferenceAssembly(string? display)
     {
         if (string.IsNullOrWhiteSpace(display))
         {
