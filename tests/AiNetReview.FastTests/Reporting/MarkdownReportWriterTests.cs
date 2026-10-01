@@ -521,7 +521,10 @@ public sealed class MarkdownReportWriterTests
             && content.Contains("src folder/one/Widget.cs", StringComparison.Ordinal));
         Assert.Contains(folderContents, content => content.Contains("area-b-widget", StringComparison.Ordinal)
             && content.Contains("src folder/one/Widget.cs", StringComparison.Ordinal));
-        Assert.Contains("[source folder]", await File.ReadAllTextAsync(Path.Combine(firstDirectory, packageId + ".md")), StringComparison.Ordinal);
+        var sharedPackageMarkdown = await File.ReadAllTextAsync(Path.Combine(firstDirectory, packageId + ".md"));
+        var secondaryPackageMarkdown = await File.ReadAllTextAsync(Path.Combine(firstDirectory, secondaryPackageId + ".md"));
+        Assert.Contains("#area-area-context-source)", sharedPackageMarkdown, StringComparison.Ordinal);
+        Assert.Equal(2, secondaryPackageMarkdown.Split("#area-area-a-widget)", StringSplitOptions.None).Length - 1);
         AssertMarkdownReportLinksResolve(firstRoot);
 
         var firstFiles = Directory.GetFiles(firstDirectory, "*.md", SearchOption.AllDirectories)

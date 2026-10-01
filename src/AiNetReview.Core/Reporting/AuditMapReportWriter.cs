@@ -443,7 +443,7 @@ internal static class AuditMapReportWriter
                     .Append(MarkdownReportWriter.EscapeInline(row.Area.IdentityReason));
                 if (links.Count > 0)
                 {
-                    builder.Append(" — navigation: ").Append(string.Join(", ", links.Select(path => "[source folder](" + ToMarkdownLink(reportPath, path) + ")")));
+                    builder.Append(" — navigation: ").Append(string.Join(", ", links.Select(path => "[source folder](" + ToMarkdownLink(reportPath, path) + "#area-" + row.Area.Id + ")")));
                 }
                 builder.Append('\n');
             }
