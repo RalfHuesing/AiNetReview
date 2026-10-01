@@ -113,17 +113,60 @@ Für die anderen sechs Analysen wird in diesem Vorhaben kein `testOptions` einge
 Der geplante Konfigurationsvertrag lautet:
 
 - `testOptions` ist ein optionales Objekt innerhalb des jeweiligen Analyseeintrags unter `analyses`, neben dessen bisherigem `enabled` und dessen bisherigen Optionen.
-- Zuerst werden die bisherigen effektiven Analyseoptionen aus Deskriptordefaults und expliziter Konfiguration ermittelt. Testprojekte übernehmen diese Werte; nur explizit vorhandene `testOptions`-Einträge ersetzen einzelne Werte. Fehlendes oder leeres `testOptions` ist vollständige Vererbung, keine zweite versteckte Defaulttabelle.
+- Zuerst werden die bisherigen effektiven Analyseoptionen aus Deskriptordefaults und expliziter Konfiguration ermittelt. Testprojekte übernehmen diese Werte; nur explizit vorhandene `testOptions`-Einträge ersetzen einzelne Werte. Fehlendes oder leeres `testOptions` ist vollständige Vererbung. Die vollständige Standarddatei enthält dagegen explizite Testwerte, die ab dann unabhängig von späteren Änderungen der allgemeinen Optionen wirken.
 - Die bisherigen Optionen gelten weiterhin für Produktionsprojekte. Die Testüberschreibungen gelten projektweise für sämtlichen eingeschlossenen Code eines zentral als Test klassifizierten Projekts, einschließlich Helpers und Fixtures. Sie sind keine rollenbasierte Einzelmethodenerkennung.
 - Pro Überschreibung gelten dieselben Typen und Wertebereiche wie für die vorhandene Option: Perzentil 50 bis 99, Größenwerte positive 32-Bit-Ganzzahlen. Unbekannte, doppelte oder falsch typisierte Einträge scheitern an der Eingabevalidierung; auch deaktivierte Analysen validieren ihre Konfiguration wie bisher.
 - `enabled`, API-Modi, neue Parameter für feste Kontrollflussbedingungen oder verschachtelte Profile sind in `testOptions` nicht zulässig. Tests bleiben bei aktivierter Analyse reguläre Ziele; es gibt keinen separaten Test-Aus-Schalter.
-- Bestehende Konfigurationen behalten ihre Werte und benötigen keine Ergänzung. Generierte Standardkonfigurationen enthalten weiterhin die vorhandenen Analyseoptionen; sie erzeugen kein `testOptions` mit kopierten Zahlen. Ein Override wird bewusst im Zielprojekt gesetzt.
-- Root-Scope-Übersicht und betroffene Analyseberichte nennen die effektiven Produktions- und Testwerte getrennt, wenn diese voneinander abweichen. Bei identischen Werten genügt eine gemeinsame Darstellung mit explizitem Hinweis auf die Vererbung. Auswahlgründe und Kriterien beziehen sich stets auf die tatsächlich wirksamen Werte.
+- Bestehende Konfigurationen behalten ihre Werte und benötigen keine Ergänzung. Jede neu generierte Standardkonfiguration und die mitgelieferte Repository-Beispieldatei enthalten sämtliche unterstützten Optionen mit expliziten Deskriptordefaults, einschließlich aller unterstützten `testOptions`-Einträge. Vorhandene benutzerdefinierte Dateien werden nicht automatisch überschrieben.
+- Root-Scope-Übersicht und betroffene Analyseberichte nennen die effektiven Produktions- und Testwerte getrennt, wenn diese voneinander abweichen. Bei identischen Werten genügt eine gemeinsame Darstellung; sie unterscheidet ausdrücklich konfigurierte Testwerte von geerbten Werten. Auswahlgründe und Kriterien beziehen sich stets auf die tatsächlich wirksamen Werte.
 - Die Ordnerzuordnung `production`/`tests`/`mixed` steuert keine Analyseoption. Parameterwahl erfolgt anhand der zentral klassifizierten Kandidatenquelle vor der Berichtserstellung.
 
 Ohne Überschreibungen gilt der oben beschriebene Ausgangsfall mit 3.000 Dateizeilen und 1.000 Member-Codezeilen unverändert. Explizit höhere Werte können Findings aus der Auswahl nehmen; die effektiven Werte müssen deshalb sichtbar bleiben. Eine Änderung der Optionen markiert keine unveränderte Quelldatei künstlich als geändert. Die Baseline bleibt dateibasiert; für eine vollständige Neubewertung nach Parameteränderungen wird die vollständige Findings-View benötigt.
 
 Vor abweichenden Testwerten sollte ein repräsentativer Audit zeigen, welcher Messwert welchen unnötigen Prüfaufwand erzeugt. Eine große Sammlung unabhängiger Testfälle oder deklarativer Daten kann andere Datei-/Typgrenzen rechtfertigen; ein schwer nachvollziehbarer 1.000-Zeilen-Test wird nicht durch seine Projektrolle verständlicher. Höhere Standardschwellen sind ohne solche Beobachtungen nicht begründet.
+
+### Vollständige Standard-JSON als Optionsübersicht
+
+Verbindliche Nutzeranforderung: Die Standarddatei zeigt immer alle verfügbaren Konfigurationsoptionen mit passenden Standardwerten. Das gilt für alle registrierten Analysen und deren `enabled`, nicht nur für die beiden Analysen mit neuen Testparametern. Auch Arrays und andere nichtnumerische Optionen sind explizit sichtbar; beispielsweise gehören `apiSurface: "external_library"` und `entryPointAttributes: []` zu `dead-code-candidates`.
+
+Der bestehende [DefaultReviewConfigGenerator](../../src/AiNetReview.Core/Configuration/DefaultReviewConfigGenerator.cs) gibt bereits `enabled` und alle deklarierten Optionsdefaults aus. Die Erweiterung muss diesen Vertrag einschließlich verschachtelter Testoptionen erhalten. Die derzeitige Repository-Beispieldatei lässt bei `dead-code-candidates` dessen zwei Optionsdefaults aus; sie wird bei der späteren Umsetzung ebenfalls vervollständigt. Generator, Beispieldatei und Konfigurationsreferenz müssen denselben unterstützten Optionsumfang abbilden.
+
+Die Teststandardwerte werden aus derselben autoritativen Optionsbeschreibung wie die allgemeinen Standardwerte gewonnen. Die JSON enthält beide Wertesätze für die Übersicht; die Implementierung pflegt keine davon unabhängige zweite Defaulttabelle. Die neuen Testobjekte werden vollständig ausgegeben:
+
+```json
+{
+  "code-size-candidates": {
+    "enabled": true,
+    "percentile": 90,
+    "minMemberCodeLines": 80,
+    "extremeMemberCodeLines": 300,
+    "minTypeCodeLines": 300,
+    "extremeTypeCodeLines": 800,
+    "extremeFileLines": 1000,
+    "extremeFileUtf8Bytes": 131072,
+    "testOptions": {
+      "percentile": 90,
+      "minMemberCodeLines": 80,
+      "extremeMemberCodeLines": 300,
+      "minTypeCodeLines": 300,
+      "extremeTypeCodeLines": 800,
+      "extremeFileLines": 1000,
+      "extremeFileUtf8Bytes": 131072
+    }
+  },
+  "method-control-flow-outliers": {
+    "enabled": true,
+    "percentile": 90,
+    "testOptions": {
+      "percentile": 90
+    }
+  }
+}
+```
+
+Dies ist ein Ausschnitt aus `analyses`, keine vollständige Standarddatei. Die übrigen registrierten Analysen und ihre Optionen müssen in der tatsächlichen Standarddatei ebenfalls vollständig enthalten sein. Analysen ohne unterstützte Testoptionen erhalten kein bedeutungsloses leeres `testOptions`-Objekt. Feste, nicht konfigurierbare Messregeln werden nicht als scheinbar editierbare Optionen ausgegeben.
+
+Explizite Testwerte sind echte Einstellungen. Wer nach Erzeugung beispielsweise den allgemeinen `extremeFileLines`-Wert ändert, ändert damit nicht den expliziten Testwert. Für gewünschte Vererbung kann der Nutzer einzelne Testeinträge oder das Testobjekt entfernen; die vollständige Standarddatei bleibt trotzdem der Ausgangspunkt mit allen Optionen. Es werden keine `null`-Platzhalter, Kommentare statt Werten oder impliziten Teststandardwerte verwendet.
 
 ### Ungenutzter Testcode braucht einen eigenen Schutzvertrag
 
@@ -232,6 +275,7 @@ Auch im Testbereich gelten die bestehenden begründeten Klassifikationen: false 
 - `missing-test-evidence-candidates` behält Produktionsfunktionen als Ziel und Testcode als Belegquelle; vorhandene Pfad- und Unsicherheitsgrenzen bleiben ehrlich beschrieben.
 - Die zentrale Klassifikation wird als Herkunft genutzt und transparent erklärt. Sie darf für die sieben Analysen kein pauschaler Ausschluss mehr sein.
 - Die bestehenden numerischen Größenoptionen und das Kontrollfluss-Perzentil können über das definierte `testOptions`-Objekt für Testprojekte überschrieben werden. Vererbung, Validierung und Reportdarstellung sind eindeutig; Standardwerte und Messregeln bleiben identisch.
+- Neu generierte Standarddateien und die Repository-Beispieldatei zeigen alle unterstützten Optionen aller registrierten Analysen einschließlich vollständiger Testobjekte mit expliziten Standardwerten aus der autoritativen Optionsbeschreibung.
 - Der definierte Dead-Code-Schutzkatalog für Testframework-Einstiegspunkte, Lebenszyklus und Datenbindungen einschließlich lokaler/breiter Unsicherheit wird automatisiert abgesichert.
 - Reports trennen `production`, `tests` und `mixed` innerhalb eines gemeinsamen Reportlaufs mit je beiden Views. Der Root-Index macht alle drei Bereiche zum regulären Auditumfang; Gruppen erscheinen je View vollständig und einmal. Baseline, Related-Verträge, Sortierung, Zählsemantik und atomare Publikation bleiben erhalten.
 - Die Rolle von AI-geschriebenem gewöhnlichem Code wird von tatsächlich generierten Artefakten unterschieden; bestehende Generated-/Pfadgrenzen bleiben erhalten.
@@ -266,11 +310,11 @@ Die Abnahme prüft beobachtbares Analyse- und Reportverhalten; vorhandene Tests 
 8. **Baseline:** Ohne Baseline enthalten beide Views alle aktuellen Findings. Testdateiänderungen funktionieren mit bestehender Baseline; unveränderter Testcode wird bei einem gewöhnlichen Datei-basierten Finding nicht künstlich als geändert markiert. Die spezielle Snapshot-Auswahl für fehlende Testpfade bleibt erhalten.
 9. **Produktgrenzen:** Der Reviewlauf bleibt ein Signalbericht; Findings erzeugen weder Refactoring noch Buildfehler. Fehler oder Abbruch veröffentlichen keinen partiellen Report.
 10. **Praktischer Agentenaudit:** Eine repräsentative Lösung mit langen Tests, String-Fixtures, nachvollziehbaren Wiederholungen und Testinfrastruktur wird ausdrücklich als Voll-Audit beauftragt. Der Root-Auftrag umfasst `production`, `tests` und `mixed`; auch bei getrennter Bearbeitung gehen ihre Ergebnisse in die Abschlussbewertung ein. Ein gesonderter Teilauftrag behauptet keinen Voll-Audit und darf relevante Quellen anderer Bereiche als Kontext einbeziehen. Jede Signalart wird anhand konkreter Quellen als nützlich, akzeptables Design, Fehlalarm oder klärungsbedürftig bewertet. Laufzeit und Findingumfang werden zum Erkennen von Vergleichs-/Reportproblemen festgehalten; größere Testbestände dürfen nicht durch stille Top-N-Filter verschwinden. Das prüft Verständlichkeit und Interpretationsrisiken, verspricht aber keine objektive Quote „guter“ Tests.
-11. **Testoptionen:** Alte Konfigurationen, fehlende/leere Overrides und partielle Overrides ergeben die definierte Vererbung. Ein Testoverride ändert qualifizierende Test-Findings, aber keine Produktions-Findings; niedrigere und höhere Grenzen sowie Perzentiländerungen werden an beobachtbaren Auswahlunterschieden geprüft. Beide effektiven Wertesätze erscheinen korrekt im Report. Unbekannte/doppelte Keys, `enabled`, falsche Typen und Grenzwertverletzungen scheitern auch bei deaktivierten Analysen. Andere Analysen akzeptieren kein `testOptions`. Standardgenerierung erzeugt keine zweite kopierte Defaulttabelle; reine Optionsänderungen verändern keine Dateihashes oder Datei-basierte Auswahl.
+11. **Testoptionen:** Alte Konfigurationen, fehlende/leere Overrides und partielle Overrides ergeben die definierte Vererbung. Ein Testoverride ändert qualifizierende Test-Findings, aber keine Produktions-Findings; niedrigere und höhere Grenzen sowie Perzentiländerungen werden an beobachtbaren Auswahlunterschieden geprüft. Beide effektiven Wertesätze erscheinen korrekt im Report. Unbekannte/doppelte Keys, `enabled`, falsche Typen und Grenzwertverletzungen scheitern auch bei deaktivierten Analysen. Andere Analysen akzeptieren kein `testOptions`. Explizite Testwerte bleiben bei Änderungen allgemeiner Werte erhalten; entfernte Testeinträge erben wieder. Reine Optionsänderungen verändern keine Dateihashes oder Datei-basierte Auswahl.
+12. **Vollständige Standarddatei:** Generierte JSON und Repository-Beispieldatei enthalten jede registrierte Analyse, deren `enabled` und sämtliche unterstützten Optionen mit korrekten Standardwerten, einschließlich aller Testunteroptionen, Arrays und API-Modi. Vollständigkeit und Werte werden gegen die autoritativen Optionsbeschreibungen geprüft; ein neu hinzugefügter Parameter darf nicht unbemerkt aus der Übersicht fehlen. Keine unbelegten Keys oder leeren Testobjekte bei Analysen ohne Testoptionen. Die vollständige Datei lässt sich validieren und in beide Kommandos laden; vorhandene Benutzerkonfigurationen werden dabei nicht überschrieben.
 
 ## Offene Entscheidungen (nur Draft)
 
 1. **Reportgliederung:** Nach der zusätzlichen Nutzeridee empfiehlt dieser Draft `production`, `tests` und `mixed` mit je `changed-files` und `all-findings` innerhalb desselben Reportlaufs. Die Zustimmung zu dieser Variante einschließlich des dritten Bereichs für gemischte Findings steht aus.
-2. **Testoptionen:** Nach der Frage zur unterschiedlichen Beurteilung empfiehlt dieser Draft explizite Überschreibungen für die bestehenden Größenparameter und das Kontrollfluss-Perzentil, mit vollständiger Vererbung und identischen Standardwerten. Die Zustimmung zu dieser begrenzten Konfigurationsmöglichkeit steht aus.
 
 Das Ergebnis dieser [Konzeptrolle](../../.agents/agent-workflow/01-konzept-planung.md) bleibt `status: draft`. Die separate [Konzeptprüfung und Freigabe](../../.agents/agent-workflow/02-konzept-pruefung-und-freigabe.md) wird vom Nutzer als Schritt 2 gestartet. Bis dahin ist dies ein diskutierbarer, persistierter Entwurf.
