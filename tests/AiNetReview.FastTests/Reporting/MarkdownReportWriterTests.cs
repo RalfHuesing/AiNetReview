@@ -20,6 +20,71 @@ using AiNetReview.Core.ReviewAnalyses.StructuralDuplicationCandidates;
 public sealed class MarkdownReportWriterTests
 {
     [Fact]
+    public async Task WriteAsync_UsesOriginalProjectAndLineForEveryAssignedTestOccurrence()
+    {
+        using var temp = TestTempDirectory.Create();
+        var analysis = new ReportAnalysis("fixture-analysis", "Fixture analysis", "default");
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        const string productionProject = "src/Sample.csproj";
+        const string testProject = "tests/Sample.Tests.csproj";
+        const string productionPath = "src/Widget.cs";
+        const string testPath = "tests/WidgetTests.cs";
+        const string areaId = "area-production-widget";
+        const string packageId = "package-mixed-widget";
+        var symbols = new[]
+        {
+            new FindingSymbol(productionProject, productionPath, "M:Sample.Widget.Run", 3, "fragment-a"),
+            new FindingSymbol(productionProject, productionPath, "M:Sample.Widget.Run", 6, "fragment-b"),
+            new FindingSymbol(testProject, testPath, "M:Sample.Tests.WidgetTests.Run", 17, "test-a"),
+            new FindingSymbol(testProject, testPath, "M:Sample.Tests.WidgetTests.Run", 22, "test-b"),
+        };
+        var occurrences = new[]
+        {
+            new ReviewFindingOccurrence(symbols[0], ProjectRole.Production),
+            new ReviewFindingOccurrence(symbols[1], ProjectRole.Production),
+            new ReviewFindingOccurrence(symbols[2], ProjectRole.Tests),
+            new ReviewFindingOccurrence(symbols[3], ProjectRole.Tests),
+        };
+        var draft = new FindingDraft(productionProject, productionPath, "M:Sample.Widget.Run", "shared-fragment", 4,
+            "A shared fragment has two production and two test owner occurrences.", new Dictionary<string, double>(), [],
+            relatedSymbols: symbols, subjectSymbols: symbols);
+        var finding = new ReviewFinding(analysis.Descriptor.AnalysisId, draft, [productionPath, testPath], [], [productionPath, testPath])
+        {
+            Occurrences = occurrences,
+            SubjectOccurrences = occurrences,
+        };
+        var productionArea = new AuditFindingArea(areaId, productionProject, ProjectRole.Production, "Widget", "type:Widget", null,
+            [new AuditSourceLocation(productionPath, default, 1, 1, 9, 1)], "source type", [], []);
+        var assignments = new[]
+        {
+            new AuditFindingAreaAssignment(areaId, ProjectRole.Production, productionProject, productionPath, symbols[0].SymbolId, symbols[0].Line, symbols[0].OccurrenceId, "production owner"),
+            new AuditFindingAreaAssignment(areaId, ProjectRole.Production, productionProject, productionPath, symbols[1].SymbolId, symbols[1].Line, symbols[1].OccurrenceId, "production owner"),
+            new AuditFindingAreaAssignment(areaId, ProjectRole.Tests, testProject, testPath, symbols[2].SymbolId, symbols[2].Line, symbols[2].OccurrenceId, "one direct production type reference"),
+            new AuditFindingAreaAssignment(areaId, ProjectRole.Tests, testProject, testPath, symbols[3].SymbolId, symbols[3].Line, symbols[3].OccurrenceId, "one direct production type reference"),
+        };
+        var packaged = new AuditPackagedFinding("finding-mixed-fragment", finding, [areaId], assignments);
+        var package = new AuditFindingPackage(packageId, [productionArea], [packaged], [], [], [], []);
+        var view = new AuditFindingPackageView(true, [productionArea], [package], [], 1, true);
+        var result = new ReviewRunResult([new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([draft]))])
+        {
+            Findings = [finding],
+            HasCSharpSnapshotChanges = true,
+            AuditPackages = new AuditFindingPackageViews(view, view with { IsChangedFiles = false }),
+        };
+
+        var published = await new MarkdownReportWriter().WriteAsync(config, result);
+        var packageMarkdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, published.RunId,
+            "audit-map", "changed-files", packageId + ".md"));
+
+        Assert.Contains("[src/Widget.cs:3](../../../../src/Widget.cs#L3): production owner (occurrence `fragment-a`) — project `src/Sample.csproj`", packageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("[src/Widget.cs:6](../../../../src/Widget.cs#L6): production owner (occurrence `fragment-b`) — project `src/Sample.csproj`", packageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("[tests/WidgetTests.cs:17](../../../../tests/WidgetTests.cs#L17): one direct production type reference (occurrence `test-a`) — project `tests/Sample.Tests.csproj`", packageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("[tests/WidgetTests.cs:22](../../../../tests/WidgetTests.cs#L22): one direct production type reference (occurrence `test-b`) — project `tests/Sample.Tests.csproj`", packageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("Widget.cs:3", packageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("Widget.cs:6", packageMarkdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task WriteAsync_PublishesMarkdownAuditMapsWithDirectFindingAnchorsAndStrictChangedScope()
     {
         using var temp = TestTempDirectory.Create();
@@ -46,12 +111,12 @@ public sealed class MarkdownReportWriterTests
         var contextArea = new AuditFindingArea(contextId, "Sample/Sample.csproj", ProjectRole.Production, "Caller", null, "src/Caller.cs",
             [], "file fallback", [], [areaId]);
         var packagedFinding = new AuditPackagedFinding("finding-stable", reviewFinding, [areaId],
-            [new AuditFindingAreaAssignment(areaId, ProjectRole.Production, "src/Sample.cs", "M:Sample.Widget.Run", "subject symbol belongs to source type")]);
+            [new AuditFindingAreaAssignment(areaId, ProjectRole.Production, "Sample/Sample.csproj", "src/Sample.cs", "M:Sample.Widget.Run", 4, null, "subject symbol belongs to source type")]);
         var package = new AuditFindingPackage(packageId, [area], [packagedFinding], [], [], [], []);
         var excludedArea = new AuditFindingArea("area-other-test", "Sample/Sample.csproj", ProjectRole.Production, "Other", "type:Other", null,
             [new AuditSourceLocation("src/Other.cs", default, 10, 1, 14, 1)], "source type", [], []);
         var excludedPackagedFinding = new AuditPackagedFinding("finding-excluded", excludedFinding, [excludedArea.Id],
-            [new AuditFindingAreaAssignment(excludedArea.Id, ProjectRole.Production, "src/Other.cs", "M:Sample.Other.Run", "subject symbol belongs to source type")]);
+            [new AuditFindingAreaAssignment(excludedArea.Id, ProjectRole.Production, "Sample/Sample.csproj", "src/Other.cs", "M:Sample.Other.Run", 12, null, "subject symbol belongs to source type")]);
         var excludedPackage = new AuditFindingPackage("package-excluded", [excludedArea], [excludedPackagedFinding], [], [], [], []);
         var changedView = new AuditFindingPackageView(true, [area, contextArea], [package], [], 1, true);
         var allView = new AuditFindingPackageView(false, [area, contextArea, excludedArea], [package, excludedPackage],

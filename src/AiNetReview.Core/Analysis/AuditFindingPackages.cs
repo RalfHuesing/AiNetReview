@@ -210,9 +210,12 @@ internal static class AuditFindingPackages
 
         var identity = FindingIdentity(finding);
         var areaAssignments = occurrenceAreas.Select(item => new AuditFindingAreaAssignment(
-                item.AreaId, item.Occurrence.Role, item.Occurrence.Symbol.SourcePath, item.Occurrence.Symbol.SymbolId, item.Reason))
-            .OrderBy(static item => item.AreaId, StringComparer.Ordinal).ThenBy(static item => item.SourcePath, StringComparer.Ordinal)
-            .ThenBy(static item => item.SymbolId, StringComparer.Ordinal).ThenBy(static item => item.Role).ToArray();
+                item.AreaId, item.Occurrence.Role, item.Occurrence.Symbol.ProjectPath, item.Occurrence.Symbol.SourcePath,
+                item.Occurrence.Symbol.SymbolId, item.Occurrence.Symbol.Line, item.Occurrence.Symbol.OccurrenceId, item.Reason))
+            .OrderBy(static item => item.AreaId, StringComparer.Ordinal).ThenBy(static item => item.ProjectPath, StringComparer.Ordinal)
+            .ThenBy(static item => item.SourcePath, StringComparer.Ordinal).ThenBy(static item => item.Line)
+            .ThenBy(static item => item.SymbolId, StringComparer.Ordinal).ThenBy(static item => item.OccurrenceId, StringComparer.Ordinal)
+            .ThenBy(static item => item.Role).ToArray();
         return new ResolvedFinding(
             new AuditPackagedFinding(StableId("finding", identity), finding, distinct, Array.AsReadOnly(areaAssignments)),
             distinct);
@@ -427,8 +430,11 @@ internal sealed record AuditPackagedFinding(
 internal sealed record AuditFindingAreaAssignment(
     string AreaId,
     ProjectRole Role,
+    string ProjectPath,
     string SourcePath,
     string SymbolId,
+    int Line,
+    string? OccurrenceId,
     string Reason);
 
 internal sealed record AuditTestTypeAssignment(

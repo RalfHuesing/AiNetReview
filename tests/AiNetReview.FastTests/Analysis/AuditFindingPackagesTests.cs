@@ -70,6 +70,13 @@ public sealed class AuditFindingPackagesTests
         var typePackage = Assert.Single(first.AllFindings.Packages.Where(package => package.Findings.Any(item => item.Finding.Finding.SubjectId == widget)));
         Assert.Contains(typePackage.TestTypes, type => type.TypeId == "tests/Product.Tests/Product.Tests.csproj|Product.Tests.Tests.WidgetTests" ||
             sourceContext.Types.Any(sourceType => sourceType.Id == type.TypeId && sourceType.Name == "WidgetTests"));
+        var assignedTestFinding = Assert.Single(typePackage.Findings.Where(static item => item.Finding.Finding.Discriminator == "test"));
+        var testAssignment = Assert.Single(assignedTestFinding.Assignments);
+        Assert.Equal(typePackage.Areas.Single().Id, testAssignment.AreaId);
+        Assert.Equal("tests/Product.Tests/Product.Tests.csproj", testAssignment.ProjectPath);
+        Assert.Equal("tests/Product.Tests/Tests.cs", testAssignment.SourcePath);
+        Assert.Equal(4, testAssignment.Line);
+        Assert.Equal(ProjectRole.Tests, testAssignment.Role);
         var multi = Assert.Single(first.AllFindings.Packages.SelectMany(static package => package.Findings)
             .Where(static packaged => packaged.Finding.Finding.Discriminator == "multi"));
         Assert.Equal(2, multi.PrimaryAreaIds.Count);

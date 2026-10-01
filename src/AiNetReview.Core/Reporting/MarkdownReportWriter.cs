@@ -591,31 +591,17 @@ public sealed class MarkdownReportWriter
                     .Append("Assignment reasons:\n\n");
                 foreach (var assignment in packaged.Assignments)
                 {
-                    var areaProject = package.Areas.First(area => area.Id == assignment.AreaId).ProjectPath;
-                    var occurrences = finding.SubjectOccurrences.Where(occurrence => occurrence.Symbol.ProjectPath == areaProject
-                        && occurrence.Symbol.SourcePath == assignment.SourcePath && occurrence.Symbol.SymbolId == assignment.SymbolId
-                        && occurrence.Role == assignment.Role).ToArray();
-                    if (occurrences.Length == 0)
+                    builder.Append("- ").Append(EscapeInline(assignment.Role == ProjectRole.Tests ? "tests" : "production"))
+                        .Append(" subject ").Append(FormatCodeSpan(assignment.SymbolId)).Append(" in [")
+                        .Append(EscapeLinkText(assignment.SourcePath)).Append(':').Append(assignment.Line.ToString(CultureInfo.InvariantCulture))
+                        .Append("](").Append(FormatSourceLink(reportPath, projectRoot, assignment.SourcePath)).Append("#L")
+                        .Append(assignment.Line.ToString(CultureInfo.InvariantCulture)).Append("): ")
+                        .Append(EscapeInline(assignment.Reason));
+                    if (assignment.OccurrenceId is not null)
                     {
-                        builder.Append("- ").Append(EscapeInline(assignment.Role == ProjectRole.Tests ? "tests" : "production"))
-                            .Append(" subject `").Append(EscapeInline(assignment.SymbolId)).Append("` in [")
-                            .Append(EscapeLinkText(assignment.SourcePath)).Append(':').Append(finding.Finding.StartLine.ToString(CultureInfo.InvariantCulture))
-                            .Append("](").Append(FormatSourceLink(reportPath, projectRoot, assignment.SourcePath)).Append("#L")
-                            .Append(finding.Finding.StartLine.ToString(CultureInfo.InvariantCulture)).Append("): ")
-                            .Append(EscapeInline(assignment.Reason)).Append('\n');
-                        continue;
+                        builder.Append(" (occurrence ").Append(FormatCodeSpan(assignment.OccurrenceId)).Append(')');
                     }
-
-                    foreach (var occurrence in occurrences)
-                    {
-                        var sourceLine = occurrence.Symbol.Line;
-                        builder.Append("- ").Append(EscapeInline(assignment.Role == ProjectRole.Tests ? "tests" : "production"))
-                            .Append(" subject `").Append(EscapeInline(assignment.SymbolId)).Append("` in [")
-                            .Append(EscapeLinkText(assignment.SourcePath)).Append(':').Append(sourceLine.ToString(CultureInfo.InvariantCulture))
-                            .Append("](").Append(FormatSourceLink(reportPath, projectRoot, assignment.SourcePath)).Append("#L")
-                            .Append(sourceLine.ToString(CultureInfo.InvariantCulture)).Append("): ")
-                            .Append(EscapeInline(assignment.Reason)).Append('\n');
-                    }
+                    builder.Append(" — project ").Append(FormatCodeSpan(assignment.ProjectPath)).Append('\n');
                 }
                 if (finding.Finding.Evidence.Count > 0)
                 {
