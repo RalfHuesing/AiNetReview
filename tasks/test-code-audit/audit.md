@@ -1,0 +1,158 @@
+# Practical audit fixture and reproduction
+
+Package 7 was audited on implementation commit `99b2853f79e520e5469d27212986dfa5eebe6e5e`, with all eight production analyses enabled and their repository defaults unchanged. This is an explicit **FULL AUDIT** of an isolated input solution; it is not an audit of the AiNetReview product's own findings. The source assessments, run evidence, and open defects are recorded directly under package 7 in [the roadmap](roadmap.md).
+
+The following generator is an audit input resource, not production or test-suite code. It creates two .NET 10 projects, a real metadata-backed xUnit v3 reference (3.2.2), 1005 executable assertions, 3105 raw-string data records, active and skipped test repetition, copied expectation logic, and a three-file test helper chain. It does not run tests or refactor inputs. `-Grouped` only adds explicit nested source blocks; it retains every assertion and data record and does not change analysis settings. No baseline is created. The original flat variant is retained as the resource-growth reproduction and must not be replaced by the grouped variant when verifying that defect.
+
+Save the fenced script below as `temp/practical-audit-7-repro/create.ps1` from the repository root, then run `pwsh -NoProfile -File temp/practical-audit-7-repro/create.ps1` for the original flat variant, or append `-Grouped` for the additional nested variant. Use a fresh directory name if it already contains fixture inputs; the script intentionally preserves existing runs. The original resource-growth reproduction was manually terminated after 117.506 seconds at 11933 MiB observed private memory; monitor its host process and terminate it if needed. The grouped input is suitable for independently checking report navigation and all commissioned source assessments. The Debug host must have been built before either invocation.
+
+```powershell
+param([switch]$Grouped)
+$ErrorActionPreference = 'Stop'
+$fixtureRoot = Join-Path $PSScriptRoot $(if ($Grouped) { 'fixture-grouped-nested' } else { 'fixture' })
+if (Test-Path $fixtureRoot) { throw 'Use a fresh fixture directory; existing reports are preserved.' }
+New-Item -ItemType Directory -Path "$fixtureRoot/Product", "$fixtureRoot/Example.Tests" -Force | Out-Null
+$utf8 = [System.Text.UTF8Encoding]::new($false)
+function Write-Input($path, $content) { [IO.File]::WriteAllText((Join-Path $fixtureRoot $path), $content.Replace("`r`n", "`n"), $utf8) }
+Write-Input 'Directory.Build.props' '<Project><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><EnableNETAnalyzers>false</EnableNETAnalyzers><TreatWarningsAsErrors>false</TreatWarningsAsErrors><ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally></PropertyGroup></Project>'
+Write-Input 'Directory.Packages.props' '<Project><PropertyGroup><ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally></PropertyGroup></Project>'
+Write-Input 'Fixture.slnx' '<Solution><Project Path="Product/Product.csproj" /><Project Path="Example.Tests/Example.Tests.csproj" /></Solution>'
+Write-Input 'Product/Product.csproj' '<Project Sdk="Microsoft.NET.Sdk" />'
+Write-Input 'Example.Tests/Example.Tests.csproj' '<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../Product/Product.csproj" /><PackageReference Include="xunit.v3.extensibility.core" Version="3.2.2" /></ItemGroup></Project>'
+$scoreBody = @'
+    {
+        int score = value * 2;
+        score += value > 0 ? 2 : 0;
+        score += value > 5 ? 3 : 0;
+        score += value > 10 ? 4 : 0;
+        score += value > 20 ? 5 : 0;
+        return score;
+    }
+'@
+Write-Input 'Product/Calculator.cs' (@'
+namespace AuditProduct;
+public static class Calculator
+{
+    public static int Score(int value)
+'@ + "`n" + $scoreBody + @'
+
+    public static int UntestedCategory(int value)
+    {
+        if (value < 0) return -1;
+        if (value == 0) return 0;
+        if (value == 1) return 1;
+        if (value == 2) return 2;
+        if (value == 3) return 3;
+        if (value == 4) return 4;
+        if (value == 5) return 5;
+        if (value == 6) return 6;
+        if (value == 7) return 7;
+        return 8;
+    }
+}
+'@)
+$longAssertions = ((1..1005 | ForEach-Object {
+    if ($Grouped -and ($_ % 50 -eq 1)) { '        {' }
+    if ($Grouped -and ($_ % 5 -eq 1)) { '        {' }
+    '        Check(Calculator.Score(1), 4);'
+    if ($Grouped -and ($_ % 5 -eq 0)) { '        }' }
+    if ($Grouped -and (($_ % 50 -eq 0) -or ($_ -eq 1005))) { '        }' }
+}) -join "`n")
+Write-Input 'Example.Tests/ScenarioTests.cs' (@'
+using AuditProduct;
+using Xunit;
+namespace AuditTests;
+public sealed class ScenarioTests
+{
+    [Fact]
+    public void LongScenario()
+    {
+'@ + "`n" + $longAssertions + @'
+
+    }
+    [Fact]
+    public void ConditionalScenario()
+    {
+        for (int value = -2; value < 25; value++)
+        {
+            if (value >= 0)
+            {
+                if (value % 2 == 0)
+                {
+                    if (value > 5)
+                    {
+                        if (value > 10) Check(Calculator.Score(value), ExpectedScore(value));
+                    }
+                }
+            }
+        }
+    }
+    [Fact]
+    public void DuplicateScenarioA()
+    {
+        int actual = Calculator.Score(1);
+        int expected = 4;
+        if (actual != expected) throw new System.InvalidOperationException("score mismatch");
+        actual = Calculator.Score(6);
+        expected = 17;
+        if (actual != expected) throw new System.InvalidOperationException("score mismatch");
+    }
+    [Fact(Skip = "Illustrative disabled regression")]
+    public void DuplicateScenarioB()
+    {
+        int actual = Calculator.Score(1);
+        int expected = 4;
+        if (actual != expected) throw new System.InvalidOperationException("score mismatch");
+        actual = Calculator.Score(6);
+        expected = 17;
+        if (actual != expected) throw new System.InvalidOperationException("score mismatch");
+    }
+    [Fact]
+    public void Märchen() => Check(Bridge.Score(1), 4);
+    private static void Check(int actual, int expected)
+    {
+        if (actual != expected) throw new System.InvalidOperationException("score mismatch");
+    }
+    private static int ObsoleteHelper(int value) => value + 99;
+    private static int ExpectedScore(int value)
+'@ + "`n" + $scoreBody + "`n}`n")
+foreach ($layer in @(@('Bridge','Adapter'), @('Adapter','Endpoint'))) {
+    Write-Input ("Example.Tests/" + $layer[0] + '.cs') ("namespace AuditTests;`npublic static class " + $layer[0] + "`n{`n    public static int Score(int value) => " + $layer[1] + ".Score(value);`n}`n")
+}
+Write-Input 'Example.Tests/Endpoint.cs' "using AuditProduct;`nnamespace AuditTests;`npublic static class Endpoint`n{`n    public static int Score(int value) => Calculator.Score(value);`n}`n"
+$fixtureLines = ((1..3105 | ForEach-Object { "record-$_=declarative payload" }) -join "`n")
+Write-Input 'Example.Tests/StringFixtureTests.cs' (@'
+using Xunit;
+namespace AuditTests;
+public sealed class StringFixtureTests
+{
+    private const string Payload = """
+'@ + "`n" + $fixtureLines + @'
+
+""";
+    [Fact]
+    public void FixtureIsPresent()
+    {
+        if (!Payload.Contains("record-3105=declarative payload", System.StringComparison.Ordinal))
+            throw new System.InvalidOperationException("fixture is incomplete");
+    }
+}
+'@)
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+$config = Get-Content (Join-Path $repoRoot 'ainetreview.json') -Raw | ConvertFrom-Json
+$config.solution = 'Fixture.slnx'
+$config.outputDirectory = 'reports'
+Write-Input 'ainetreview.json' ($config | ConvertTo-Json -Depth 10)
+dotnet restore "$fixtureRoot/Fixture.slnx" --verbosity quiet
+if ($LASTEXITCODE -ne 0) { throw 'Fixture restore failed.' }
+$hostExe = Join-Path $repoRoot 'src/AiNetReview/bin/Debug/net10.0/AiNetReview.exe'
+$stopwatch = [Diagnostics.Stopwatch]::StartNew()
+& $hostExe review $fixtureRoot
+$auditExit = $LASTEXITCODE
+$stopwatch.Stop()
+"ElapsedSeconds=$($stopwatch.Elapsed.TotalSeconds.ToString('F3', [Globalization.CultureInfo]::InvariantCulture)); ExitCode=$auditExit"
+if ($auditExit -ne 0) { throw 'Audit failed.' }
+
+```
+
+The existing local originals are under `temp/practical-audit-7/`: `fixture/` (flat input, interrupted), `fixture-grouped/` (single level of five-assertion blocks, completed), and `fixture-grouped-nested/` (the reproducible `-Grouped` variant above, completed). The completed nested run's shared root is `fixture-grouped-nested/reports/20261001T095840Z-766ab58e/index.md`. Start there and use its three `all-findings` links only with the explicit full-audit assignment. These input and output directories are Git-ignored and are not durable repository documentation of current product behavior.
