@@ -564,17 +564,27 @@ public sealed class DeadCodeCandidatesAnalysisTests
             [assembly: Xunit.v3.AssemblyFixture(typeof(SharedFixture))]
             public sealed class CustomFactAttribute : FactAttribute { }
             public sealed class CustomV3FactAttribute : Attribute, Xunit.v3.IFactAttribute { }
-            public sealed class Tests : IClassFixture<SharedFixture>
+            public sealed class Tests : ProviderBase, IClassFixture<SharedFixture>
             {
                 [CustomFact(Skip = "disabled")]
                 public void Skipped() { }
                 [CustomV3Fact] public void V3InterfaceTest() { }
                 [MemberData("Rows")] public void Theory(int value) { }
                 [MemberData("ExternalRows", MemberType = typeof(DataProvider))] public void ExternalTheory(int value) { }
+                [AsyncMemberData] public void AsyncTheory(int value) { }
                 [ClassData(typeof(DataProvider))] public void ClassTheory(int value) { }
                 public static IEnumerable<object[]> Rows() => Array.Empty<object[]>();
+                public static IEnumerable<object[]> Rows(int count) => Array.Empty<object[]>();
                 private void UnusedHelper() { }
             }
+            public class ProviderBase
+            {
+                public static object[][] Alternative() => [];
+                public static System.Threading.Tasks.Task<IEnumerable<object[]>> AsyncRows() => System.Threading.Tasks.Task.FromResult<IEnumerable<object[]>>([]);
+                public static System.Threading.Tasks.Task<IEnumerable<object[]>> AsyncRows(int count) => System.Threading.Tasks.Task.FromResult<IEnumerable<object[]>>([]);
+                public static System.Threading.Tasks.Task<IEnumerable<object[]>> AsyncAlternative() => System.Threading.Tasks.Task.FromResult<IEnumerable<object[]>>([]);
+            }
+            public sealed class AsyncMemberDataAttribute : MemberDataAttribute("AsyncRows") { }
             public class BaseTests
             {
                 [Theory, MemberData("BaseRows")] public void InheritedTheory(int value) { }
@@ -618,6 +628,9 @@ public sealed class DeadCodeCandidatesAnalysisTests
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("CollectionEntry", StringComparison.Ordinal));
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId == "T:CollectionTests");
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Rows", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Alternative", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("AsyncRows", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("AsyncAlternative", StringComparison.Ordinal));
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("ExternalRows", StringComparison.Ordinal));
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("InheritedTheory", StringComparison.Ordinal));
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("SharedFixture", StringComparison.Ordinal)
@@ -638,6 +651,7 @@ public sealed class DeadCodeCandidatesAnalysisTests
         var framework = CreateMetadataReference("nunit.framework", NUnitMetadata);
         using var fixture = CreateFixtureWithReferences([framework], ("Product.Tests", "Product.Tests", """
             using System;
+            using System.Collections.Generic;
             using NUnit.Framework;
             [TestFixture, TestFixtureSource(typeof(FixtureData), "FixtureRows")]
             public sealed class Tests : HookBase
@@ -646,8 +660,12 @@ public sealed class DeadCodeCandidatesAnalysisTests
                 [TearDown] private void AfterEach() { }
                 [Explicit, CustomCase, TestCaseSource(typeof(Cases), "Rows")] public void Case(int value) { }
                 [TestCaseSource(typeof(TypeOnlyData))] public void TypeOnlyCase(int value) { }
+                [TestCaseSource((string)null)] public void UnknownRowsCase(int value) { }
+                [TestCaseSource("MissingRows")] public void MissingRowsCase(int value) { }
                 [Ignore("disabled"), Test] public void IgnoredTest() { }
                 [Theory] public void DataPoint([ValueSource(typeof(Cases), "Values")] int value) { }
+                private static IEnumerable<object[]> PrivateRows() => Array.Empty<object[]>();
+                private static void PrivateHelper() { }
                 public void OrdinaryHelper() { }
             }
             [SetUpFixture] public sealed class GlobalFixture { public void Helper() { } }
@@ -688,10 +706,12 @@ public sealed class DeadCodeCandidatesAnalysisTests
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Point", StringComparison.Ordinal));
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("FixtureRows", StringComparison.Ordinal));
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("TypeOnlyCase", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("PrivateRows", StringComparison.Ordinal));
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("IgnoredTest", StringComparison.Ordinal));
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("GlobalFixture", StringComparison.Ordinal)
             && finding.Discriminator == "type-candidate");
         Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("OrdinaryHelper", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("PrivateHelper", StringComparison.Ordinal));
         Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Unrelated", StringComparison.Ordinal));
         Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("PrivateHelper", StringComparison.Ordinal));
     }
@@ -743,6 +763,34 @@ public sealed class DeadCodeCandidatesAnalysisTests
         Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("FixtureProvider", StringComparison.Ordinal)
             && finding.Discriminator == "type-candidate");
         Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("Helper", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_RecognizesBothMSTestFrameworkAssemblyIdentities()
+    {
+        foreach (var assemblyName in new[] { "Microsoft.VisualStudio.TestPlatform.TestFramework", "MSTest.TestFramework" })
+        {
+            var framework = CreateMetadataReference(assemblyName, MsTestMetadata);
+            using var fixture = CreateFixtureWithReferences([framework], ("Product.Tests", "Product.Tests", """
+                using Microsoft.VisualStudio.TestTools.UnitTesting;
+                [TestClass]
+                public sealed class ValidTests
+                {
+                    [TestMethod] public void ValidCase() { }
+                    [TestInitialize] public void Setup() { }
+                    private void OrdinaryHelper() { }
+                }
+                """, null));
+            var analysis = new DeadCodeCandidatesAnalysis();
+            var result = await analysis.ExecuteAsync(fixture.Context,
+                analysis.Descriptor.ResolveOptions([new("apiSurface", JsonSerializer.SerializeToElement("closed_solution"))]),
+                CancellationToken.None);
+
+            Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId == "T:ValidTests");
+            Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("ValidCase", StringComparison.Ordinal));
+            Assert.DoesNotContain(result.Findings, static finding => finding.SubjectId.Contains("Setup", StringComparison.Ordinal));
+            Assert.Contains(result.Findings, static finding => finding.SubjectId.Contains("OrdinaryHelper", StringComparison.Ordinal));
+        }
     }
 
     [Fact]
@@ -943,7 +991,7 @@ public sealed class DeadCodeCandidatesAnalysisTests
             [System.AttributeUsage(System.AttributeTargets.Method, Inherited = true)]
             public class FactAttribute : System.Attribute { public string? Skip { get; set; } }
             public class TheoryAttribute : FactAttribute { }
-            public sealed class MemberDataAttribute(string memberName) : System.Attribute { public System.Type? MemberType { get; set; } }
+            public class MemberDataAttribute(string memberName) : System.Attribute { public System.Type? MemberType { get; set; } }
             public sealed class ClassDataAttribute(System.Type classType) : System.Attribute { }
             public interface IClassFixture<T> { }
             public interface ICollectionFixture<T> { }

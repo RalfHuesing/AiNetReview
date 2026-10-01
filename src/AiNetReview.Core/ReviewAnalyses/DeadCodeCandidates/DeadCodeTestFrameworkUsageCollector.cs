@@ -18,6 +18,13 @@ internal static class DeadCodeTestFrameworkUsageCollector
     private const string NUnitRoot = "NUnit.Framework.";
     private const string MsTestRoot = "Microsoft.VisualStudio.TestTools.UnitTesting.";
 
+    private enum ProviderFramework
+    {
+        Xunit,
+        NUnit,
+        MSTest,
+    }
+
     public static async Task CollectAsync(
         Project project,
         Compilation compilation,
@@ -105,7 +112,7 @@ internal static class DeadCodeTestFrameworkUsageCollector
             if (IsAttribute(attribute.AttributeClass, compilation, "Xunit.MemberDataAttribute"))
             {
                 BindDataAttribute(attribute, method.ContainingType, "MemberType", 0, compilation,
-                    protect, markUncertain, reportBroadExclusion, project);
+                    ProviderFramework.Xunit, protect, markUncertain, reportBroadExclusion, project);
             }
             else if (IsAttribute(attribute.AttributeClass, compilation, "Xunit.ClassDataAttribute"))
             {
@@ -114,12 +121,12 @@ internal static class DeadCodeTestFrameworkUsageCollector
             else if (IsNUnitDataAttribute(name))
             {
                 BindDataAttribute(attribute, method.ContainingType, "SourceType", 1, compilation,
-                    protect, markUncertain, reportBroadExclusion, project);
+                    ProviderFramework.NUnit, protect, markUncertain, reportBroadExclusion, project);
             }
             else if (IsAttribute(attribute.AttributeClass, compilation, "Microsoft.VisualStudio.TestTools.UnitTesting.DynamicDataAttribute"))
             {
                 BindDataAttribute(attribute, method.ContainingType, "DynamicDataSourceType", 1, compilation,
-                    protect, markUncertain, reportBroadExclusion, project);
+                    ProviderFramework.MSTest, protect, markUncertain, reportBroadExclusion, project);
                 BindMSTestDisplayNameCallback(attribute, method.ContainingType, protect, markUncertain);
             }
         }
@@ -131,7 +138,7 @@ internal static class DeadCodeTestFrameworkUsageCollector
                 if (IsAttribute(attribute.AttributeClass, compilation, "NUnit.Framework.ValueSourceAttribute"))
                 {
                     BindDataAttribute(attribute, method.ContainingType, "SourceType", 1, compilation,
-                        protect, markUncertain, reportBroadExclusion, project);
+                        ProviderFramework.NUnit, protect, markUncertain, reportBroadExclusion, project);
                 }
             }
         }
@@ -193,7 +200,7 @@ internal static class DeadCodeTestFrameworkUsageCollector
             if (name is "NUnit.Framework.TestFixtureSourceAttribute")
             {
                 BindDataAttribute(attribute, type, "SourceType", 1, compilation,
-                    protect, markUncertain, reportBroadExclusion, project);
+                    ProviderFramework.NUnit, protect, markUncertain, reportBroadExclusion, project);
             }
 
             if (name is "Xunit.CollectionAttribute")
@@ -319,11 +326,13 @@ internal static class DeadCodeTestFrameworkUsageCollector
         string sourceTypeProperty,
         int sourceTypeConstructorIndex,
         Compilation compilation,
+        ProviderFramework framework,
         Action<ISymbol> protect,
         Action<ISymbol> markUncertain,
         Action<string, Project> reportBroadExclusion,
         Project project)
     {
+        var asyncSupport = GetAsyncProviderSupport(attribute.AttributeClass, compilation, framework);
         var namedSourceType = attribute.NamedArguments.FirstOrDefault(pair => StringComparer.Ordinal.Equals(pair.Key, sourceTypeProperty));
         var hasNamedSourceType = attribute.NamedArguments.Any(pair => StringComparer.Ordinal.Equals(pair.Key, sourceTypeProperty));
         var typeArguments = attribute.ConstructorArguments.SelectMany(Flatten).OfType<INamedTypeSymbol>().ToArray();
@@ -345,7 +354,7 @@ internal static class DeadCodeTestFrameworkUsageCollector
             ProtectProviderType(sourceType, protect);
             foreach (var member in allMembers)
             {
-                if (IsPlausibleProviderMember(member))
+                if (IsPlausibleProviderMember(member, framework, asyncSupport))
                 {
                     markUncertain(member);
                 }
@@ -359,7 +368,7 @@ internal static class DeadCodeTestFrameworkUsageCollector
         {
             foreach (var member in allMembers)
             {
-                if (IsPlausibleProviderMember(member))
+                if (IsPlausibleProviderMember(member, framework, asyncSupport))
                 {
                     markUncertain(member);
                 }
@@ -373,6 +382,14 @@ internal static class DeadCodeTestFrameworkUsageCollector
         {
             protect(member);
             if (matching.Length > 1)
+            {
+                markUncertain(member);
+            }
+        }
+
+        if (matching.Length > 1)
+        {
+            foreach (var member in allMembers.Where(member => IsPlausibleProviderMember(member, framework, asyncSupport)))
             {
                 markUncertain(member);
             }
@@ -426,7 +443,8 @@ internal static class DeadCodeTestFrameworkUsageCollector
         var matches = GetMembersIncludingBase(targetType).Where(member => member is IMethodSymbol && member.Name == name).ToArray();
         if (matches.Length == 0)
         {
-            foreach (var member in GetMembersIncludingBase(targetType).OfType<IMethodSymbol>().Where(IsPlausibleProviderMember))
+            foreach (var member in GetMembersIncludingBase(targetType).OfType<IMethodSymbol>()
+                         .Where(IsPlausibleMSTestDisplayNameCallback))
             {
                 markUncertain(member);
             }
@@ -548,9 +566,109 @@ internal static class DeadCodeTestFrameworkUsageCollector
         }
     }
 
-    private static bool IsPlausibleProviderMember(ISymbol member) =>
-        member.IsStatic && member.DeclaredAccessibility == Accessibility.Public
-        && member is IMethodSymbol or IPropertySymbol or IFieldSymbol;
+    private static bool IsPlausibleProviderMember(ISymbol member, ProviderFramework framework, (bool Task, bool AsyncEnumerable) asyncSupport)
+    {
+        if (!member.IsStatic || (framework != ProviderFramework.NUnit && member.DeclaredAccessibility != Accessibility.Public))
+        {
+            return false;
+        }
+
+        ITypeSymbol? valueType = member switch
+        {
+            IMethodSymbol method => method.ReturnType,
+            IPropertySymbol property => property.Type,
+            IFieldSymbol field => field.Type,
+            _ => null,
+        };
+        if (valueType is null || (member is IMethodSymbol && valueType.SpecialType == SpecialType.System_Void))
+        {
+            return false;
+        }
+
+        return IsEnumerableProviderType(valueType, asyncSupport);
+    }
+
+    private static (bool Task, bool AsyncEnumerable) GetAsyncProviderSupport(
+        INamedTypeSymbol? attributeType,
+        Compilation compilation,
+        ProviderFramework framework)
+    {
+        var metadataName = GetFrameworkAttributeName(attributeType, compilation);
+        var frameworkAttribute = GetBaseTypes(attributeType ?? compilation.GetSpecialType(SpecialType.System_Object))
+            .FirstOrDefault(type => metadataName is not null
+                && StringComparer.Ordinal.Equals(GetMetadataName(type.OriginalDefinition), metadataName)
+                && IsFrameworkMetadataType(type, metadataName));
+        var assembly = frameworkAttribute?.ContainingAssembly;
+        if (assembly is null)
+        {
+            return (false, false);
+        }
+
+        if (framework == ProviderFramework.Xunit
+            && assembly.Name.StartsWith("xunit.v3.", StringComparison.OrdinalIgnoreCase))
+        {
+            return (true, true);
+        }
+
+        if (framework == ProviderFramework.NUnit)
+        {
+            var version = assembly.Identity.Version;
+            return (version >= new Version(3, 14), version >= new Version(4, 0));
+        }
+
+        return (false, false);
+    }
+
+    private static bool IsPlausibleMSTestDisplayNameCallback(IMethodSymbol method) =>
+        method.IsStatic && method.DeclaredAccessibility == Accessibility.Public
+        && method.ReturnType.SpecialType == SpecialType.System_String;
+
+    private static bool IsEnumerableProviderType(ITypeSymbol type, (bool Task, bool AsyncEnumerable) asyncSupport)
+    {
+        if (type is IArrayTypeSymbol)
+        {
+            return true;
+        }
+
+        if (type is not INamedTypeSymbol namedType)
+        {
+            return false;
+        }
+
+        var metadataName = GetMetadataName(namedType.OriginalDefinition);
+        if ((asyncSupport.Task && metadataName is "System.Threading.Tasks.Task`1" or "System.Threading.Tasks.ValueTask`1"))
+        {
+            return namedType.TypeArguments.Length == 1 && IsEnumerableProviderType(namedType.TypeArguments[0], asyncSupport);
+        }
+
+        if (namedType.SpecialType != SpecialType.System_String
+            && (IsEnumerableInterface(namedType)
+                || namedType.AllInterfaces.Any(IsEnumerableInterface)))
+        {
+            return true;
+        }
+
+        return asyncSupport.AsyncEnumerable && (GetMetadataName(namedType.OriginalDefinition) == "System.Collections.Generic.IAsyncEnumerable`1"
+            || namedType.AllInterfaces.Any(iface =>
+                GetMetadataName(iface.OriginalDefinition) == "System.Collections.Generic.IAsyncEnumerable`1"));
+    }
+
+    private static bool IsEnumerableInterface(INamedTypeSymbol type) =>
+        type.SpecialType == SpecialType.System_Collections_IEnumerable
+        || GetMetadataName(type.OriginalDefinition) == "System.Collections.Generic.IEnumerable`1";
+
+    private static string GetMetadataName(INamedTypeSymbol type)
+    {
+        var name = type.MetadataName;
+        for (var containing = type.ContainingType; containing is not null; containing = containing.ContainingType)
+        {
+            name = containing.MetadataName + "+" + name;
+        }
+
+        return type.ContainingNamespace.IsGlobalNamespace
+            ? name
+            : type.ContainingNamespace.ToDisplayString() + "." + name;
+    }
 
     private static IEnumerable<INamedTypeSymbol> SourceTypes(INamespaceSymbol root)
     {
@@ -676,7 +794,8 @@ internal static class DeadCodeTestFrameworkUsageCollector
 
         if (metadataName.StartsWith("Microsoft.VisualStudio.TestTools.UnitTesting.", StringComparison.Ordinal))
         {
-            return assemblyName.StartsWith("Microsoft.VisualStudio.TestPlatform.TestFramework", StringComparison.OrdinalIgnoreCase);
+            return StringComparer.OrdinalIgnoreCase.Equals(assemblyName, "MSTest.TestFramework")
+                || assemblyName.StartsWith("Microsoft.VisualStudio.TestPlatform.TestFramework", StringComparison.OrdinalIgnoreCase);
         }
 
         return metadataName.StartsWith("System.", StringComparison.Ordinal);
