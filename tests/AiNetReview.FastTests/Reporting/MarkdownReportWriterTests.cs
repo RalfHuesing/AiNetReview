@@ -227,6 +227,61 @@ public sealed class MarkdownReportWriterTests
     }
 
     [Fact]
+    public async Task WriteAsync_MarksSingleReferenceWhenCompletePageExceedsByteBudgetBecauseOfLongGroupLabel()
+    {
+        using var temp = TestTempDirectory.Create();
+        var analysis = new ReportAnalysis("fixture-analysis", "Fixture analysis", "default");
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        const string sourceProjectPath = "Sample/Sample.csproj";
+        const string targetProjectPath = "Other/Other.csproj";
+        const string sourcePath = "src/Widget.cs";
+        var sourceProjectId = ProjectId.CreateNewId();
+        var targetProjectId = ProjectId.CreateNewId();
+        var targetTypeId = "T:" + new string('X', 9_000);
+        var draft = new FindingDraft(sourceProjectPath, sourcePath, "M:Sample.Widget.Run", "member", 1,
+            "Reference page budget fixture.", new Dictionary<string, double>(), []);
+        var finding = new ReviewFinding(analysis.Descriptor.AnalysisId, draft, [sourcePath], [], [sourcePath])
+        {
+            SubjectOccurrences = [new ReviewFindingOccurrence(
+                new FindingSymbol(sourceProjectPath, sourcePath, "M:Sample.Widget.Run", 1), ProjectRole.Production)],
+        };
+        var area = new AuditFindingArea("area-widget", sourceProjectPath, ProjectRole.Production, "Widget", "type:Widget", null,
+            [new AuditSourceLocation(sourcePath, default, 1, 1, 4, 1)], "source type", [], []);
+        var packagedFinding = new AuditPackagedFinding("finding-widget", finding, [area.Id],
+            [new AuditFindingAreaAssignment(area.Id, ProjectRole.Production, sourceProjectPath, sourcePath,
+                "M:Sample.Widget.Run", 1, null, "subject belongs to source type")]);
+        var reference = new AuditSourceReference(sourceProjectId, sourcePath, "type:Widget", ProjectRole.Production,
+            targetProjectId, targetTypeId, null, ProjectRole.Production, SolutionSymbolReferenceKind.Direct,
+            new AuditSourceLocation(sourcePath, new Microsoft.CodeAnalysis.Text.TextSpan(0, 1), 1, 1, 1, 2));
+        var package = new AuditFindingPackage("package-long-reference-label", [area], [packagedFinding], [], [reference], [], []);
+        var view = new AuditFindingPackageView(true, [area], [package], [], 1, true)
+        {
+            ProjectPaths = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [sourceProjectId.ToString()] = sourceProjectPath,
+                [targetProjectId.ToString()] = targetProjectPath,
+            },
+        };
+        var result = new ReviewRunResult([new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId,
+            new ReviewAnalysisResult([draft]))])
+        {
+            Findings = [finding],
+            AuditPackages = new AuditFindingPackageViews(view, view with { IsChangedFiles = false }),
+        };
+
+        var published = await new MarkdownReportWriter().WriteAsync(config, result);
+        var referencePage = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, published.RunId,
+            "audit-map", "changed-files", package.Id + "-references-0001.md"));
+
+        Assert.True(Encoding.UTF8.GetByteCount(referencePage) > AuditMapReportWriter.ReferencePageByteLimit);
+        Assert.Equal(2, referencePage.Split(targetTypeId, StringSplitOptions.None).Length - 1);
+        var recordStart = referencePage.IndexOf("\n- Source project ", StringComparison.Ordinal) + 1;
+        Assert.InRange(Encoding.UTF8.GetByteCount(referencePage[recordStart..]), 1, AuditMapReportWriter.ReferencePageByteLimit - 1);
+        Assert.Contains(targetTypeId, referencePage, StringComparison.Ordinal);
+        Assert.Contains("This complete single reference record exceeds the 16-KiB page target", referencePage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task WriteAsync_LabelsFileFallbackReferencesAsOutgoingFromTheirPrimaryFileArea()
     {
         using var temp = TestTempDirectory.Create();

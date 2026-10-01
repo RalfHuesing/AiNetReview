@@ -514,11 +514,11 @@ internal static class AuditMapReportWriter
             ? "> **Full-audit scope:** This reference view contains every current finding. Inspect it only when the user explicitly requests a full-repository audit.\n\n"
             : "> Scope: selected changed-files findings and their direct source context only.\n\n");
         builder.Append("[Back to package](").Append(MarkdownReportWriter.EncodePathSegment(packageId)).Append(".md)\n\n");
+        builder.Append("## ").Append(label).Append("\n\n");
         if (entries.Count == 1 && Encoding.UTF8.GetByteCount(builder.ToString()) + Encoding.UTF8.GetByteCount(entries[0]) > ReferencePageByteLimit)
         {
             builder.Append("> This complete single reference record exceeds the 16-KiB page target; it is retained intact.\n\n");
         }
-        builder.Append("## ").Append(label).Append("\n\n");
         foreach (var entry in entries) builder.Append(entry);
         return builder.ToString();
     }
