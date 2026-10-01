@@ -282,10 +282,14 @@ public sealed class ReviewRunnerTests
 
         Assert.Equal(4, completeRun.DetectedCount);
         Assert.Equal(4, completeRun.Findings.Count);
+        Assert.NotNull(completeRun.AuditPackages);
+        Assert.Equal(4, completeRun.AuditPackages.AllFindings.FindingCount);
+        Assert.Empty(completeRun.AuditPackages.ChangedFiles.Packages);
         Assert.All(completeRun.Findings, static finding => Assert.Empty(finding.ChangedSourcePaths));
         Assert.Equal(completeRun.Analyses.SelectMany(static analysis => analysis.Result.Findings).Select(static finding => finding.SubjectId),
             withoutBaseline.Analyses.SelectMany(static analysis => analysis.Result.Findings).Select(static finding => finding.SubjectId));
         Assert.All(withoutBaseline.Findings, static finding => Assert.NotEmpty(finding.ChangedSourcePaths));
+        Assert.Equal(4, withoutBaseline.AuditPackages!.ChangedFiles.FindingCount);
 
         var alphaReview = Assert.Single(completeRun.Findings.Where(static item => item.AnalysisId == "alpha-analysis"));
         Assert.Equal(new[] { "beta-analysis", "cluster-analysis" }, alphaReview.RelatedFindings.Select(static item => item.AnalysisId));

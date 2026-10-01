@@ -16,12 +16,14 @@ internal sealed class AuditSourceContext
         IReadOnlyList<AuditSourceProject> projects,
         IReadOnlyList<AuditSourceFile> files,
         IReadOnlyList<AuditSourceType> types,
+        IReadOnlyList<AuditSourceSubject> subjects,
         IReadOnlyList<AuditSourceReference> references,
         IReadOnlyList<AuditSourceUncertainty> uncertainties)
     {
         Projects = projects;
         Files = files;
         Types = types;
+        Subjects = subjects;
         References = references;
         Uncertainties = uncertainties;
     }
@@ -31,6 +33,8 @@ internal sealed class AuditSourceContext
     public IReadOnlyList<AuditSourceFile> Files { get; }
 
     public IReadOnlyList<AuditSourceType> Types { get; }
+
+    public IReadOnlyList<AuditSourceSubject> Subjects { get; }
 
     public IReadOnlyList<AuditSourceReference> References { get; }
 
@@ -44,6 +48,7 @@ internal sealed class AuditSourceContext
         var referenceIndex = await SolutionReferenceIndex.CreateAsync(context, cancellationToken).ConfigureAwait(false);
         var projects = new List<AuditSourceProject>();
         var files = new List<AuditSourceFile>();
+        var pendingSubjects = new List<AuditSourceSubject>();
         var typeDeclarations = new Dictionary<string, MutableSourceType>(StringComparer.Ordinal);
         var projectTypes = new Dictionary<ProjectId, List<(INamedTypeSymbol Symbol, string Id)>>();
         var projectPaths = new Dictionary<ProjectId, string>();
@@ -89,7 +94,6 @@ internal sealed class AuditSourceContext
                     ?? throw new AnalysisFailedException($"Semantic model could not be read for document '{document.Name}'.");
                 var sourceText = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
                 sourceTexts.Add((project.Id, document.Id), sourceText);
-
                 foreach (var declaration in root.DescendantNodes().Where(static node => node is BaseTypeDeclarationSyntax or DelegateDeclarationSyntax))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -130,10 +134,41 @@ internal sealed class AuditSourceContext
                     sourceType.HasNonGeneratedDeclaration |= !generated;
                     sourceType.Declarations.Add(CreateLocation(filePath, declaration.Span, sourceText));
                 }
+
+                foreach (var node in root.DescendantNodesAndSelf().Where(static node => node is BaseTypeDeclarationSyntax
+                    or DelegateDeclarationSyntax or BaseMethodDeclarationSyntax or BasePropertyDeclarationSyntax
+                    or EventFieldDeclarationSyntax or FieldDeclarationSyntax or EnumMemberDeclarationSyntax
+                    or LocalFunctionStatementSyntax or VariableDeclaratorSyntax))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var symbol = node is VariableDeclaratorSyntax variable
+                        ? semanticModel.GetDeclaredSymbol(variable, cancellationToken)
+                        : semanticModel.GetDeclaredSymbol(node, cancellationToken);
+                    if (symbol is null || DocumentationCommentId.CreateDeclarationId(symbol) is not { Length: > 0 } declarationId)
+                    {
+                        continue;
+                    }
+
+                    var containingType = symbol as INamedTypeSymbol ?? symbol.ContainingType;
+                    if (containingType is null)
+                    {
+                        continue;
+                    }
+
+                    var outermost = GetOutermostType(containingType);
+                    pendingSubjects.Add(new AuditSourceSubject(project.Id, filePath, declarationId, GetTypeId(projectPath, outermost)));
+                }
             }
         }
 
         var sourceTypeIds = typeDeclarations.Keys.ToHashSet(StringComparer.Ordinal);
+        var subjects = pendingSubjects.Where(subject => sourceTypeIds.Contains(subject.OutermostTypeId)
+                && !typeDeclarations[subject.OutermostTypeId].IsGenerated)
+            .DistinctBy(static subject => (subject.ProjectId, subject.SourcePath, subject.SymbolId))
+            .OrderBy(subject => projectPaths[subject.ProjectId], StringComparer.Ordinal)
+            .ThenBy(static subject => subject.SourcePath, StringComparer.Ordinal)
+            .ThenBy(static subject => subject.SymbolId, StringComparer.Ordinal).ToArray();
+
         var sourceTypesBySymbol = typeDeclarations.Values.Where(static item => !item.IsGenerated)
             .GroupBy(static item => GetSymbolId(item.Symbol), StringComparer.Ordinal)
             .ToDictionary(static group => group.Key, static group => group.ToArray(), StringComparer.Ordinal);
@@ -304,6 +339,7 @@ internal sealed class AuditSourceContext
                 .ThenBy(static item => item.FullyQualifiedName, StringComparer.Ordinal)
                 .ThenBy(static item => item.Id, StringComparer.Ordinal)
                 .ToArray()),
+            Array.AsReadOnly(subjects),
             Array.AsReadOnly(references.Values.OrderBy(item => projectPaths[item.SourceProjectId], StringComparer.Ordinal)
                 .ThenBy(static item => item.SourcePath, StringComparer.Ordinal)
                 .ThenBy(static item => item.Location.StartLine)
@@ -440,6 +476,8 @@ internal sealed record AuditSourceType(
     string FullyQualifiedName,
     bool IsGenerated,
     IReadOnlyList<AuditSourceLocation> Declarations);
+
+internal sealed record AuditSourceSubject(ProjectId ProjectId, string SourcePath, string SymbolId, string OutermostTypeId);
 
 internal sealed record AuditSourceLocation(string Path, TextSpan Span, int StartLine, int StartColumn, int EndLine, int EndColumn);
 

@@ -419,9 +419,7 @@ public sealed class MarkdownReportWriter
     }
 
     private static bool IsChangedForReport(ReviewFinding finding, ReviewRunResult result) =>
-        finding.AnalysisId == "missing-test-evidence-candidates"
-            ? result.HasCSharpSnapshotChanges != false
-            : finding.IsChanged;
+        AuditFindingPackages.IsChangedForReport(finding, result.HasCSharpSnapshotChanges);
 
     private static async Task WriteViewAnalysisAsync(
         string runDirectory,

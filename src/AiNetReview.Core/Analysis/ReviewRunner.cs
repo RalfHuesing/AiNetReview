@@ -89,11 +89,16 @@ public sealed class ReviewRunner
             }));
         }
 
+        var reviewedFindings = ReviewFindingBuilder.Build(results, loadedSolution.SourceFiles, baselineFiles, projectClassifications);
+        var auditSourceContext = await AuditSourceContext.CreateAsync(context, cancellationToken).ConfigureAwait(false);
+        bool? hasCSharpSnapshotChanges = baselineFiles is null ? null : HasCSharpSnapshotChanges(loadedSolution.SourceFiles, baselineFiles);
+        var auditPackages = AuditFindingPackages.Build(reviewedFindings, auditSourceContext, hasCSharpSnapshotChanges);
         return new ReviewRunResult(Array.AsReadOnly(results.ToArray()))
         {
-            Findings = ReviewFindingBuilder.Build(results, loadedSolution.SourceFiles, baselineFiles, projectClassifications),
+            Findings = reviewedFindings,
             ProjectClassifications = Array.AsReadOnly(projectClassifications),
-            HasCSharpSnapshotChanges = baselineFiles is null ? null : HasCSharpSnapshotChanges(loadedSolution.SourceFiles, baselineFiles),
+            HasCSharpSnapshotChanges = hasCSharpSnapshotChanges,
+            AuditPackages = auditPackages,
         };
     }
 
@@ -141,4 +146,7 @@ public sealed record ReviewRunResult(IReadOnlyList<ReviewAnalysisRunResult> Anal
 
     /// <summary>Null means no baseline; otherwise indicates whether any C# snapshot path was added, changed, or deleted.</summary>
     public bool? HasCSharpSnapshotChanges { get; init; }
+
+    /// <summary>Internal finding-package assignments produced from the same loaded source snapshot.</summary>
+    internal AuditFindingPackageViews? AuditPackages { get; init; }
 }
