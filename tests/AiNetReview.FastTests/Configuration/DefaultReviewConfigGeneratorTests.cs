@@ -59,6 +59,20 @@ public sealed class DefaultReviewConfigGeneratorTests
                 Assert.True(generatedAnalysis.TryGetProperty(option.Name, out var generatedOption));
                 Assert.Equal(option.DefaultValue.GetRawText(), generatedOption.GetRawText());
             }
+
+            if (analysis.Descriptor.TestOptions.Count == 0)
+            {
+                Assert.False(generatedAnalysis.TryGetProperty("testOptions", out _));
+            }
+            else
+            {
+                var generatedTestOptions = generatedAnalysis.GetProperty("testOptions");
+                Assert.Equal(analysis.Descriptor.TestOptions.Count, generatedTestOptions.EnumerateObject().Count());
+                foreach (var option in analysis.Descriptor.TestOptions)
+                {
+                    Assert.Equal(option.DefaultValue.GetRawText(), generatedTestOptions.GetProperty(option.Name).GetRawText());
+                }
+            }
         }
 
         var config = new ReviewConfigValidator(registry).Validate(temp.DirectoryPath, json);

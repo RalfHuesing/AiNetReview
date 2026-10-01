@@ -13,6 +13,7 @@ public sealed class ReviewAnalysisDescriptor
     private readonly ReadOnlyCollection<ReviewAnalysisOptionDescriptor> options;
     private readonly ReadOnlyCollection<string> reviewQuestions;
     private readonly IReadOnlyDictionary<string, ReviewAnalysisOptionDescriptor> optionsByName;
+    private readonly ReadOnlyCollection<ReviewAnalysisOptionDescriptor> testOptions;
 
     public ReviewAnalysisDescriptor(
         string analysisId,
@@ -23,7 +24,8 @@ public sealed class ReviewAnalysisDescriptor
         IEnumerable<string> reviewQuestions,
         IEnumerable<ReviewAnalysisOptionDescriptor>? options = null,
         bool isTemplate = false,
-        bool defaultEnabled = true)
+        bool defaultEnabled = true,
+        IEnumerable<string>? testOptionNames = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(analysisId);
         if (!StringComparer.Ordinal.Equals(analysisId, analysisId.Trim()))
@@ -70,6 +72,23 @@ public sealed class ReviewAnalysisDescriptor
 
         this.options = Array.AsReadOnly(optionList.OrderBy(static option => option.Name, StringComparer.Ordinal).ToArray());
         optionsByName = new ReadOnlyDictionary<string, ReviewAnalysisOptionDescriptor>(optionsByNameBuilder);
+        var testOptionList = new List<ReviewAnalysisOptionDescriptor>();
+        foreach (var name in testOptionNames ?? Array.Empty<string>())
+        {
+            if (!optionsByNameBuilder.TryGetValue(name, out var option))
+            {
+                throw new ArgumentException($"Test option '{name}' must be declared in the analysis options.", nameof(testOptionNames));
+            }
+
+            if (testOptionList.Contains(option))
+            {
+                throw new ArgumentException($"Duplicate test option '{name}'.", nameof(testOptionNames));
+            }
+
+            testOptionList.Add(option);
+        }
+
+        this.testOptions = Array.AsReadOnly(testOptionList.OrderBy(static option => option.Name, StringComparer.Ordinal).ToArray());
         AnalysisId = analysisId;
         Title = title;
         BehaviorVersion = behaviorVersion;
@@ -92,6 +111,8 @@ public sealed class ReviewAnalysisDescriptor
     public IReadOnlyList<string> ReviewQuestions => reviewQuestions;
 
     public IReadOnlyList<ReviewAnalysisOptionDescriptor> Options => options;
+
+    public IReadOnlyList<ReviewAnalysisOptionDescriptor> TestOptions => testOptions;
 
     public bool IsTemplate { get; }
 
@@ -165,6 +186,44 @@ public sealed class ReviewAnalysisDescriptor
             }
 
             resolved[pair.Key] = pair.Value.Clone();
+        }
+
+        return new ReviewAnalysisOptions(resolved);
+    }
+
+    public ReviewAnalysisOptions ResolveTestOptions(
+        ReviewAnalysisOptions inheritedOptions,
+        IEnumerable<KeyValuePair<string, JsonElement>>? configuredOptions = null)
+    {
+        ArgumentNullException.ThrowIfNull(inheritedOptions);
+        var resolved = new SortedDictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var option in testOptions)
+        {
+            resolved.Add(option.Name, inheritedOptions[option.Name].Clone());
+        }
+
+        if (configuredOptions is not null)
+        {
+            var seenNames = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var pair in configuredOptions)
+            {
+                if (!seenNames.Add(pair.Key))
+                {
+                    throw new ArgumentException($"Duplicate test option name '{pair.Key}'.", nameof(configuredOptions));
+                }
+
+                if (!optionsByName.TryGetValue(pair.Key, out var descriptor) || !testOptions.Contains(descriptor))
+                {
+                    throw new ArgumentException($"Unknown test option '{pair.Key}' for analysis '{AnalysisId}'.", nameof(configuredOptions));
+                }
+
+                if (!descriptor.IsValidValue(pair.Value))
+                {
+                    throw new ArgumentException($"Invalid value for test option '{pair.Key}' of analysis '{AnalysisId}'.", nameof(configuredOptions));
+                }
+
+                resolved[pair.Key] = pair.Value.Clone();
+            }
         }
 
         return new ReviewAnalysisOptions(resolved);

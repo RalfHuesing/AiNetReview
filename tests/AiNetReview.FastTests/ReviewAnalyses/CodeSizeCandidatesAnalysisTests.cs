@@ -25,7 +25,9 @@ public sealed class CodeSizeCandidatesAnalysisTests
 
         Assert.Equal("code-size-candidates", descriptor.AnalysisId);
         Assert.Equal("Code Size Candidates", descriptor.Title);
-        Assert.Equal(1, descriptor.BehaviorVersion);
+        Assert.Equal(2, descriptor.BehaviorVersion);
+        Assert.Equal(new[] { "extremeFileLines", "extremeFileUtf8Bytes", "extremeMemberCodeLines", "extremeTypeCodeLines", "minMemberCodeLines", "minTypeCodeLines", "percentile" },
+            descriptor.TestOptions.Select(static option => option.Name));
         Assert.True(descriptor.DefaultEnabled);
         Assert.Equal(
             new[] { "extremeFileLines", "extremeFileUtf8Bytes", "extremeMemberCodeLines", "extremeTypeCodeLines", "minMemberCodeLines", "minTypeCodeLines", "percentile" },
@@ -367,7 +369,7 @@ public sealed class CodeSizeCandidatesAnalysisTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_ExcludesTestProjectsGeneratedDocumentsAndGeneratedSymbols()
+    public async Task ExecuteAsync_IncludesTestProjectsButExcludesGeneratedDocumentsAndGeneratedSymbols()
     {
         const string normal = "namespace Sample; public class Example { public void Normal() { if (true) { } if (true) { } if (true) { } if (true) { } if (true) { } if (true) { } if (true) { } if (true) { } } [System.CodeDom.Compiler.GeneratedCode(\"tool\", \"1\")] public void Generated() { if (true) { } if (true) { } if (true) { } if (true) { } if (true) { } if (true) { } if (true) { } if (true) { } } }";
         using var fixture = CreateContext(
@@ -376,9 +378,36 @@ public sealed class CodeSizeCandidatesAnalysisTests
 
         var findings = await Analyze(fixture.Context, Options(minMemberCodeLines: 1, extremeMemberCodeLines: 1));
 
-        var finding = Assert.Single(findings);
-        Assert.Contains("Normal", finding.SubjectId, StringComparison.Ordinal);
-        Assert.Equal("Production/Example.cs", finding.SourcePath);
+        Assert.Equal(2, findings.Count);
+        Assert.Contains(findings, finding => finding.SubjectId.Contains("Normal", StringComparison.Ordinal)
+            && finding.SourcePath == "Production/Example.cs");
+        Assert.Contains(findings, finding => finding.SubjectId.Contains("Normal", StringComparison.Ordinal)
+            && finding.SourcePath == "Example.Tests/Example.cs");
+        Assert.DoesNotContain(findings, finding => finding.SubjectId.Contains("Generated", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReportsLargePhysicalTestFilesButDoesNotCountRawStringLinesAsMemberLines()
+    {
+        var rawString = "namespace Sample; public class Fixture { public string Payload = \"\"\"\n"
+            + string.Join("\n", Enumerable.Repeat("payload", 1005))
+            + "\n\"\"\"; }";
+        var longFile = "namespace Sample; public class Fixture { public void Run() { } }\n"
+            + string.Concat(Enumerable.Repeat("\n", 3001));
+        var longMethod = "namespace Sample; public class Fixture { public void Long() {\n"
+            + string.Join("\n", Enumerable.Range(0, 1005).Select(static index => $"var item{index} = {index};"))
+            + "\n} }";
+        using var fixture = CreateContext(new ProjectSpec("Fixture.Tests", rawString), new ProjectSpec("Long.Tests", longFile), new ProjectSpec("Member.Tests", longMethod));
+        var analysis = new CodeSizeCandidatesAnalysis();
+
+        var findings = (await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None)).Findings;
+
+        Assert.Contains(findings, finding => finding.Discriminator == "file-size" && finding.ProjectPath == "Long.Tests/Long.Tests.csproj"
+            && (int)finding.Metrics["fileLines"] > 3000);
+        Assert.Contains(findings, finding => finding.Discriminator == "file-size" && finding.ProjectPath == "Fixture.Tests/Fixture.Tests.csproj");
+        Assert.DoesNotContain(findings, finding => finding.Discriminator == "member-size" && finding.ProjectPath == "Fixture.Tests/Fixture.Tests.csproj");
+        Assert.Contains(findings, finding => finding.Discriminator == "member-size" && finding.ProjectPath == "Member.Tests/Member.Tests.csproj"
+            && (int)finding.Metrics["memberCodeLines"] > 1000);
     }
 
     [Fact]

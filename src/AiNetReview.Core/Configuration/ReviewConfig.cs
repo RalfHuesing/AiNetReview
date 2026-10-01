@@ -36,4 +36,9 @@ public sealed class ReviewConfig
     public IReadOnlyList<ConfiguredReviewAnalysis> Analyses { get; }
 }
 
-public sealed record ConfiguredReviewAnalysis(string AnalysisId, IReviewAnalysis Analysis, ReviewAnalysisOptions EffectiveOptions);
+public sealed record ConfiguredReviewAnalysis(
+    string AnalysisId,
+    IReviewAnalysis Analysis,
+    ReviewAnalysisOptions EffectiveOptions,
+    ReviewAnalysisOptions? EffectiveTestOptions = null,
+    IReadOnlyDictionary<string, bool>? ExplicitTestOptions = null);

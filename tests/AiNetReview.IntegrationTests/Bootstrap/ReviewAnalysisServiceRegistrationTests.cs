@@ -70,6 +70,26 @@ public sealed class AnalysisServiceRegistrationTests
                 $"Production analysis '{analysis.Descriptor.AnalysisId}' is missing from the repository ainetreview.json.");
             Assert.True(options.TryGetProperty("enabled", out var enabled));
             Assert.Equal(JsonValueKind.True, enabled.ValueKind);
+            foreach (var option in analysis.Descriptor.Options)
+            {
+                Assert.True(options.TryGetProperty(option.Name, out var configuredOption),
+                    $"Production analysis '{analysis.Descriptor.AnalysisId}' is missing default option '{option.Name}'.");
+                Assert.Equal(option.DefaultValue.GetRawText(), configuredOption.GetRawText());
+            }
+
+            if (analysis.Descriptor.TestOptions.Count == 0)
+            {
+                Assert.False(options.TryGetProperty("testOptions", out _));
+            }
+            else
+            {
+                Assert.True(options.TryGetProperty("testOptions", out var testOptions));
+                Assert.Equal(analysis.Descriptor.TestOptions.Count, testOptions.EnumerateObject().Count());
+                foreach (var option in analysis.Descriptor.TestOptions)
+                {
+                    Assert.Equal(option.DefaultValue.GetRawText(), testOptions.GetProperty(option.Name).GetRawText());
+                }
+            }
         }
 
         var missingTestEvidence = configuredAnalyses.GetProperty("missing-test-evidence-candidates");

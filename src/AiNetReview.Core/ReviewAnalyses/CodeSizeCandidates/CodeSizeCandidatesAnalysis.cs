@@ -27,11 +27,12 @@ public sealed class CodeSizeCandidatesAnalysis : IReviewAnalysis
     public ReviewAnalysisDescriptor Descriptor { get; } = new(
         analysisId: "code-size-candidates",
         title: "Code Size Candidates",
-        behaviorVersion: 1,
+        behaviorVersion: 2,
         purpose: "Identifies unusually large executable members, classes, and source files for focused review.",
-        measurement: "memberCodeLines counts distinct token-start lines in the full executable declaration, including attributes and signature. decisionCount, decisionConstructCount, and maxDecisionNesting use ControlFlowMetrics on only the body or expression-body expression. The relative member path requires its length to meet both minMemberCodeLines and the project's nearest-rank percentile, plus the configured branching condition; extremeMemberCodeLines is independent. typeCodeLines sums CodeLineMetrics.CountOwnTypePart for every non-generated part of an explicit class or record class symbol in one project; the relative path uses minTypeCodeLines and the project's nearest-rank class percentile, while extremeTypeCodeLines is independent. fileLines is SourceText.Lines.Count and fileUtf8Bytes is the UTF-8 byte count of loaded SourceText without a BOM; either configured extreme threshold can select a file. Only production C# projects, non-generated symbols, and non-generated .cs documents are measured.",
+        measurement: "memberCodeLines counts distinct token-start lines in the full executable declaration, including attributes and signature. decisionCount, decisionConstructCount, and maxDecisionNesting use ControlFlowMetrics on only the body or expression-body expression. The relative member path requires its length to meet both minMemberCodeLines and the project's nearest-rank percentile, plus the configured branching condition; extremeMemberCodeLines is independent. typeCodeLines sums CodeLineMetrics.CountOwnTypePart for every non-generated part of an explicit class or record class symbol in one project; the relative path uses minTypeCodeLines and the project's nearest-rank class percentile, while extremeTypeCodeLines is independent. fileLines is SourceText.Lines.Count and fileUtf8Bytes is the UTF-8 byte count of loaded SourceText without a BOM; either configured extreme threshold can select a file. All C# project roles, non-generated symbols, and non-generated .cs documents are measured. Test projects use testOptions per project; omitted testOptions values inherit the corresponding effective general option.",
         reviewQuestions: ["Is this executable body cohesive, and are its paths and tests easy to review?", "Do the members of this class serve one cohesive responsibility?", "Can relevant code in this file be located and edited with focused context?"],
-        options: AnalysisOptions);
+        options: AnalysisOptions,
+        testOptionNames: ["percentile", "minMemberCodeLines", "extremeMemberCodeLines", "minTypeCodeLines", "extremeTypeCodeLines", "extremeFileLines", "extremeFileUtf8Bytes"]);
 
     public async Task<ReviewAnalysisResult> ExecuteAsync(
         ReviewContext context,
@@ -42,7 +43,6 @@ public sealed class CodeSizeCandidatesAnalysis : IReviewAnalysis
         ArgumentNullException.ThrowIfNull(options);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var settings = MemberSizeSelectionSettings.From(options);
         var findings = new List<FindingDraft>();
         var projects = context.Solution.Projects
             .Where(static project => project.Language == LanguageNames.CSharp && !string.IsNullOrWhiteSpace(project.FilePath))
@@ -52,21 +52,18 @@ public sealed class CodeSizeCandidatesAnalysis : IReviewAnalysis
         foreach (var project in projects)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (ReviewSourceClassifier.IsTestProject(project))
-            {
-                continue;
-            }
+            var projectSettings = MemberSizeSelectionSettings.From(options.ForProject(project));
 
             var members = await ExecutableMemberCollector.CollectAsync(context, project, cancellationToken).ConfigureAwait(false);
-            var selections = MemberSizeSelector.Select(members, settings, cancellationToken);
+            var selections = MemberSizeSelector.Select(members, projectSettings, cancellationToken);
             findings.AddRange(selections.Select(MemberSizeFindingFactory.Create));
 
             var typeMeasurements = await TypeSizeCollector.CollectAsync(context, project, cancellationToken).ConfigureAwait(false);
-            var typeSelections = TypeSizeSelector.Select(typeMeasurements, settings, cancellationToken);
+            var typeSelections = TypeSizeSelector.Select(typeMeasurements, projectSettings, cancellationToken);
             findings.AddRange(typeSelections.Select(TypeSizeFindingFactory.Create));
 
             var fileMeasurements = await FileSizeCollector.CollectAsync(context, project, cancellationToken).ConfigureAwait(false);
-            var fileSelections = FileSizeSelector.Select(fileMeasurements, settings, cancellationToken);
+            var fileSelections = FileSizeSelector.Select(fileMeasurements, projectSettings, cancellationToken);
             findings.AddRange(fileSelections.Select(FileSizeFindingFactory.Create));
         }
 

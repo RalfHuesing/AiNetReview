@@ -5,10 +5,15 @@
   "analyses": {
     "method-control-flow-outliers": {
       "enabled": true,
-      "percentile": 90
+      "percentile": 90,
+      "testOptions": {
+        "percentile": 90
+      }
     },
     "dead-code-candidates": {
-      "enabled": true
+      "enabled": true,
+      "apiSurface": "external_library",
+      "entryPointAttributes": []
     },
     "duplicate-code-candidates": {
       "enabled": true,
@@ -33,7 +38,16 @@
       "minTypeCodeLines": 300,
       "extremeTypeCodeLines": 800,
       "extremeFileLines": 1000,
-      "extremeFileUtf8Bytes": 131072
+      "extremeFileUtf8Bytes": 131072,
+      "testOptions": {
+        "percentile": 90,
+        "minMemberCodeLines": 80,
+        "extremeMemberCodeLines": 300,
+        "minTypeCodeLines": 300,
+        "extremeTypeCodeLines": 800,
+        "extremeFileLines": 1000,
+        "extremeFileUtf8Bytes": 131072
+      }
     },
     "non-ascii-identifiers": {
       "enabled": true

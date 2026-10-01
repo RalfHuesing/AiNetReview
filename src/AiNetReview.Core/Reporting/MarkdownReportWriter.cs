@@ -366,7 +366,7 @@ public sealed class MarkdownReportWriter
             .Append(viewDirectory == "all-findings"
                 ? "Review policy: In the commissioned scope, investigate every finding and justify its classification; a signal alone does not require a change. This is the reference-only `all-findings/` view; inspect or report it only when the user explicitly requests a full repository audit. See the [root index's Review guidance](../index.md#review-guidance).\n\n"
                 : "Review policy: In the commissioned scope, investigate every finding and justify its classification; a signal alone does not require a change. Use `changed-files/` as the primary review set; see the [root index's Review guidance](../index.md#review-guidance).\n\n")
-            .Append("Effective options: ").Append(FormatCodeSpan(FormatOptions(configuredAnalysis.EffectiveOptions))).Append("\n\n")
+            .Append(FormatEffectiveOptions(configuredAnalysis)).Append("\n\n")
             .Append("Review questions:\n\n");
         foreach (var question in descriptor.ReviewQuestions)
         {
@@ -380,13 +380,13 @@ public sealed class MarkdownReportWriter
 
         if (configuredAnalysis.AnalysisId == "method-control-flow-outliers")
         {
-            builder.Append("\nSelection: Within each production C# project, decision-count and maximum-nesting populations have separate nearest-rank values at the configured `percentile`. Inclusive cutoffs are `max(8, decision percentile)` and `max(4, nesting percentile)`. A method is selected when `decisionCount >= decision cutoff AND decisionConstructCount >= 2`, or `maxDecisionNesting >= nesting cutoff`.\n");
+            builder.Append("\nSelection: Within each C# project, decision-count and maximum-nesting populations have separate nearest-rank values at the effective `percentile`. Inclusive cutoffs are `max(8, decision percentile)` and `max(4, nesting percentile)`. A method is selected when `decisionCount >= decision cutoff AND decisionConstructCount >= 2`, or `maxDecisionNesting >= nesting cutoff`. Test projects use effective test options shown above.\n");
         }
 
         if (configuredAnalysis.AnalysisId == "code-size-candidates")
         {
             builder.Append("\nCode-size counting and selection: Member code lines are distinct physical source lines with a non-missing C# token start in the full executable declaration; tokenless comment and blank lines do not count, while signature, attributes, and braces count where their tokens start. A multiline literal counts its token-start line; continuation lines count only if another token starts there. Type code lines sum the same token-start line counts across each non-generated part of an explicit class or record class symbol, excluding nested types and delegates. File lines are physical source lines; file bytes are UTF-8 bytes without a BOM.\n\n")
-                .Append("Within each production project, members meet the relative size criterion when `memberCodeLines >= max(minMemberCodeLines, project nearest-rank memberCodeLines value at percentile)` and `((decisionCount >= 8 AND decisionConstructCount >= 2) OR maxDecisionNesting >= 4)`; `extremeMemberCodeLines` is an independent inclusive threshold. Types meet the relative criterion at `typeCodeLines >= max(minTypeCodeLines, project nearest-rank typeCodeLines value at percentile)` or the independent `extremeTypeCodeLines` threshold. Files meet either inclusive threshold: `fileLines >= extremeFileLines` or `fileUtf8Bytes >= extremeFileUtf8Bytes`.\n");
+                .Append("Within each C# project, members meet the relative size criterion when `memberCodeLines >= max(minMemberCodeLines, project nearest-rank memberCodeLines value at percentile)` and `((decisionCount >= 8 AND decisionConstructCount >= 2) OR maxDecisionNesting >= 4)`; `extremeMemberCodeLines` is an independent inclusive threshold. Types meet the relative criterion at `typeCodeLines >= max(minTypeCodeLines, project nearest-rank typeCodeLines value at percentile)` or the independent `extremeTypeCodeLines` threshold. Files meet either inclusive threshold: `fileLines >= extremeFileLines` or `fileUtf8Bytes >= extremeFileUtf8Bytes`.\n");
         }
 
         if (configuredAnalysis.AnalysisId == "duplicate-code-candidates")
@@ -755,6 +755,41 @@ public sealed class MarkdownReportWriter
     private static string FormatOptions(ReviewAnalysisOptions options) => "{" + string.Join(
         ", ", options.Values.OrderBy(static pair => pair.Key, StringComparer.Ordinal)
             .Select(static pair => $"{JsonSerializer.Serialize(pair.Key)}: {FormatJsonValue(pair.Value)}")) + "}";
+
+    private static string FormatEffectiveOptions(ConfiguredReviewAnalysis configuredAnalysis)
+    {
+        var testOptions = configuredAnalysis.EffectiveTestOptions;
+        if (testOptions is null)
+        {
+            return "Effective options: " + FormatCodeSpan(FormatOptions(configuredAnalysis.EffectiveOptions)) + "\n\n";
+        }
+
+        var testDescriptors = configuredAnalysis.Analysis.Descriptor.TestOptions;
+        var identical = testDescriptors.All(option => JsonElement.DeepEquals(
+            configuredAnalysis.EffectiveOptions[option.Name], testOptions[option.Name]));
+        var builder = new StringBuilder();
+        if (identical)
+        {
+            builder.Append("Effective options: ")
+                .Append(FormatCodeSpan(FormatOptions(configuredAnalysis.EffectiveOptions)))
+                .Append(" (same for production and test projects).\n\n");
+        }
+        else
+        {
+            builder.Append("Effective options (production projects): ")
+                .Append(FormatCodeSpan(FormatOptions(configuredAnalysis.EffectiveOptions))).Append("\n\n")
+                .Append("Effective options (test projects): ")
+                .Append(FormatCodeSpan(FormatOptions(testOptions))).Append("\n\n");
+        }
+
+        var sources = testDescriptors.Select(option =>
+        {
+            var isExplicit = configuredAnalysis.ExplicitTestOptions?.GetValueOrDefault(option.Name) ?? false;
+            return FormatCodeSpan(option.Name) + (isExplicit ? " explicitly configured" : " inherited");
+        });
+        builder.Append("Test option sources: ").Append(string.Join("; ", sources)).Append(".\n\n");
+        return builder.ToString();
+    }
 
     private static string FormatJsonValue(JsonElement value) => value.ValueKind switch
     {

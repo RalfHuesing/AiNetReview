@@ -44,6 +44,7 @@ public sealed class ZeroConfigIntegrationTests
             Assert.Equal(JsonValueKind.True, generatedDocument.RootElement.GetProperty("analyses")
                 .GetProperty("indirection-drift-candidates").GetProperty("enabled").ValueKind);
             var analyses = generatedDocument.RootElement.GetProperty("analyses");
+            Assert.Equal(90, analyses.GetProperty("method-control-flow-outliers").GetProperty("testOptions").GetProperty("percentile").GetInt32());
             var codeSize = analyses.GetProperty("code-size-candidates");
             Assert.True(codeSize.GetProperty("enabled").GetBoolean());
             Assert.Equal(90, codeSize.GetProperty("percentile").GetInt32());
@@ -53,6 +54,9 @@ public sealed class ZeroConfigIntegrationTests
             Assert.Equal(800, codeSize.GetProperty("extremeTypeCodeLines").GetInt32());
             Assert.Equal(1000, codeSize.GetProperty("extremeFileLines").GetInt32());
             Assert.Equal(131072, codeSize.GetProperty("extremeFileUtf8Bytes").GetInt32());
+            Assert.Equal(131072, codeSize.GetProperty("testOptions").GetProperty("extremeFileUtf8Bytes").GetInt32());
+            Assert.Equal("external_library", analyses.GetProperty("dead-code-candidates").GetProperty("apiSurface").GetString());
+            Assert.Empty(analyses.GetProperty("dead-code-candidates").GetProperty("entryPointAttributes").EnumerateArray());
             Assert.True(analyses.GetProperty("structural-duplication-candidates").GetProperty("enabled").GetBoolean());
             Assert.Equal(8, analyses.EnumerateObject().Count());
         }
@@ -148,6 +152,13 @@ public sealed class ZeroConfigIntegrationTests
         using var response = JsonDocument.Parse(Assert.Single(result.Output.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)));
         Assert.Equal("completed", response.RootElement.GetProperty("status").GetString());
         Assert.True(File.Exists(Path.Combine(projectRoot, "ainetreview.json")));
+        using (var config = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(projectRoot, "ainetreview.json"))))
+        {
+            var analyses = config.RootElement.GetProperty("analyses");
+            Assert.Equal(90, analyses.GetProperty("method-control-flow-outliers").GetProperty("testOptions").GetProperty("percentile").GetInt32());
+            Assert.Equal(131072, analyses.GetProperty("code-size-candidates").GetProperty("testOptions").GetProperty("extremeFileUtf8Bytes").GetInt32());
+            Assert.Equal("external_library", analyses.GetProperty("dead-code-candidates").GetProperty("apiSurface").GetString());
+        }
         Assert.True(File.Exists(Path.Combine(projectRoot, "audit-reporting", "baseline.json")));
     }
 

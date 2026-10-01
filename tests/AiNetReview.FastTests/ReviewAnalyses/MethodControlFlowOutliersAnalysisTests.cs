@@ -297,7 +297,7 @@ public sealed class MethodControlFlowOutliersAnalysisTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_ExcludesTestProjectsFromProductionComparisons()
+    public async Task ExecuteAsync_IncludesTestProjectsInProjectComparisons()
     {
         const string source = """
             namespace Sample;
@@ -321,7 +321,9 @@ public sealed class MethodControlFlowOutliersAnalysisTests
 
         var result = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
 
-        Assert.Empty(result.Findings);
+        var finding = Assert.Single(result.Findings);
+        Assert.Equal("src/Example.cs", finding.SourcePath);
+        Assert.Equal(1, finding.Metrics["groupMethodCount"]);
     }
 
     [Theory]
@@ -355,7 +357,8 @@ public sealed class MethodControlFlowOutliersAnalysisTests
     {
         var descriptor = new MethodControlFlowOutliersAnalysis().Descriptor;
         Assert.Equal("method-control-flow-outliers", descriptor.AnalysisId);
-        Assert.Equal(1, descriptor.BehaviorVersion);
+        Assert.Equal(2, descriptor.BehaviorVersion);
+        Assert.Equal(new[] { "percentile" }, descriptor.TestOptions.Select(static option => option.Name));
         Assert.Throws<ArgumentException>(() => descriptor.ResolveOptions([new("percentile", System.Text.Json.JsonSerializer.SerializeToElement(49))]));
         Assert.Throws<ArgumentException>(() => descriptor.ResolveOptions([new("percentile", System.Text.Json.JsonSerializer.SerializeToElement(100))]));
         Assert.Throws<ArgumentException>(() => descriptor.ResolveOptions([new("percentile", System.Text.Json.JsonSerializer.SerializeToElement(90.5))]));

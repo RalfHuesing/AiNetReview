@@ -58,6 +58,19 @@ public sealed class DefaultReviewConfigGenerator
                     option.DefaultValue.WriteTo(writer);
                 }
 
+                if (descriptor.TestOptions.Count > 0)
+                {
+                    writer.WritePropertyName("testOptions");
+                    writer.WriteStartObject();
+                    foreach (var option in descriptor.TestOptions)
+                    {
+                        writer.WritePropertyName(option.Name);
+                        option.DefaultValue.WriteTo(writer);
+                    }
+
+                    writer.WriteEndObject();
+                }
+
                 writer.WriteEndObject();
             }
 

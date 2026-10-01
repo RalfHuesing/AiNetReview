@@ -22,7 +22,7 @@ Für Codeänderungen sind die betroffenen Tests und die erforderlichen Gates gem
 
   **Abschlussnachweis:** ReviewRunResult liefert sortierte Klassifikationen aller geladenen C#-Projekte mit Rolle und Grund; jedes Finding führt die Rolle aller vertretenen Symbole/Vorkommen und ignoriert Evidenz bei der Herkunft. Gleichzeilige strukturelle Fragmente bleiben über OccurrenceId getrennt; Finding- und Related-Identität sowie Baselineauswahl bleiben davon unberührt. Verifiziert: Build 0 Warnungen/Fehler, FastTests 320/320, IntegrationTests 106/106; `git diff --check` sauber.
 
-- [ ] **2 — Größen- und Kontrollflussanalysen einschließlich Testoptionen umsetzen**
+- [x] **2 — Größen- und Kontrollflussanalysen einschließlich Testoptionen umsetzen**
 
   **Intention:** Den konkreten übergroßen Test sichtbar machen und unterschiedliche Testparameter bei vollständiger Optionsübersicht nachvollziehbar erlauben.
 
@@ -31,6 +31,8 @@ Für Codeänderungen sind die betroffenen Tests und die erforderlichen Gates gem
   **Nicht-Ziele:** Höhere Testdefaults, neue feste Kontrollflussparameter, rollenbasierte Multiplikatoren, weitere Testprofile, neue Kandidatenarten oder veränderte Messdefinitionen. Benutzerdateien werden nicht überschrieben.
 
   **Abnahme:** Der Ausgangsfall mit über 3.000 physischen Testdateizeilen und über 1.000 Member-Token-Anfangszeilen liefert die jeweiligen Findings; eine lange String-Fixture erzeugt keine erfundene Membergröße. Helpers und übersprungene Tests sind eingeschlossen. Tests sichern projektweise Populationen, Gleichstände, relative Kriterien und unabhängige Extremgrenzen. Niedrigere/höhere Testwerte und ein anderes Testperzentil ändern nur die entsprechende Testauswahl. Fehlende, leere und partielle Overrides, explizite Unabhängigkeit und wiederhergestellte Vererbung funktionieren. Unbekannte/doppelte Keys, falsche Typen, Bereichsverletzungen und unzulässige Optionen scheitern auch bei deaktivierten Analysen. Generator und Repository-Datei werden gegen sämtliche registrierten Optionsbeschreibungen geprüft; beide Kommandos akzeptieren die vollständige Datei und erhalten bestehende Benutzerkonfigurationen. Optionsänderungen erzeugen keine geänderten Quelldateihashes. Konzept-Abnahme 1, 3, 11 und 12 ist auf Analyse-/Konfigurationsebene belegt; die gemeinsame Root-Darstellung folgt in Paket 5.
+
+  **Abschlussnachweis:** Projektweise Testoptionen verwenden dieselben Deskriptoren und bewahren explizite/geerbte Herkunft; Größen- und Kontrollflussberichte zeigen effektive Werte. Defaultgenerator, Repository-JSON und Konfigurationsbeispiel enthalten alle acht Analysen und sämtliche verfügbaren Defaults. Verifiziert: `build.ps1` 0 Warnungen/Fehler, `test-fast.ps1` 329/329, `test-integration.ps1` 108/108; `git diff --check` sauber.
 
 - [ ] **3 — Duplikation, Weiterleitung und Bezeichner auf Testcode erweitern**
 

@@ -12,11 +12,13 @@ using AiNetReview.Core.ReviewAnalyses.DuplicateCodeCandidates;
 using AiNetReview.Core.ReviewAnalyses.NonAsciiIdentifiers;
 using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
 using AiNetReview.Core.ReviewAnalyses.StructuralDuplicationCandidates;
+using AiNetReview.Core.ReviewAnalyses.CodeSizeCandidates;
 
 public sealed class ReviewConfigValidatorTests
 {
     private static ReviewAnalysisRegistry Registry() => new([
         new MethodControlFlowOutliersAnalysis(),
+        new CodeSizeCandidatesAnalysis(),
         new DeadCodeCandidatesAnalysis(),
         new DuplicateCodeCandidatesAnalysis(),
         new MissingTestEvidenceCandidatesAnalysis(),
@@ -106,6 +108,60 @@ public sealed class ReviewConfigValidatorTests
             prefix + "\"minIndirectDecisionCount\":\"5\"}}}"));
         Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
             prefix + "\"minIndirectDecisionNesting\":null}}}"));
+    }
+
+    [Fact]
+    public void Validate_ResolvesPartialTestOptionsAndTracksExplicitValues()
+    {
+        using var temp = TestTempDirectory.Create();
+        temp.CreateFile("Project.slnx", "<Solution />");
+        var validator = new ReviewConfigValidator(Registry());
+
+        var config = validator.Validate(temp.DirectoryPath,
+            """{"schemaVersion":1,"solution":"Project.slnx","outputDirectory":"reports","analyses":{"code-size-candidates":{"percentile":75,"extremeFileLines":40,"testOptions":{"percentile":60}}}}""");
+
+        var analysis = Assert.Single(config.Analyses);
+        Assert.Equal(75, analysis.EffectiveOptions["percentile"].GetInt32());
+        Assert.Equal(40, analysis.EffectiveOptions["extremeFileLines"].GetInt32());
+        Assert.Equal(60, analysis.EffectiveTestOptions!["percentile"].GetInt32());
+        Assert.Equal(40, analysis.EffectiveTestOptions["extremeFileLines"].GetInt32());
+        Assert.True(analysis.ExplicitTestOptions!["percentile"]);
+        Assert.False(analysis.ExplicitTestOptions["extremeFileLines"]);
+
+        var inherited = Assert.Single(validator.Validate(temp.DirectoryPath,
+            """{"schemaVersion":1,"solution":"Project.slnx","outputDirectory":"reports","analyses":{"code-size-candidates":{"extremeFileLines":40,"testOptions":{}}}}""").Analyses);
+        Assert.Equal(40, inherited.EffectiveTestOptions!["extremeFileLines"].GetInt32());
+        Assert.All(inherited.ExplicitTestOptions!.Values, Assert.False);
+    }
+
+    [Theory]
+    [InlineData("\"testOptions\":{\"unknown\":1}")]
+    [InlineData("\"testOptions\":{\"enabled\":false}")]
+    [InlineData("\"testOptions\":{\"percentile\":49}")]
+    [InlineData("\"testOptions\":{\"percentile\":90.5}")]
+    [InlineData("\"testOptions\":{\"percentile\":\"90\"}")]
+    [InlineData("\"testOptions\":{\"percentile\":90,\"percentile\":80}")]
+    public void Validate_RejectsInvalidTestOptionsEvenWhenDisabled(string testOptions)
+    {
+        using var temp = TestTempDirectory.Create();
+        temp.CreateFile("Project.slnx", "<Solution />");
+        var validator = new ReviewConfigValidator(Registry());
+        var json = "{\"schemaVersion\":1,\"solution\":\"Project.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"method-control-flow-outliers\":{\"enabled\":false," + testOptions + "}}}";
+
+        Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath, json));
+    }
+
+    [Fact]
+    public void Validate_RejectsTestOptionsForUnsupportedAnalysesAndDuplicateObjects()
+    {
+        using var temp = TestTempDirectory.Create();
+        temp.CreateFile("Project.slnx", "<Solution />");
+        var validator = new ReviewConfigValidator(Registry());
+
+        Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
+            """{"schemaVersion":1,"solution":"Project.slnx","outputDirectory":"reports","analyses":{"dead-code-candidates":{"testOptions":{}}}}"""));
+        Assert.Throws<InvalidReviewInputException>(() => validator.Validate(temp.DirectoryPath,
+            """{"schemaVersion":1,"solution":"Project.slnx","outputDirectory":"reports","analyses":{"code-size-candidates":{"testOptions":{},"testOptions":{}}}}"""));
     }
 
     [Fact]

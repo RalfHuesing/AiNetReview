@@ -13,6 +13,72 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed class CodeSizeCandidatesIntegrationTests
 {
     [Fact]
+    public async Task ReviewCommand_AppliesIndependentTestSizeThresholdsAndKeepsOptionsOutOfSourceSelection()
+    {
+        using var tempDirectory = TestTempDirectory.Create("ainet-code-size-test-options-");
+        var projectRoot = tempDirectory.GetPath("review-project");
+        var productionDirectory = Path.Combine(projectRoot, "Sample");
+        var testDirectory = Path.Combine(projectRoot, "Tests");
+        Directory.CreateDirectory(productionDirectory);
+        Directory.CreateDirectory(testDirectory);
+        var projectXml = "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>";
+        var productionProject = Path.Combine(productionDirectory, "Sample.csproj");
+        var testProject = Path.Combine(testDirectory, "Sample.Tests.csproj");
+        await File.WriteAllTextAsync(productionProject, projectXml);
+        await File.WriteAllTextAsync(testProject, projectXml);
+        const string source = "namespace Sample; public sealed class Cases { public void Run() { var value = 1; value++; } }";
+        await File.WriteAllTextAsync(Path.Combine(productionDirectory, "Class1.cs"), source);
+        await File.WriteAllTextAsync(Path.Combine(testDirectory, "Class1.cs"), source);
+        await RestoreProjectAsync(productionProject, productionDirectory);
+        await RestoreProjectAsync(testProject, testDirectory);
+        await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
+            "<Solution><Project Path=\"Sample/Sample.csproj\" /><Project Path=\"Tests/Sample.Tests.csproj\" /></Solution>");
+        var configPath = Path.Combine(projectRoot, "ainetreview.json");
+        var lowOptionsJson = "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"code-size-candidates\":{\"extremeMemberCodeLines\":1,\"testOptions\":{\"extremeMemberCodeLines\":1}}}}";
+        await File.WriteAllTextAsync(configPath, lowOptionsJson);
+        await using var services = BuildServices();
+
+        var baseline = await InvokeAsync(["baseline", projectRoot], services);
+        Assert.Equal(0, baseline.ExitCode);
+        Assert.Empty(baseline.Error);
+        using var baselineDocument = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", "baseline.json")));
+        var baselineFiles = baselineDocument.RootElement.GetProperty("files").GetRawText();
+
+        var low = await InvokeAsync(["review", projectRoot], services);
+        Assert.Equal(0, low.ExitCode);
+        Assert.Empty(low.Error);
+        var lowRunId = GetRunId(low.Output);
+        var lowDirectory = Path.Combine(projectRoot, "reports", lowRunId);
+        var lowReport = await File.ReadAllTextAsync(Path.Combine(lowDirectory, "all-findings", "code-size-candidates.md"));
+        Assert.Contains("Total findings: 2", lowReport, StringComparison.Ordinal);
+        Assert.Contains("#### File: Sample/Class1.cs (1 findings)", lowReport, StringComparison.Ordinal);
+        Assert.Contains("#### File: Tests/Class1.cs (1 findings)", lowReport, StringComparison.Ordinal);
+        Assert.Contains("Test option sources:", lowReport, StringComparison.Ordinal);
+        Assert.Contains("`extremeMemberCodeLines` explicitly configured", lowReport, StringComparison.Ordinal);
+        Assert.Contains("`minMemberCodeLines` inherited", lowReport, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(lowDirectory, "changed-files", "code-size-candidates.md")));
+        Assert.Equal(lowOptionsJson, await File.ReadAllTextAsync(configPath));
+
+        var highOptionsJson = "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"code-size-candidates\":{\"extremeMemberCodeLines\":1,\"testOptions\":{\"extremeMemberCodeLines\":1000}}}}";
+        await File.WriteAllTextAsync(configPath, highOptionsJson);
+        var high = await InvokeAsync(["review", projectRoot], services);
+        Assert.Equal(0, high.ExitCode);
+        Assert.Empty(high.Error);
+        var highRunId = GetRunId(high.Output);
+        var highDirectory = Path.Combine(projectRoot, "reports", highRunId);
+        var highReport = await File.ReadAllTextAsync(Path.Combine(highDirectory, "all-findings", "code-size-candidates.md"));
+        Assert.Contains("Total findings: 1", highReport, StringComparison.Ordinal);
+        Assert.Contains("#### File: Sample/Class1.cs (1 findings)", highReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("#### File: Tests/Class1.cs", highReport, StringComparison.Ordinal);
+        Assert.Contains("Effective options (production projects)", highReport, StringComparison.Ordinal);
+        Assert.Contains("Effective options (test projects)", highReport, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(highDirectory, "changed-files", "code-size-candidates.md")));
+        Assert.Equal(highOptionsJson, await File.ReadAllTextAsync(configPath));
+        using var baselineAfter = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", "baseline.json")));
+        Assert.Equal(baselineFiles, baselineAfter.RootElement.GetProperty("files").GetRawText());
+    }
+
+    [Fact]
     public async Task ReviewCommand_ReportsAllSizeKindsReasonsAndPartialEvidenceWhilePreservingControlFlow()
     {
         using var tempDirectory = TestTempDirectory.Create("ainet-code-size-");
@@ -51,7 +117,7 @@ public sealed class CodeSizeCandidatesIntegrationTests
         await RestoreProjectAsync(projectFile, projectDirectory);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
             "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
-        await WriteConfigAsync(projectRoot, "\"code-size-candidates\":{\"percentile\":50,\"minMemberCodeLines\":1,\"extremeMemberCodeLines\":1,\"minTypeCodeLines\":1,\"extremeTypeCodeLines\":1,\"extremeFileLines\":1,\"extremeFileUtf8Bytes\":1},\"method-control-flow-outliers\":{}");
+        await WriteConfigAsync(projectRoot, "\"code-size-candidates\":{\"percentile\":50,\"minMemberCodeLines\":1,\"extremeMemberCodeLines\":1,\"minTypeCodeLines\":1,\"extremeTypeCodeLines\":1,\"extremeFileLines\":1,\"extremeFileUtf8Bytes\":1,\"testOptions\":{\"percentile\":50,\"minMemberCodeLines\":1,\"extremeMemberCodeLines\":1,\"minTypeCodeLines\":1,\"extremeTypeCodeLines\":1,\"extremeFileLines\":1,\"extremeFileUtf8Bytes\":1}},\"method-control-flow-outliers\":{\"testOptions\":{\"percentile\":90}}");
         await using var services = BuildServices();
 
         var initial = await InvokeAsync(["review", projectRoot], services);
@@ -65,6 +131,8 @@ public sealed class CodeSizeCandidatesIntegrationTests
         Assert.True(File.Exists(sizeReportPath));
         Assert.True(File.Exists(flowReportPath));
         var sizeReport = await File.ReadAllTextAsync(sizeReportPath);
+        Assert.Contains("same for production and test projects", sizeReport, StringComparison.Ordinal);
+        Assert.Contains("`extremeMemberCodeLines` explicitly configured", sizeReport, StringComparison.Ordinal);
         Assert.Contains("LongOperation", sizeReport, StringComparison.Ordinal);
         Assert.Contains("Member: ", sizeReport, StringComparison.Ordinal);
         Assert.Contains("relative length\\-and\\-control\\-flow criterion", sizeReport, StringComparison.Ordinal);
@@ -89,8 +157,10 @@ public sealed class CodeSizeCandidatesIntegrationTests
         Assert.Contains("fileLines >= extremeFileLines` or `fileUtf8Bytes >= extremeFileUtf8Bytes", sizeReport, StringComparison.Ordinal);
         Assert.Equal(1, sizeReport.Split("Can relevant code in this file be located and edited with focused context?", StringSplitOptions.None).Length - 1);
         var flowReport = await File.ReadAllTextAsync(flowReportPath);
+        Assert.Contains("same for production and test projects", flowReport, StringComparison.Ordinal);
+        Assert.Contains("`percentile` explicitly configured", flowReport, StringComparison.Ordinal);
         Assert.Contains("8 decisions across 8 constructs (cutoff 8)", flowReport, StringComparison.Ordinal);
-        Assert.Contains("decision-count and maximum-nesting populations have separate nearest-rank values at the configured `percentile`", flowReport, StringComparison.Ordinal);
+        Assert.Contains("decision-count and maximum-nesting populations have separate nearest-rank values at the effective `percentile`", flowReport, StringComparison.Ordinal);
         Assert.Contains("Inclusive cutoffs are `max(8, decision percentile)` and `max(4, nesting percentile)`", flowReport, StringComparison.Ordinal);
         Assert.Contains("decisionCount >= decision cutoff AND decisionConstructCount >= 2", flowReport, StringComparison.Ordinal);
         Assert.Contains("or `maxDecisionNesting >= nesting cutoff`", flowReport, StringComparison.Ordinal);
