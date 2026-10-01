@@ -166,6 +166,41 @@ public sealed class ReviewSourceClassifierTests
         Assert.Contains("outside the project root", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task CurrentFindingValidator_RejectsEmptyOrNonRelatedSubjectSymbols()
+    {
+        using var workspace = new AdhocWorkspace();
+        using var root = TestTempDirectory.Create();
+        var projectPath = Path.Combine(root.DirectoryPath, "Example.csproj");
+        var project = AddProject(workspace, "Example", projectPath);
+        var sourcePath = Path.Combine(root.DirectoryPath, "Example.cs");
+        workspace.AddDocument(DocumentInfo.Create(
+            DocumentId.CreateNewId(project.Id),
+            "Example.cs",
+            filePath: sourcePath,
+            loader: TextLoader.From(TextAndVersion.Create(SourceText.From("class Example {}"), VersionStamp.Create()))));
+        var context = new ReviewContext(workspace.CurrentSolution, root.DirectoryPath);
+        var related = new FindingSymbol("Example.csproj", "Example.cs", "T:Example", 1);
+        var evidence = new FindingEvidence("Example.cs", 1, "Example", "Candidate declaration.", "class Example {}");
+        var invalidSubjects = new[]
+        {
+            Array.Empty<FindingSymbol>(),
+            [new FindingSymbol("Other.csproj", "Other.cs", "T:Other", 1)],
+        };
+
+        foreach (var subjects in invalidSubjects)
+        {
+            var finding = new FindingDraft(
+                "Example.csproj", "Example.cs", "T:Example", "candidate", 1, "Review this declaration.",
+                new Dictionary<string, double>(), [evidence], [related], subjects);
+
+            var exception = await Assert.ThrowsAsync<AnalysisFailedException>(() => new CurrentFindingValidator()
+                .ValidateAndSortAsync("example-analysis", context, [finding]));
+
+            Assert.Contains("subject symbol", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
     private static Project AddProject(
         AdhocWorkspace workspace,
         string name,

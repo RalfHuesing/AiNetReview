@@ -13,7 +13,8 @@ public sealed class ReviewConfig
         string outputDirectory,
         string resolvedSolutionPath,
         string resolvedOutputDirectory,
-        IReadOnlyList<ConfiguredReviewAnalysis> analyses)
+        IReadOnlyList<ConfiguredReviewAnalysis> analyses,
+        IReadOnlyList<ConfiguredReviewAnalysis>? allAnalyses = null)
     {
         ProjectRoot = projectRoot;
         SolutionPath = solutionPath;
@@ -21,6 +22,7 @@ public sealed class ReviewConfig
         ResolvedSolutionPath = resolvedSolutionPath;
         ResolvedOutputDirectory = resolvedOutputDirectory;
         Analyses = analyses;
+        AllAnalyses = allAnalyses ?? analyses;
     }
 
     public string ProjectRoot { get; }
@@ -34,6 +36,9 @@ public sealed class ReviewConfig
     public string ResolvedOutputDirectory { get; }
 
     public IReadOnlyList<ConfiguredReviewAnalysis> Analyses { get; }
+
+    /// <summary>All configured registered analyses, including those disabled for this run.</summary>
+    public IReadOnlyList<ConfiguredReviewAnalysis> AllAnalyses { get; }
 }
 
 public sealed record ConfiguredReviewAnalysis(
@@ -41,4 +46,5 @@ public sealed record ConfiguredReviewAnalysis(
     IReviewAnalysis Analysis,
     ReviewAnalysisOptions EffectiveOptions,
     ReviewAnalysisOptions? EffectiveTestOptions = null,
-    IReadOnlyDictionary<string, bool>? ExplicitTestOptions = null);
+    IReadOnlyDictionary<string, bool>? ExplicitTestOptions = null,
+    bool Enabled = true);

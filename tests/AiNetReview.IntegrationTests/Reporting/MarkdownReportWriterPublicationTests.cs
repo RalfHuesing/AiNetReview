@@ -262,7 +262,7 @@ public sealed class MarkdownReportWriterPublicationTests
         var result = new ReviewRunResult([new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([finding]))]);
 
         var report = await new MarkdownReportWriter().WriteAsync(config, result);
-        var analysisReportPath = Path.Combine(outputDirectory, report.RunId, "all-findings", "publication-analysis.md");
+        var analysisReportPath = Path.Combine(outputDirectory, report.RunId, "production", "all-findings", "publication-analysis.md");
         var analysisReport = await File.ReadAllTextAsync(analysisReportPath);
         Assert.Contains("Total findings: 1", analysisReport, StringComparison.Ordinal);
         Assert.Contains("#### File: Sample Code.cs (1 findings)", analysisReport, StringComparison.Ordinal);

@@ -119,8 +119,8 @@ public sealed class HostProcessIntegrationTests
         var runId = response.RootElement.GetProperty("runId").GetString()!;
         var runDirectory = Path.Combine(projectRoot, "reports", runId);
         var rootIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
-        var changedView = Path.Combine(runDirectory, "changed-files");
-        var allView = Path.Combine(runDirectory, "all-findings");
+        var changedView = Path.Combine(runDirectory, "production", "changed-files");
+        var allView = Path.Combine(runDirectory, "production", "all-findings");
 
         Assert.Contains($" baseline '{projectRoot}'", rootIndex, StringComparison.Ordinal);
         var baselineCommand = Assert.Single(rootIndex.Split('\n').Select(static line => line.Trim())
@@ -145,10 +145,9 @@ public sealed class HostProcessIntegrationTests
         Assert.Equal(0, generatedBaselineProcess.ExitCode);
         Assert.Empty(generatedBaselineError);
         Assert.Contains("\"status\":\"completed\"", generatedBaselineOutput, StringComparison.Ordinal);
-        Assert.Contains("## Analysis reports", rootIndex, StringComparison.Ordinal);
-        Assert.Contains("(changed-files/method-control-flow-outliers.md)", rootIndex, StringComparison.Ordinal);
-        Assert.Contains("(all-findings/index.md)", rootIndex, StringComparison.Ordinal);
-        Assert.DoesNotContain("(all-findings/method-control-flow-outliers.md)", rootIndex, StringComparison.Ordinal);
+        Assert.Contains("## Audit scope", rootIndex, StringComparison.Ordinal);
+        Assert.Contains("(production/changed-files/index.md)", rootIndex, StringComparison.Ordinal);
+        Assert.Contains("(production/all-findings/index.md)", rootIndex, StringComparison.Ordinal);
         Assert.Contains("Run", await File.ReadAllTextAsync(Path.Combine(changedView, "method-control-flow-outliers.md")), StringComparison.Ordinal);
         Assert.Contains("Run", await File.ReadAllTextAsync(Path.Combine(allView, "method-control-flow-outliers.md")), StringComparison.Ordinal);
     }
@@ -209,10 +208,10 @@ public sealed class HostProcessIntegrationTests
         var repositoryPath = repositoryLine["- Repository: `".Length..^1].Replace("\\\\", "\\", StringComparison.Ordinal);
         Assert.True(Path.IsPathFullyQualified(repositoryPath));
         Assert.Contains("- Solution: `AiNetReview.slnx`", indexReport, StringComparison.Ordinal);
-        Assert.Contains("[Open the changed files view](changed-files/index.md)", indexReport, StringComparison.Ordinal);
-        Assert.Contains("[Open the complete findings view](all-findings/index.md)", indexReport, StringComparison.Ordinal);
+        Assert.Contains("(production/changed-files/index.md)", indexReport, StringComparison.Ordinal);
+        Assert.Contains("(production/all-findings/index.md)", indexReport, StringComparison.Ordinal);
         Assert.Contains($"& '{executablePath}' baseline '{repositoryRoot}'", indexReport, StringComparison.Ordinal);
-        var analysisReportPath = Path.Combine(outputDirectory, runId!, "all-findings", "method-control-flow-outliers.md");
+        var analysisReportPath = Path.Combine(outputDirectory, runId!, "production", "all-findings", "method-control-flow-outliers.md");
         if (detectedCount > 0)
         {
             Assert.True(File.Exists(analysisReportPath));
@@ -230,8 +229,8 @@ public sealed class HostProcessIntegrationTests
             Assert.False(File.Exists(analysisReportPath));
         }
 
-        Assert.True(File.Exists(Path.Combine(outputDirectory, runId!, "changed-files", "index.md")));
-        Assert.True(File.Exists(Path.Combine(outputDirectory, runId!, "all-findings", "index.md")));
+        Assert.True(File.Exists(Path.Combine(outputDirectory, runId!, "production", "changed-files", "index.md")));
+        Assert.True(File.Exists(Path.Combine(outputDirectory, runId!, "production", "all-findings", "index.md")));
 
         var resultingRuns = Directory.GetDirectories(outputDirectory).Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
         Assert.Contains(runId, resultingRuns);
@@ -328,8 +327,8 @@ public sealed class HostProcessIntegrationTests
         Assert.True(File.Exists(Path.Combine(projectRoot, indexPath!.Replace('/', Path.DirectorySeparatorChar))));
         Assert.Equal(0, response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
         Assert.Contains("No findings were found.", await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "index.md")), StringComparison.Ordinal);
-        Assert.True(File.Exists(Path.Combine(projectRoot, "reports", runId!, "changed-files", "index.md")));
-        Assert.True(File.Exists(Path.Combine(projectRoot, "reports", runId!, "all-findings", "index.md")));
+        Assert.True(File.Exists(Path.Combine(projectRoot, "reports", runId!, "production", "changed-files", "index.md")));
+        Assert.True(File.Exists(Path.Combine(projectRoot, "reports", runId!, "production", "all-findings", "index.md")));
 
         var logPath = Assert.Single(Directory.GetFiles(Path.Combine(host.HostDirectory, "logs"), "ainetreview-*.log"));
         var logContents = await File.ReadAllTextAsync(logPath);

@@ -199,7 +199,8 @@ public sealed class MissingTestEvidenceCandidatesAnalysis : IReviewAnalysis
                 ["attributionUncertain"] = path.IsAttributionUncertain ? 1 : 0,
             },
             evidence,
-            relatedSymbols);
+            relatedSymbols,
+            subjectSymbols: [new FindingSymbol(projectPath, sourcePath, symbolId, declarationLine.LineNumber + 1)]);
     }
 
     private static async Task<Document?> GetPathDocumentAsync(

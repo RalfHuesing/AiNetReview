@@ -93,6 +93,9 @@ internal static class ReviewFindingBuilder
                 Occurrences = Array.AsReadOnly(entry.Finding.RelatedSymbols
                     .Select(symbol => new ReviewFindingOccurrence(symbol, projectRoles[symbol.ProjectPath]))
                     .ToArray()),
+                SubjectOccurrences = Array.AsReadOnly(entry.Finding.SubjectSymbols
+                    .Select(symbol => new ReviewFindingOccurrence(symbol, projectRoles[symbol.ProjectPath]))
+                    .ToArray()),
             });
         }
 

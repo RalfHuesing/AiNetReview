@@ -183,6 +183,7 @@ public sealed class ReviewConfigValidator
         }
 
         var activeAnalyses = new List<ConfiguredReviewAnalysis>();
+        var allAnalyses = new List<ConfiguredReviewAnalysis>();
         foreach (var configuredAnalysis in configuredAnalyses.EnumerateObject().OrderBy(static item => item.Name, StringComparer.Ordinal))
         {
             if (!registry.TryGet(configuredAnalysis.Name, out var analysis) || analysis is null)
@@ -247,10 +248,37 @@ public sealed class ReviewConfigValidator
                 throw new InvalidReviewInputException($"Analysis '{configuredAnalysis.Name}' does not support 'testOptions'.");
             }
 
+            var configured = new ConfiguredReviewAnalysis(configuredAnalysis.Name, analysis, options, effectiveTestOptions, explicitTestOptions, enabled);
+            allAnalyses.Add(configured);
             if (enabled)
             {
-                activeAnalyses.Add(new ConfiguredReviewAnalysis(configuredAnalysis.Name, analysis, options, effectiveTestOptions, explicitTestOptions));
+                activeAnalyses.Add(configured);
             }
+        }
+
+        var configuredIds = new HashSet<string>(allAnalyses.Select(static analysis => analysis.AnalysisId), StringComparer.Ordinal);
+        foreach (var analysis in registry.Analyses.Where(analysis => !configuredIds.Contains(analysis.Descriptor.AnalysisId)))
+        {
+            var options = analysis.Descriptor.ResolveOptions();
+            ReviewAnalysisOptions? effectiveTestOptions = null;
+            IReadOnlyDictionary<string, bool>? explicitTestOptions = null;
+            if (analysis.Descriptor.TestOptions.Count > 0)
+            {
+                effectiveTestOptions = analysis.Descriptor.ResolveTestOptions(options);
+                explicitTestOptions = new System.Collections.ObjectModel.ReadOnlyDictionary<string, bool>(
+                    analysis.Descriptor.TestOptions.ToDictionary(static option => option.Name, static _ => false, StringComparer.Ordinal));
+                options = options.WithTestValues(new SortedDictionary<string, JsonElement>(
+                    effectiveTestOptions.Values.ToDictionary(static pair => pair.Key, static pair => pair.Value.Clone(), StringComparer.Ordinal),
+                    StringComparer.Ordinal));
+            }
+
+            allAnalyses.Add(new ConfiguredReviewAnalysis(
+                analysis.Descriptor.AnalysisId,
+                analysis,
+                options,
+                effectiveTestOptions,
+                explicitTestOptions,
+                Enabled: false));
         }
 
         try
@@ -277,7 +305,8 @@ public sealed class ReviewConfigValidator
             ProjectPathResolver.ToRelativeForwardSlashes(root, output),
             solution,
             output,
-            activeAnalyses.AsReadOnly());
+            activeAnalyses.AsReadOnly(),
+            allAnalyses.AsReadOnly());
     }
 
     private static string RequiredString(JsonElement document, string name)

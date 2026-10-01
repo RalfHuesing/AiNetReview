@@ -12,8 +12,11 @@ public sealed record ReviewFinding(
     IReadOnlyList<ReviewFindingReference> RelatedFindings,
     IReadOnlyList<string> ChangedSourcePaths)
 {
-    /// <summary>Project roles of all represented symbols; evidence files do not affect finding origin.</summary>
+    /// <summary>Project roles of all related symbols, including context symbols; these roles do not alone determine finding origin.</summary>
     public IReadOnlyList<ReviewFindingOccurrence> Occurrences { get; init; } = Array.Empty<ReviewFindingOccurrence>();
+
+    /// <summary>Project roles of the symbols that determine the finding's report area.</summary>
+    public IReadOnlyList<ReviewFindingOccurrence> SubjectOccurrences { get; init; } = Array.Empty<ReviewFindingOccurrence>();
 
     public bool IsChanged => ChangedSourcePaths.Count > 0;
 }

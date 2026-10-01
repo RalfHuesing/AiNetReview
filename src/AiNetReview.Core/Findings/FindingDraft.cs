@@ -15,7 +15,8 @@ public sealed class FindingDraft
         string rationale,
         IReadOnlyDictionary<string, double> metrics,
         IEnumerable<FindingEvidence> evidence,
-        IEnumerable<FindingSymbol>? relatedSymbols = null)
+        IEnumerable<FindingSymbol>? relatedSymbols = null,
+        IEnumerable<FindingSymbol>? subjectSymbols = null)
     {
         ProjectPath = projectPath;
         SourcePath = sourcePath;
@@ -25,7 +26,16 @@ public sealed class FindingDraft
         Rationale = rationale;
         Metrics = new ReadOnlyDictionary<string, double>(new SortedDictionary<string, double>(metrics.ToDictionary(static pair => pair.Key, static pair => pair.Value), System.StringComparer.Ordinal));
         Evidence = Array.AsReadOnly(evidence.ToArray());
-        RelatedSymbols = Array.AsReadOnly((relatedSymbols ?? [new FindingSymbol(projectPath, sourcePath, subjectId, startLine)])
+        var symbols = (relatedSymbols ?? [new FindingSymbol(projectPath, sourcePath, subjectId, startLine)])
+            .Distinct()
+            .OrderBy(static symbol => symbol.ProjectPath, System.StringComparer.Ordinal)
+            .ThenBy(static symbol => symbol.SourcePath, System.StringComparer.Ordinal)
+            .ThenBy(static symbol => symbol.SymbolId, System.StringComparer.Ordinal)
+            .ThenBy(static symbol => symbol.Line)
+            .ThenBy(static symbol => symbol.OccurrenceId, System.StringComparer.Ordinal)
+            .ToArray();
+        RelatedSymbols = Array.AsReadOnly(symbols);
+        SubjectSymbols = Array.AsReadOnly((subjectSymbols ?? symbols)
             .Distinct()
             .OrderBy(static symbol => symbol.ProjectPath, System.StringComparer.Ordinal)
             .ThenBy(static symbol => symbol.SourcePath, System.StringComparer.Ordinal)
@@ -51,8 +61,11 @@ public sealed class FindingDraft
 
     public IReadOnlyList<FindingEvidence> Evidence { get; }
 
-    /// <summary>Source symbols represented by this finding, including members represented by a cluster.</summary>
+    /// <summary>Related symbols used for cluster display and cross-analysis relationships, including contextual symbols.</summary>
     public IReadOnlyList<FindingSymbol> RelatedSymbols { get; }
+
+    /// <summary>Symbols that determine this finding's report area; evidence and context symbols are excluded.</summary>
+    public IReadOnlyList<FindingSymbol> SubjectSymbols { get; }
 
 }
 

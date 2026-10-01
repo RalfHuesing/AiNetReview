@@ -109,8 +109,10 @@ public sealed partial class AuditRepositoryIntegrationTests
         Assert.DoesNotContain("findings.json", publishedFiles, StringComparer.Ordinal);
         Assert.All(publishedFiles, path => Assert.True(
             path == "index.md"
-                || (path.StartsWith("changed-files/", StringComparison.Ordinal) && path.EndsWith(".md", StringComparison.Ordinal))
-                || (path.StartsWith("all-findings/", StringComparison.Ordinal) && path.EndsWith(".md", StringComparison.Ordinal)),
+                || (new[] { "production", "tests", "mixed" }.Any(area =>
+                    path.StartsWith(area + "/changed-files/", StringComparison.Ordinal)
+                    || path.StartsWith(area + "/all-findings/", StringComparison.Ordinal))
+                    && path.EndsWith(".md", StringComparison.Ordinal)),
             $"Unexpected manual audit artifact: '{path}'."));
         Assert.Contains("index.md", publishedFiles, StringComparer.Ordinal);
     }

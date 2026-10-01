@@ -28,7 +28,7 @@ GitHub [releases](https://github.com/RalfHuesing/AiNetReview/releases) provide W
    .\AiNetReview.exe review C:\path\to\project
    ```
 
-3. Open the `index.md` named by the command's JSON response. The index links to `changed-files/`, which contains findings involving new or changed source files, and `all-findings/`, which contains every current finding. For `missing-test-evidence-candidates`, a baseline selects all current findings when any C# snapshot path was added, changed, or deleted, and none when the C# snapshot is unchanged; without a baseline it selects all current findings. Each run gets its own report directory, so earlier reports remain available.
+3. Open the `index.md` named by the command's JSON response. It gives a shared audit assignment and links to `production/`, `tests/`, and `mixed/`; each area has `changed-files/` and `all-findings/` views. An unbounded audit covers all three changed-files areas. Use an all-findings view only when the user explicitly requests a full audit. For `missing-test-evidence-candidates`, a baseline selects all current findings when any C# snapshot path was added, changed, or deleted, and none when the C# snapshot is unchanged; without a baseline it selects all current findings. Each run gets its own report directory, so earlier reports remain available.
 
 The command requires a loadable C# solution without compiler errors. A completed review exits with code `0` even when it reports findings. See the [configuration reference](docs/configuration/file-format.md) and [CLI contract](docs/interfaces/cli.md) for options and failure codes.
 

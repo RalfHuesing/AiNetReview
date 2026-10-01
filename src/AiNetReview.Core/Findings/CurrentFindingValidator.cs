@@ -155,6 +155,12 @@ public sealed class CurrentFindingValidator
                 ValidateLine(symbol.Line, symbolSource.Text.Lines.Count, "Finding related symbol line");
             }
 
+            if (finding.SubjectSymbols is null || finding.SubjectSymbols.Count == 0
+                || finding.SubjectSymbols.Any(symbol => !finding.RelatedSymbols.Contains(symbol)))
+            {
+                throw Invalid("Each finding must identify at least one subject symbol from its validated related symbols.");
+            }
+
             var key = new FindingKey(analysisId, finding.ProjectPath, finding.SourcePath, finding.SubjectId, finding.Discriminator);
             if (!uniqueKeys.Add(key))
             {

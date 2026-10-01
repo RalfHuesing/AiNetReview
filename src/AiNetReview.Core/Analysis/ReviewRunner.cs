@@ -83,7 +83,10 @@ public sealed class ReviewRunner
                 context,
                 result.Findings,
                 cancellationToken).ConfigureAwait(false);
-            results.Add(new ReviewAnalysisRunResult(configuredAnalysis.AnalysisId, new ReviewAnalysisResult(findings)));
+            results.Add(new ReviewAnalysisRunResult(configuredAnalysis.AnalysisId, new ReviewAnalysisResult(findings)
+            {
+                ScopeExclusions = result.ScopeExclusions,
+            }));
         }
 
         return new ReviewRunResult(Array.AsReadOnly(results.ToArray()))
