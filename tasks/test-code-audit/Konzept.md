@@ -1,5 +1,5 @@
 ---
-status: draft
+status: ready
 ---
 
 # Testcode als regulärer Bestandteil des Audits
@@ -10,7 +10,7 @@ Tests sind relevanter Code: Sie dokumentieren Verhalten, begründen das Vertraue
 
 Das Ergebnis ist ein gemeinsamer Auditauftrag mit erkennbarer Herkunft der Findings und passender Interpretation für Tests. Die Analyse liefert überprüfbare Signale; sie behauptet weder Testqualität noch Fehlerhaftigkeit und fordert keine automatische Umgestaltung.
 
-Dieses Dokument beschreibt einen Vorschlag für zukünftiges Verhalten. Es ändert keine Analyse und startet weder Roadmap noch Umsetzung.
+Dieses Dokument definiert das freigegebene Konzept für zukünftiges Verhalten. Es beschreibt keine bereits implementierte Erweiterung und startet weder Roadmap noch Umsetzung.
 
 ## Verifizierter Ist-Stand
 
@@ -68,7 +68,7 @@ Ein unbekanntes Testprojekt ohne diese Merkmale gilt als Produktionsprojekt. Umg
 
 „Von einem Agenten geschrieben“ bedeutet nicht automatisch „generierter Code“ im bestehenden Classifier. Ausgeschlossen werden definierte Dateimarker, Header und Attribute. Ein großes Rohstring-Testfixture bleibt eine gewöhnliche C#-Quelldatei; der im String enthaltene Code ist aber kein ausführbarer C#-Member dieser Lösung.
 
-## Empfohlenes Zielbild
+## Verbindliches Zielbild
 
 ### Analysepolitik
 
@@ -101,7 +101,7 @@ Weiterleitungsketten bleiben auf ein Projekt beschränkt. Dieses Vorhaben erweit
 
 Ein Finding ist zunächst eine Messung mit Auswahlgrund. Die spätere Bewertung erfolgt durch den auditierenden Agenten anhand der Verantwortung des Codes. Ein langer Test kann durch ausführliches Setup oder explizite, verständliche Szenarien begründet sein; ein Test mit vielen Bedingungen kann dagegen die geprüften Fälle und ausgeführten Assertions besonders schwer erkennbar machen. Typ-/Dateigröße, ausführbare Membergröße und Kontrollfluss dürfen deshalb nicht mit einem gemeinsamen „Tests dürfen größer sein“-Faktor behandelt werden.
 
-Die Empfehlung ist eine begrenzte Konfigurationsmöglichkeit für die bereits vorhandenen numerischen Parameter. Der Scope dieses Vorhabens enthält deren Unterstützung; das Vorhandensein eines Overrides in einer konkreten Konfiguration ist freiwillig. Es entstehen weder neue Analyse-IDs noch ein allgemeines Regelsystem für Testprofile.
+Die Konfiguration unterstützt eine begrenzte Überschreibung der bereits vorhandenen numerischen Parameter für Testprojekte. Der Scope dieses Vorhabens enthält deren Unterstützung; das Vorhandensein eines Overrides in einer konkreten Konfiguration ist freiwillig. Es entstehen weder neue Analyse-IDs noch ein allgemeines Regelsystem für Testprofile.
 
 | Analyse | Unterstützte Einträge in `testOptions` | Unveränderte Grenzen |
 | --- | --- | --- |
@@ -194,9 +194,9 @@ Dieser Schutz wird für die Dead-Code-Analyse verwendet. Er ersetzt nicht die be
 
 ## Reporting für einen auditierenden Agenten
 
-### Empfehlung: getrennte Arbeitsbereiche innerhalb eines gemeinsamen Reportlaufs
+### Verbindliche Berichtsstruktur: getrennte Arbeitsbereiche in einem Reportlauf
 
-Für gesonderte agentische Audit-Schritte erhält jeder Reportlauf eine zusätzliche Ebene für die Herkunft seiner Findings. Die empfohlenen Namen sind `production`, `tests` und `mixed`. Ausgeschriebene Namen machen den Auftrag deutlicher als `prod`/`test`; `mixed` bezeichnet ausschließlich Findings, die Produktions- und Testcode als Analysegegenstand zusammen enthalten, nicht allgemein wiederverwendbare Helpers.
+Für gesonderte agentische Audit-Schritte erhält jeder Reportlauf eine zusätzliche Ebene für die Herkunft seiner Findings. Die vom Nutzer bestätigte Variante verwendet verbindlich `production`, `tests` und `mixed`. Ausgeschriebene Namen machen den Auftrag deutlicher als `prod`/`test`; `mixed` bezeichnet ausschließlich Findings, die Produktions- und Testcode als Analysegegenstand zusammen enthalten, nicht allgemein wiederverwendbare Helpers.
 
 ```text
 <output-directory>/
@@ -248,7 +248,7 @@ Die zusätzliche Verzeichnisebene macht begrenzte Agentenaufträge konkret refer
 
 Die Kosten sind sechs statt zwei View-Indizes, neue Berichtspfade und zusätzliche Navigation. Integrationsprüfungen, Dokumentation und direkte Pfadannahmen müssen angepasst werden. Ein Agent kann durch die Trennung Zusammenhänge übersehen oder zu früh Abschluss melden; dagegen helfen der gemeinsame Einstieg, vollständige gemischte Findings und bereichsübergreifende Related-Verweise. Produktions- und Testbestand isoliert zu analysieren würde dagegen Testpfade, Referenzen und gemischte Duplikate verlieren und gehört nicht zum Ergebnis.
 
-Die Alternative wären gemeinsame Analyseberichte mit drei Abschnitten innerhalb der bisherigen Views. Das hält Navigation und Pfade einfacher, unterstützt aber separate Arbeitspakete weniger deutlich und kann deutlich größere Berichte erzeugen. Für die vom Nutzer erwogenen gesonderten Audit-Schritte empfiehlt dieser Draft die Verzeichnisvariante. Sie ist noch kein freigegebener Vertrag.
+Die Alternative wären gemeinsame Analyseberichte mit drei Abschnitten innerhalb der bisherigen Views. Das hält Navigation und Pfade einfacher, unterstützt aber separate Arbeitspakete weniger deutlich und kann deutlich größere Berichte erzeugen. Für die vom Nutzer vorgesehenen gesonderten Audit-Schritte gilt die bestätigte Verzeichnisvariante.
 
 ### Was ein Agent erwarten soll
 
@@ -312,9 +312,3 @@ Die Abnahme prüft beobachtbares Analyse- und Reportverhalten; vorhandene Tests 
 10. **Praktischer Agentenaudit:** Eine repräsentative Lösung mit langen Tests, String-Fixtures, nachvollziehbaren Wiederholungen und Testinfrastruktur wird ausdrücklich als Voll-Audit beauftragt. Der Root-Auftrag umfasst `production`, `tests` und `mixed`; auch bei getrennter Bearbeitung gehen ihre Ergebnisse in die Abschlussbewertung ein. Ein gesonderter Teilauftrag behauptet keinen Voll-Audit und darf relevante Quellen anderer Bereiche als Kontext einbeziehen. Jede Signalart wird anhand konkreter Quellen als nützlich, akzeptables Design, Fehlalarm oder klärungsbedürftig bewertet. Laufzeit und Findingumfang werden zum Erkennen von Vergleichs-/Reportproblemen festgehalten; größere Testbestände dürfen nicht durch stille Top-N-Filter verschwinden. Das prüft Verständlichkeit und Interpretationsrisiken, verspricht aber keine objektive Quote „guter“ Tests.
 11. **Testoptionen:** Alte Konfigurationen, fehlende/leere Overrides und partielle Overrides ergeben die definierte Vererbung. Ein Testoverride ändert qualifizierende Test-Findings, aber keine Produktions-Findings; niedrigere und höhere Grenzen sowie Perzentiländerungen werden an beobachtbaren Auswahlunterschieden geprüft. Beide effektiven Wertesätze erscheinen korrekt im Report. Unbekannte/doppelte Keys, `enabled`, falsche Typen und Grenzwertverletzungen scheitern auch bei deaktivierten Analysen. Andere Analysen akzeptieren kein `testOptions`. Explizite Testwerte bleiben bei Änderungen allgemeiner Werte erhalten; entfernte Testeinträge erben wieder. Reine Optionsänderungen verändern keine Dateihashes oder Datei-basierte Auswahl.
 12. **Vollständige Standarddatei:** Generierte JSON und Repository-Beispieldatei enthalten jede registrierte Analyse, deren `enabled` und sämtliche unterstützten Optionen mit korrekten Standardwerten, einschließlich aller Testunteroptionen, Arrays und API-Modi. Vollständigkeit und Werte werden gegen die autoritativen Optionsbeschreibungen geprüft; ein neu hinzugefügter Parameter darf nicht unbemerkt aus der Übersicht fehlen. Keine unbelegten Keys oder leeren Testobjekte bei Analysen ohne Testoptionen. Die vollständige Datei lässt sich validieren und in beide Kommandos laden; vorhandene Benutzerkonfigurationen werden dabei nicht überschrieben.
-
-## Offene Entscheidungen (nur Draft)
-
-1. **Reportgliederung:** Nach der zusätzlichen Nutzeridee empfiehlt dieser Draft `production`, `tests` und `mixed` mit je `changed-files` und `all-findings` innerhalb desselben Reportlaufs. Die Zustimmung zu dieser Variante einschließlich des dritten Bereichs für gemischte Findings steht aus.
-
-Das Ergebnis dieser [Konzeptrolle](../../.agents/agent-workflow/01-konzept-planung.md) bleibt `status: draft`. Die separate [Konzeptprüfung und Freigabe](../../.agents/agent-workflow/02-konzept-pruefung-und-freigabe.md) wird vom Nutzer als Schritt 2 gestartet. Bis dahin ist dies ein diskutierbarer, persistierter Entwurf.
