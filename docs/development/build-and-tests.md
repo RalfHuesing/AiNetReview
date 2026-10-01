@@ -8,7 +8,7 @@
 
 The shared source-classifier tests also verify the reason for each existing test-project marker. `ReviewRunnerTests` verify that every loaded C# project appears in the run's classification overview, including a project with no recognized test marker and a project with no findings, and that finding occurrence roles come from represented symbols independently of evidence files. Multiple represented occurrences remain separate even when they share the same owner and line.
 
-`AuditSourceContextTests` cover immutable snapshot preparation for outer, nested, partial, and delegate source types; per-project identity for linked files; production/test roles; alias, generic, extension-method, and method-group normalization; exact reference and uncertainty locations; generated-source exclusion; file-context references outside type declarations; and stability after the backing source file changes.
+`AuditSourceContextTests` cover immutable snapshot preparation for outer, nested, partial, and delegate source types; per-project identity for linked files; production/test roles; alias, generic, extension-method, and method-group normalization; exact reference and uncertainty spans, lines, and columns; exclusion of generated-document and attribute-marked symbol origins from references and uncertainty, plus generated targets; file-context references outside type declarations; and stability after the backing source file changes.
 
 The solution `AiNetReview.slnx` contains five projects:
 

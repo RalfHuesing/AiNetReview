@@ -157,7 +157,8 @@ internal sealed class AuditSourceContext
                 var coverage = referenceIndex.GetCoverage(symbol);
                 foreach (var reference in coverage.References)
                 {
-                    if (reference.IsGeneratedCode)
+                    if (reference.IsGeneratedCode
+                        || reference.EnclosingSymbol is { } enclosingSymbol && ReviewSourceClassifier.IsGeneratedSymbol(enclosingSymbol))
                     {
                         continue;
                     }
@@ -168,6 +169,10 @@ internal sealed class AuditSourceContext
                     if (sourceTypeId is not null && !sourceTypeIds.Contains(sourceTypeId))
                     {
                         sourceTypeId = null;
+                    }
+                    else if (sourceTypeId is not null && typeDeclarations[sourceTypeId].IsGenerated)
+                    {
+                        continue;
                     }
 
                     if (!fileById.TryGetValue((reference.ProjectId, reference.DocumentId), out var sourceFile)
@@ -246,6 +251,7 @@ internal sealed class AuditSourceContext
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (uncertainty.IsGeneratedCode
+                || uncertainty.EnclosingSymbol is { } enclosingSymbol && ReviewSourceClassifier.IsGeneratedSymbol(enclosingSymbol)
                 || !fileById.TryGetValue((uncertainty.ProjectId, uncertainty.DocumentId), out var sourceFile)
                 || sourceFile.IsGenerated)
             {
@@ -260,6 +266,10 @@ internal sealed class AuditSourceContext
                 if (!sourceTypeIds.Contains(originTypeId))
                 {
                     originTypeId = null;
+                }
+                else if (typeDeclarations[originTypeId].IsGenerated)
+                {
+                    continue;
                 }
             }
 

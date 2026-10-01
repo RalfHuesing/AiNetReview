@@ -38,6 +38,8 @@ public sealed class AuditSourceContextTests
         Assert.NotEqual(sharedFiles[0].ProjectId, sharedFiles[1].ProjectId);
 
         var testType = Assert.Single(context.Types.Where(static type => type.FullyQualifiedName.EndsWith("WidgetTests", StringComparison.Ordinal)));
+        var generatedTarget = Assert.Single(context.Types.Where(static type => type.FullyQualifiedName.EndsWith("GeneratedTarget", StringComparison.Ordinal)));
+        Assert.True(generatedTarget.IsGenerated);
         var productionReferences = context.References.Where(reference => reference.SourceTypeId == testType.Id).ToArray();
         Assert.Contains(productionReferences, reference => reference.TargetTypeId == outer.Id);
         Assert.Contains(productionReferences, reference => reference.TargetTypeId == outer.Id && reference.TargetMemberId is not null);
@@ -47,6 +49,13 @@ public sealed class AuditSourceContextTests
         Assert.Contains(productionReferences, reference => reference.TargetTypeId == extensions.Id
             && reference.TargetMemberId?.Contains("Extend", StringComparison.Ordinal) == true);
         Assert.Contains(productionReferences, reference => reference.TargetMemberId?.Contains("Echo", StringComparison.Ordinal) == true);
+        var methodGroup = Assert.Single(productionReferences.Where(reference => reference.Kind == SolutionSymbolReferenceKind.MethodGroup
+            && reference.TargetMemberId?.Contains("M:Product.Outer.Nested.Target", StringComparison.Ordinal) == true));
+        var testDocument = fixture.Context.Solution.GetProject(tests.ProjectId)!.Documents.Single(static document => document.Name == "WidgetTests.cs");
+        var testText = await testDocument.GetTextAsync();
+        Assert.Equal(new TextSpan(testText.Lines[9].Start + 40, 6), methodGroup.Location.Span);
+        Assert.Equal(10, methodGroup.Location.StartLine);
+        Assert.Equal(41, methodGroup.Location.StartColumn);
         Assert.All(productionReferences, reference =>
         {
             Assert.False(reference.Location.Path.EndsWith("Generated.g.cs", StringComparison.Ordinal));
@@ -59,11 +68,21 @@ public sealed class AuditSourceContextTests
             && reference.TargetTypeId == outer.Id);
         Assert.Contains(context.Uncertainties, uncertainty => uncertainty.OriginTypeId == testType.Id
             && uncertainty.SourcePath.EndsWith("WidgetTests.cs", StringComparison.Ordinal)
-            && uncertainty.Location.StartLine > 0);
+            && uncertainty.Location.Span == new TextSpan(testText.Lines[14].Start + 52, 6)
+            && uncertainty.Location.StartLine == 15
+            && uncertainty.Location.StartColumn == 53);
         Assert.Contains(context.Uncertainties, uncertainty => uncertainty.Reason is "TargetProjectAmbiguous" or "UnresolvedBinding"
             && uncertainty.OriginTypeId == testType.Id
             && uncertainty.CandidateSymbolId.Contains("Other.AmbiguousTarget", StringComparison.Ordinal));
         Assert.DoesNotContain(context.References, reference => reference.TargetMemberId?.Contains("Other.AmbiguousTarget", StringComparison.Ordinal) == true);
+        Assert.DoesNotContain(context.References, reference => reference.TargetTypeId == generatedTarget.Id);
+        var generatedOrigin = Assert.Single(context.Types.Where(static type => type.FullyQualifiedName.EndsWith("GeneratedOrigin", StringComparison.Ordinal)));
+        Assert.False(generatedOrigin.IsGenerated);
+        Assert.DoesNotContain(context.References, reference => reference.SourceTypeId == generatedOrigin.Id);
+        var generatedMethodLine = testText.Lines.Single(static line => line.ToString().Contains("GeneratedOriginUse", StringComparison.Ordinal));
+        var generatedUncertaintyStart = testText.ToString().IndexOf("Target", generatedMethodLine.Start, StringComparison.Ordinal);
+        Assert.DoesNotContain(context.Uncertainties, uncertainty => uncertainty.SourcePath.EndsWith("WidgetTests.cs", StringComparison.Ordinal)
+            && uncertainty.Location.Span == new TextSpan(generatedUncertaintyStart, 6));
         foreach (var uncertainty in context.Uncertainties)
         {
             Assert.DoesNotContain(context.References, reference => reference.SourceProjectId == uncertainty.SourceProjectId
@@ -139,6 +158,8 @@ public sealed class AuditSourceContextTests
             public static class ExtensionMethods { public static int Extend(this Outer.Nested value, int item) => value.Target(item); }
             public class Box<T> { public T Echo(T value) => value; }
             public delegate int ValueCallback(int value);
+            [System.CodeDom.Compiler.GeneratedCode("fixture", "1")]
+            public static class GeneratedTarget { public static void Use() { } }
             public partial class Partial { public void First() { } }
             """);
         AddDocument(workspace, productionId, root.DirectoryPath, "src/Partial.cs", "namespace Product; public partial class Partial { public void Second() { } }");
@@ -147,6 +168,14 @@ public sealed class AuditSourceContextTests
             namespace Product;
             public class GeneratedConsumer { public int Use() => new Outer.Nested().Target(1); }
             public partial class Partial { public void GeneratedPart() { } }
+            """);
+        AddDocument(workspace, productionId, root.DirectoryPath, "src/GeneratedSymbols.cs", """
+            namespace Product;
+            public static class GeneratedOrigin
+            {
+                [System.Runtime.CompilerServices.CompilerGenerated]
+                public static void Use() { new Outer.Nested().Target(1); GeneratedTarget.Use(); }
+            }
             """);
         AddDocument(workspace, productionId, root.DirectoryPath, "src/Shared.cs", "namespace Shared; public class SharedType { }");
         AddDocument(workspace, testId, root.DirectoryPath, "src/Shared.cs", "namespace Shared; public class SharedType { }");
@@ -169,6 +198,10 @@ public sealed class AuditSourceContextTests
 
                 public void Uncertain() { _ = new WidgetAlias().Target("wrong"); }
                 public void Ambiguous() { Other.AmbiguousTarget.Use(); }
+                public void GeneratedTargetUse() { Product.GeneratedTarget.Use(); }
+                [System.Runtime.CompilerServices.CompilerGenerated]
+                [System.Runtime.CompilerServices.CompilerGenerated]
+                public void GeneratedOriginUse() { _ = new WidgetAlias().Target("generated wrong"); }
             }
             """);
         AddDocument(workspace, testId, root.DirectoryPath, "tests/Product.Tests/WidgetTests.Part.cs", "namespace Product.Tests; public partial class WidgetTests { public void Second() { _ = new Product.Box<int>().Echo(1); } }");
