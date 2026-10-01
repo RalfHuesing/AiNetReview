@@ -228,7 +228,21 @@ public sealed class HostAdapterIntegrationTests
         Assert.Contains("#### File: ProductA/First.cs (1 findings)", structuralReport, StringComparison.Ordinal);
         Assert.Contains("[ProductA/First.cs](../../../../ProductA/First.cs)", structuralReport, StringComparison.Ordinal);
         Assert.Contains("[ProductB/Second.cs](../../../../ProductB/Second.cs)", structuralReport, StringComparison.Ordinal);
-        AssertMarkdownLinksResolve(Path.Combine(projectRoot, "reports", together.RunId));
+        var structuralRunDirectory = Path.Combine(projectRoot, "reports", together.RunId);
+        var mapIndex = await File.ReadAllTextAsync(Path.Combine(structuralRunDirectory, "audit-map", "all-findings", "index.md"));
+        Assert.Contains("Unique findings: **2**", mapIndex, StringComparison.Ordinal);
+        var packageReports = Directory.GetFiles(Path.Combine(structuralRunDirectory, "audit-map", "all-findings"), "*.md")
+            .Where(path => !Path.GetFileName(path).Equals("index.md", StringComparison.Ordinal))
+            .Select(File.ReadAllText).ToArray();
+        var structuralPackage = Assert.Single(packageReports.Where(markdown => markdown.Contains("structural-duplication-candidates.md#finding-", StringComparison.Ordinal)));
+        Assert.Contains("ProductA/First.cs", structuralPackage, StringComparison.Ordinal);
+        Assert.Contains("ProductB/Second.cs", structuralPackage, StringComparison.Ordinal);
+        var anchorStart = structuralReport.IndexOf("<a id=\"finding-", StringComparison.Ordinal);
+        Assert.True(anchorStart >= 0);
+        var anchorEnd = structuralReport.IndexOf("\"></a>", anchorStart, StringComparison.Ordinal);
+        var findingAnchor = structuralReport[(anchorStart + "<a id=\"".Length)..anchorEnd];
+        Assert.Contains("#" + findingAnchor, structuralPackage, StringComparison.Ordinal);
+        AssertMarkdownLinksResolve(structuralRunDirectory);
 
         await WriteStructuralDuplicateConfigAsync(configPath, includeStructural: true, structuralEnabled: false);
         var disabled = await RunStructuralReviewAsync(projectRoot);
@@ -972,6 +986,17 @@ public sealed class HostAdapterIntegrationTests
         foreach (var reportPath in Directory.GetFiles(runDirectory, "*.md", SearchOption.AllDirectories))
         {
             var content = File.ReadAllText(reportPath);
+            var anchorIds = new HashSet<string>(StringComparer.Ordinal);
+            var anchorCursor = 0;
+            while ((anchorCursor = content.IndexOf("<a id=\"", anchorCursor, StringComparison.Ordinal)) >= 0)
+            {
+                var idStart = anchorCursor + "<a id=\"".Length;
+                var idEnd = content.IndexOf('\"', idStart);
+                Assert.True(idEnd > idStart, $"Malformed HTML anchor in '{reportPath}'.");
+                Assert.True(anchorIds.Add(content[idStart..idEnd]), $"Duplicate HTML anchor '{content[idStart..idEnd]}' in '{reportPath}'.");
+                anchorCursor = idEnd + 1;
+            }
+
             var linkStart = 0;
             while ((linkStart = content.IndexOf("](", linkStart, StringComparison.Ordinal)) >= 0)
             {
@@ -990,6 +1015,14 @@ public sealed class HostAdapterIntegrationTests
                     Path.GetDirectoryName(reportPath)!,
                     relativePath.Replace('/', Path.DirectorySeparatorChar)));
                 Assert.True(File.Exists(resolved), $"Markdown link does not resolve: '{target}' from '{reportPath}'.");
+                if (fragmentIndex >= 0 && (target[(fragmentIndex + 1)..].StartsWith("finding-", StringComparison.Ordinal)
+                    || target[(fragmentIndex + 1)..].StartsWith("area-", StringComparison.Ordinal)))
+                {
+                    var fragment = target[(fragmentIndex + 1)..];
+                    var targetMarkdown = File.ReadAllText(resolved);
+                    var anchor = "<a id=\"" + fragment + "\"></a>";
+                    Assert.Equal(1, targetMarkdown.Split(anchor, StringSplitOptions.None).Length - 1);
+                }
             }
         }
     }

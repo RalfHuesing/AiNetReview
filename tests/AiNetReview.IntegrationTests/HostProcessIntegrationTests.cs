@@ -119,6 +119,13 @@ public sealed class HostProcessIntegrationTests
         var runId = response.RootElement.GetProperty("runId").GetString()!;
         var runDirectory = Path.Combine(projectRoot, "reports", runId);
         var rootIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
+        var changedAuditMap = Path.Combine(runDirectory, "audit-map", "changed-files", "index.md");
+        var allAuditMap = Path.Combine(runDirectory, "audit-map", "all-findings", "index.md");
+        Assert.True(File.Exists(changedAuditMap));
+        Assert.True(File.Exists(allAuditMap));
+        Assert.Contains("audit-map/changed-files/index.md", rootIndex, StringComparison.Ordinal);
+        Assert.Contains("audit-map/all-findings/index.md", rootIndex, StringComparison.Ordinal);
+        Assert.Contains("Unique findings:", await File.ReadAllTextAsync(changedAuditMap), StringComparison.Ordinal);
         var changedView = Path.Combine(runDirectory, "production", "changed-files");
         var allView = Path.Combine(runDirectory, "production", "all-findings");
 

@@ -93,10 +93,14 @@ public sealed partial class AuditRepositoryIntegrationTests
 
         var runDirectory = Path.Combine(outputDirectory, published.RunId);
         Assert.True(File.Exists(Path.Combine(runDirectory, "index.md")));
+        Assert.True(File.Exists(Path.Combine(runDirectory, "audit-map", "changed-files", "index.md")));
+        Assert.True(File.Exists(Path.Combine(runDirectory, "audit-map", "all-findings", "index.md")));
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
         var escapedRepositoryPath = repositoryPath.Replace("\\", "\\\\", StringComparison.Ordinal)
             .Replace("-", "\\-", StringComparison.Ordinal);
         Assert.Contains($"- Repository: `{escapedRepositoryPath}`", index, StringComparison.Ordinal);
+        Assert.Contains("audit-map/changed-files/index.md", index, StringComparison.Ordinal);
+        Assert.Contains("audit-map/all-findings/index.md", index, StringComparison.Ordinal);
         Assert.Contains($"& '{auditScriptPath}' -Target '{targetName}' -BaselineOnly", index, StringComparison.Ordinal);
         AssertMarkdownLinksResolve(runDirectory, repositoryPath);
         Assert.Equal(Path.Combine(outputDirectory, published.RunId, "index.md"),
@@ -109,6 +113,7 @@ public sealed partial class AuditRepositoryIntegrationTests
         Assert.DoesNotContain("findings.json", publishedFiles, StringComparer.Ordinal);
         Assert.All(publishedFiles, path => Assert.True(
             path == "index.md"
+                || (path.StartsWith("audit-map/", StringComparison.Ordinal) && path.EndsWith(".md", StringComparison.Ordinal))
                 || (new[] { "production", "tests", "mixed" }.Any(area =>
                     path.StartsWith(area + "/changed-files/", StringComparison.Ordinal)
                     || path.StartsWith(area + "/all-findings/", StringComparison.Ordinal))

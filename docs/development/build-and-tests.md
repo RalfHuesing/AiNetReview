@@ -34,6 +34,8 @@ pwsh -File ./scripts/build.ps1
 
 TreatWarningsAsErrors and Nullable reference types are enabled across all projects in `Directory.Build.props`.
 
+`MarkdownReportWriterTests` verify the two Markdown audit-map views, exact package counts, direct stable finding anchors, source and symbol navigation, context-area anchors, explicit empty views, and that changed-files output omits excluded finding details. Host integration tests exercise generated package links for structural fragments and cross-project findings, external audit output roots, production CLI publication, and the existing cancellation/failure guarantees for complete atomic runs.
+
 ## Host Logging
 
 The host initializes Serilog before command parsing. Its only sink writes `ainetreview-<date>.log` under the host executable's `logs/` directory, independent of the working directory. Every event carries the command; completion also carries the run ID. Files roll daily and at 10 MiB, retain at most 30 files, and allow concurrent host processes to write. If the directory or active log file cannot be opened for writing, the host exits with code `4` and writes a `LOGGING_FAILED` JSON error to stderr without writing to stdout. Process-level coverage is in `HostProcessIntegrationTests`.
