@@ -17,6 +17,8 @@ This repository contains product specifications, an implemented command-line hos
 - [Verification](.agents/rules/04-verification.mdc)
 - [Git and automatic commits](.agents/rules/05-git.mdc)
 - [Dependencies and NuGet packages](.agents/rules/06-dependencies.mdc)
-- [Code practices](.agents/rules/07-code-practices.mdc)
+- [Code quality](.agents/rules/07-code-quality.mdc)
+- [Production review analysis configuration](.agents/rules/08-production-review-analysis-configuration.mdc)
+- [C# navigation and reference](.agents/rules/09-code-navigation-and-reference.mdc)
 
 Read the relevant specification and rules before changing files. Ask when a decision is missing or sources conflict.
