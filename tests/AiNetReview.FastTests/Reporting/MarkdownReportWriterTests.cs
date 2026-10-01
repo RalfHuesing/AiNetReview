@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using AiNetReview.Core.Analysis;
@@ -16,6 +17,7 @@ using AiNetReview.Core.ReviewAnalyses.NonAsciiIdentifiers;
 using AiNetReview.Core.ReviewAnalyses.IndirectionDriftCandidates;
 using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
 using AiNetReview.Core.ReviewAnalyses.StructuralDuplicationCandidates;
+using Microsoft.CodeAnalysis;
 
 public sealed class MarkdownReportWriterTests
 {
@@ -63,8 +65,33 @@ public sealed class MarkdownReportWriterTests
             new AuditFindingAreaAssignment(areaId, ProjectRole.Tests, testProject, testPath, symbols[3].SymbolId, symbols[3].Line, symbols[3].OccurrenceId, "one direct production type reference"),
         };
         var packaged = new AuditPackagedFinding("finding-mixed-fragment", finding, [areaId], assignments);
-        var package = new AuditFindingPackage(packageId, [productionArea], [packaged], [], [], [], []);
-        var view = new AuditFindingPackageView(true, [productionArea], [package], [], 1, true);
+        var projectId = ProjectId.CreateNewId();
+        var references = Enumerable.Range(1, 130).Select(line => new AuditSourceReference(
+            projectId, productionPath, "type:Widget", ProjectRole.Production, projectId, "type:Caller",
+            "M:Sample.Caller.Invoke", ProjectRole.Production, SolutionSymbolReferenceKind.Direct,
+            new AuditSourceLocation(productionPath, new Microsoft.CodeAnalysis.Text.TextSpan(line, 2), line, 1, line, 2)))
+            .Concat(Enumerable.Range(1, 130).Select(line => new AuditSourceReference(
+                projectId, productionPath, "type:OtherSource", ProjectRole.Production, projectId, "type:Caller" + line,
+                "M:Sample.Caller.Invoke", ProjectRole.Production, SolutionSymbolReferenceKind.MethodGroup,
+                new AuditSourceLocation(productionPath, new Microsoft.CodeAnalysis.Text.TextSpan(line + 200, 2), line + 200, 1, line + 200, 2))))
+            .Append(new AuditSourceReference(projectId, productionPath, "type:OtherSource", ProjectRole.Production, projectId,
+                "type:LargeTarget", "M:Other.Target." + new string('X', 17_000), ProjectRole.Production,
+                SolutionSymbolReferenceKind.Direct, new AuditSourceLocation(productionPath, new Microsoft.CodeAnalysis.Text.TextSpan(500, 2), 500, 1, 500, 2)))
+            .ToArray();
+        var uncertainties = new[]
+        {
+            new AuditSourceUncertainty(projectId, productionPath, "type:Widget", ProjectRole.Production,
+                "type:Unknown", "M:Sample.Unknown.Run", "ambiguous binding", new AuditSourceLocation(productionPath,
+                    new Microsoft.CodeAnalysis.Text.TextSpan(140, 2), 140, 1, 140, 2)),
+        };
+        var package = new AuditFindingPackage(packageId, [productionArea], [packaged], [], references, uncertainties, []);
+        var view = new AuditFindingPackageView(true, [productionArea], [package], [], 1, true)
+        {
+            ProjectPaths = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [projectId.ToString()] = productionProject,
+            },
+        };
         var result = new ReviewRunResult([new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([draft]))])
         {
             Findings = [finding],
@@ -75,6 +102,7 @@ public sealed class MarkdownReportWriterTests
         var published = await new MarkdownReportWriter().WriteAsync(config, result);
         var packageMarkdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, published.RunId,
             "audit-map", "changed-files", packageId + ".md"));
+        AssertMarkdownReportLinksResolve(Path.Combine(config.ResolvedOutputDirectory, published.RunId));
 
         Assert.Contains("[src/Widget.cs:3](../../../../src/Widget.cs#L3): production owner (occurrence `fragment-a`) — project `src/Sample_project.csproj`", packageMarkdown, StringComparison.Ordinal);
         Assert.Contains("[src/Widget.cs:6](../../../../src/Widget.cs#L6): production owner (occurrence `fragment-b`) — project `src/Sample_project.csproj`", packageMarkdown, StringComparison.Ordinal);
@@ -82,11 +110,167 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("[tests/WidgetTests.cs:22](../../../../tests/WidgetTests.cs#L22): one direct production type reference (occurrence `test-b`) — project `tests/Sample.Tests.csproj`", packageMarkdown, StringComparison.Ordinal);
         Assert.Contains("Widget.cs:3", packageMarkdown, StringComparison.Ordinal);
         Assert.Contains("Widget.cs:6", packageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("### finding-mixed-fragment — `fixture-analysis`", packageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("Original finding, including rationale, metrics and evidence:", packageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("Direct source references: **261 locations** in **132 groups**", packageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("Browse all reference groups:", packageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("binding uncertainty origins: **1**", packageMarkdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("at [src/Widget.cs:1:1]", packageMarkdown, StringComparison.Ordinal);
+        var runDirectory = Path.Combine(config.ResolvedOutputDirectory, published.RunId);
+        var referencePages = Directory.GetFiles(Path.Combine(runDirectory, "audit-map", "changed-files"), packageId + "-references-*.md");
+        Assert.True(referencePages.Length > 1);
+        var referenceEntries = new List<string>();
+        foreach (var referencePage in referencePages)
+        {
+            var page = await File.ReadAllTextAsync(referencePage);
+            Assert.DoesNotContain("Full-audit scope:", page, StringComparison.Ordinal);
+            Assert.Contains($"[Back to package]({packageId}.md)", page, StringComparison.Ordinal);
+            Assert.True(page.Split("\n- Source project ", StringSplitOptions.None).Length - 1 <= AuditMapReportWriter.ReferencePageEntryLimit);
+            referenceEntries.AddRange(page.Split("\n- Source project ", StringSplitOptions.RemoveEmptyEntries).Skip(1));
+            if (Encoding.UTF8.GetByteCount(page) > 16 * 1024)
+            {
+                Assert.Contains("This complete single reference record exceeds the 16-KiB page target", page, StringComparison.Ordinal);
+            }
+        }
+        Assert.Equal(262, referenceEntries.Count);
+        var referenceText = string.Join('\n', referenceEntries);
+        Assert.Contains("[src/Widget.cs:130:1]", referenceText, StringComparison.Ordinal);
+        Assert.Contains("`src/Sample_project.csproj`", referenceText, StringComparison.Ordinal);
+        Assert.Contains("source `type:Widget`; target project `src/Sample_project.csproj`; target `type:Caller`; member `M:Sample.Caller.Invoke`; roles Production → Production; binding Direct; span 130..132; location 130:1–130:2", referenceText, StringComparison.Ordinal);
+        foreach (var line in Enumerable.Range(1, 130))
+        {
+            Assert.Contains($"span {line}..{line + 2}; location {line}:1–{line}:2", referenceText, StringComparison.Ordinal);
+        }
+        foreach (var line in Enumerable.Range(201, 130))
+        {
+            Assert.Contains($"target `type:Caller{line - 200}`", referenceText, StringComparison.Ordinal);
+            Assert.Contains("source `type:OtherSource`", referenceText, StringComparison.Ordinal);
+            Assert.Contains($"span {line}..{line + 2}; location {line}:1–{line}:2", referenceText, StringComparison.Ordinal);
+        }
+        var groupIndexPages = Directory.GetFiles(Path.Combine(runDirectory, "audit-map", "changed-files"), packageId + "-reference-groups-*.md");
+        Assert.NotEmpty(groupIndexPages);
+        var groupRows = string.Join('\n', await Task.WhenAll(groupIndexPages.Select(path => File.ReadAllTextAsync(path))))
+            .Split(" source locations**; details:", StringSplitOptions.None).Length - 1;
+        Assert.Equal(133, groupRows);
+        Assert.Contains("This complete single reference record exceeds the 16-KiB page target",
+            string.Join('\n', await Task.WhenAll(referencePages.Select(path => File.ReadAllTextAsync(path)))), StringComparison.Ordinal);
+
+        var countLimitedPages = AuditMapReportWriter.PartitionReferenceEntries(Enumerable.Repeat("x", 129).ToArray(),
+            static (_, entries) => string.Concat(entries));
+        Assert.Equal([128, 1], countLimitedPages.Select(static page => page.Count));
+        Assert.Equal(Enumerable.Repeat("x", 129), countLimitedPages.SelectMany(static page => page));
+
+        var orderedRoot = temp.GetPath("ordered-map");
+        var reversedRoot = temp.GetPath("reversed-map");
+        await AuditMapReportWriter.WriteAuditMapAsync(orderedRoot, "fixed-run", config.ProjectRoot,
+            new AuditFindingPackageViews(view, view with { IsChangedFiles = false }), "changed-files", CancellationToken.None);
+        var reversedPackage = package with
+        {
+            DirectReferences = package.DirectReferences.Reverse().ToArray(),
+            DirectUncertainties = package.DirectUncertainties.Reverse().ToArray(),
+        };
+        var reversedView = view with { Packages = [reversedPackage] };
+        await AuditMapReportWriter.WriteAuditMapAsync(reversedRoot, "fixed-run", config.ProjectRoot,
+            new AuditFindingPackageViews(reversedView, reversedView with { IsChangedFiles = false }), "changed-files", CancellationToken.None);
+        var orderedFiles = Directory.GetFiles(Path.Combine(orderedRoot, "audit-map", "changed-files"), "*.md")
+            .OrderBy(Path.GetFileName, StringComparer.Ordinal).ToArray();
+        var reversedFiles = Directory.GetFiles(Path.Combine(reversedRoot, "audit-map", "changed-files"), "*.md")
+            .OrderBy(Path.GetFileName, StringComparer.Ordinal).ToArray();
+        Assert.Equal(orderedFiles.Select(Path.GetFileName), reversedFiles.Select(Path.GetFileName));
+        Assert.Equal(await Task.WhenAll(orderedFiles.Select(path => File.ReadAllTextAsync(path))),
+            await Task.WhenAll(reversedFiles.Select(path => File.ReadAllTextAsync(path))));
+        var allReferencePages = Directory.GetFiles(Path.Combine(runDirectory, "audit-map", "all-findings"), packageId + "-references-*.md");
+        Assert.NotEmpty(allReferencePages);
+        var allReferenceContent = string.Join('\n', await Task.WhenAll(allReferencePages.Select(path => File.ReadAllTextAsync(path))));
+        Assert.Contains("ambiguous binding", allReferenceContent, StringComparison.Ordinal);
+        Assert.Contains("origin project/type `src/Sample_project.csproj` / `type:Widget`; role Production", allReferenceContent, StringComparison.Ordinal);
+        Assert.Contains("candidate type `type:Unknown`", allReferenceContent, StringComparison.Ordinal);
+        Assert.Contains("candidate symbol `M:Sample.Unknown.Run`", allReferenceContent, StringComparison.Ordinal);
+        Assert.Contains("span 140..142; location 140:1–140:2", allReferenceContent, StringComparison.Ordinal);
+        foreach (var referencePage in allReferencePages)
+        {
+            Assert.Contains("Full-audit scope:", await File.ReadAllTextAsync(referencePage), StringComparison.Ordinal);
+        }
+        var allGroupPages = Directory.GetFiles(Path.Combine(runDirectory, "audit-map", "all-findings"), packageId + "-reference-groups-*.md");
+        Assert.NotEmpty(allGroupPages);
+        foreach (var groupPage in allGroupPages)
+        {
+            var page = await File.ReadAllTextAsync(groupPage);
+            Assert.Contains("Full-audit scope:", page, StringComparison.Ordinal);
+            Assert.Contains($"[Back to package]({packageId}.md)", page, StringComparison.Ordinal);
+            Assert.True(page.Split("\n- ", StringSplitOptions.None).Length - 1 <= AuditMapReportWriter.ReferencePageEntryLimit);
+            if (Encoding.UTF8.GetByteCount(page) > 16 * 1024)
+            {
+                Assert.Contains("This complete group summary exceeds the 16-KiB page target", page, StringComparison.Ordinal);
+            }
+        }
         Assert.Contains("``M:Sample.Widget`1.Run_with_under``", packageMarkdown, StringComparison.Ordinal);
         Assert.Contains("`src/Sample_project.csproj`", packageMarkdown, StringComparison.Ordinal);
         var symbolNavigation = packageMarkdown.Split("## Symbol navigation\n\n", StringSplitOptions.None)[1].Split("\n## ", StringSplitOptions.None)[0];
         Assert.Contains("``M:Sample.Widget`1.Run_with_under`` — [src/Widget.cs:3]", symbolNavigation, StringComparison.Ordinal);
         Assert.Contains("src/Sample_project.csproj", symbolNavigation, StringComparison.Ordinal);
+    }
+
+    private static void AssertMarkdownReportLinksResolve(string runDirectory)
+    {
+        var linkPattern = new Regex(@"\]\((?<target>[^)#]+\.md)(?:#[^)]+)?\)", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+        foreach (var reportPath in Directory.EnumerateFiles(Path.Combine(runDirectory, "audit-map"), "*.md", SearchOption.AllDirectories))
+        {
+            var content = File.ReadAllText(reportPath);
+            foreach (Match link in linkPattern.Matches(content))
+            {
+                var target = Uri.UnescapeDataString(link.Groups["target"].Value);
+                var resolved = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(reportPath)!, target.Replace('/', Path.DirectorySeparatorChar)));
+                Assert.True(File.Exists(resolved), $"Markdown report link does not resolve: '{target}' from '{reportPath}'.");
+            }
+        }
+    }
+
+    [Fact]
+    public async Task WriteAsync_LabelsFileFallbackReferencesAsOutgoingFromTheirPrimaryFileArea()
+    {
+        using var temp = TestTempDirectory.Create();
+        var analysis = new ReportAnalysis("fixture-analysis", "Fixture analysis", "default");
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        const string sourceProjectPath = "Sample/Sample.csproj";
+        const string sourcePath = "src/Entry.cs";
+        const string targetProjectPath = "Other/Other.csproj";
+        var sourceProjectId = ProjectId.CreateNewId();
+        var targetProjectId = ProjectId.CreateNewId();
+        var draft = new FindingDraft(sourceProjectPath, sourcePath, "file:Entry.cs", "file", 1, "File-level signal.", new Dictionary<string, double>(), []);
+        var finding = new ReviewFinding(analysis.Descriptor.AnalysisId, draft, [sourcePath], [], [sourcePath])
+        {
+            SubjectOccurrences = [new ReviewFindingOccurrence(new FindingSymbol(sourceProjectPath, sourcePath, "file:Entry.cs", 1), ProjectRole.Production)],
+        };
+        var area = new AuditFindingArea("area-entry-file", sourceProjectPath, ProjectRole.Production, "Entry.cs", null, sourcePath, [], "file fallback", [], []);
+        var packaged = new AuditPackagedFinding("finding-entry-file", finding, [area.Id],
+            [new AuditFindingAreaAssignment(area.Id, ProjectRole.Production, sourceProjectPath, sourcePath, "file:Entry.cs", 1, null, "file fallback")]);
+        var reference = new AuditSourceReference(sourceProjectId, sourcePath, null, ProjectRole.Production,
+            targetProjectId, "type:Other.Target", "M:Other.Target.Run", ProjectRole.Production,
+            SolutionSymbolReferenceKind.Direct, new AuditSourceLocation(sourcePath, new Microsoft.CodeAnalysis.Text.TextSpan(0, 8), 1, 1, 1, 9));
+        var package = new AuditFindingPackage("package-entry-file", [area], [packaged], [], [reference], [], []);
+        var view = new AuditFindingPackageView(true, [area], [package], [], 1, true)
+        {
+            ProjectPaths = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [sourceProjectId.ToString()] = sourceProjectPath,
+                [targetProjectId.ToString()] = targetProjectPath,
+            },
+        };
+        var result = new ReviewRunResult([new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([draft]))])
+        {
+            Findings = [finding],
+            AuditPackages = new AuditFindingPackageViews(view, view with { IsChangedFiles = false }),
+        };
+
+        var published = await new MarkdownReportWriter().WriteAsync(config, result);
+        var packageMarkdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, published.RunId,
+            "audit-map", "changed-files", package.Id + ".md"));
+
+        Assert.Contains("outgoing: `src/Entry.cs`", packageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("`Sample/Sample.csproj`", packageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("`Other/Other.csproj`", packageMarkdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("incoming: `src/Entry.cs`", packageMarkdown, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -151,7 +335,8 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("[package-test](package-test.md)", changedIndex, StringComparison.Ordinal);
         Assert.Contains("Context only", await File.ReadAllTextAsync(allIndexPath), StringComparison.Ordinal);
         Assert.Contains("Unique findings: **2**", await File.ReadAllTextAsync(allIndexPath), StringComparison.Ordinal);
-        Assert.Contains("Original rationale: The method has a long branch path; binding attribution is uncertain.", allPackageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("Original finding, including rationale, metrics and evidence:", allPackageMarkdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("Original rationale:", allPackageMarkdown, StringComparison.Ordinal);
         Assert.Contains("### finding-stable — `fixture-analysis`", allPackageMarkdown, StringComparison.Ordinal);
         Assert.Contains("#finding-finding-stable", allPackageMarkdown, StringComparison.Ordinal);
         Assert.Contains("## File navigation", allPackageMarkdown, StringComparison.Ordinal);

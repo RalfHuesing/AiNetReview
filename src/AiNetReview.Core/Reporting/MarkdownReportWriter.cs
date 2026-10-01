@@ -74,6 +74,8 @@ public sealed class MarkdownReportWriter
         var findings = GetFindings(result);
         var changedFindings = findings.Where(finding => IsChangedForReport(finding, result)).ToArray();
         ValidateAuditPackages(result.AuditPackages, findings, changedFindings);
+        var changedPackagedFindingIds = GetPackagedFindingIds(result.AuditPackages?.ChangedFiles);
+        var allPackagedFindingIds = GetPackagedFindingIds(result.AuditPackages?.AllFindings);
         Directory.CreateDirectory(config.ResolvedOutputDirectory);
 
         while (true)
@@ -100,10 +102,10 @@ public sealed class MarkdownReportWriter
                         var changedArea = analysisChangedFindings.Where(finding => GetFindingArea(finding) == area).ToArray();
                         var allArea = allFindings.Where(finding => GetFindingArea(finding) == area).ToArray();
                         await WriteViewAnalysisAsync(temporaryPath, config.ProjectRoot, area, "changed-files", configuredAnalysis, changedArea, changedFindings, findings,
-                                GetPackagedFindingIds(result.AuditPackages?.ChangedFiles), cancellationToken)
+                                changedPackagedFindingIds, cancellationToken)
                             .ConfigureAwait(false);
                         await WriteViewAnalysisAsync(temporaryPath, config.ProjectRoot, area, "all-findings", configuredAnalysis, allArea, findings, findings,
-                                GetPackagedFindingIds(result.AuditPackages?.AllFindings), cancellationToken)
+                                allPackagedFindingIds, cancellationToken)
                             .ConfigureAwait(false);
                     }
                 }
@@ -120,9 +122,9 @@ public sealed class MarkdownReportWriter
                         .ConfigureAwait(false);
                 }
 
-                await WriteAuditMapAsync(temporaryPath, runId, config.ProjectRoot, result.AuditPackages,
+                await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, config.ProjectRoot, result.AuditPackages,
                     "changed-files", cancellationToken).ConfigureAwait(false);
-                await WriteAuditMapAsync(temporaryPath, runId, config.ProjectRoot, result.AuditPackages,
+                await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, config.ProjectRoot, result.AuditPackages,
                     "all-findings", cancellationToken).ConfigureAwait(false);
 
                 cancellationToken.ThrowIfCancellationRequested();
@@ -209,7 +211,7 @@ public sealed class MarkdownReportWriter
         }
     }
 
-    private static async Task WriteUtf8Async(string path, string content, CancellationToken cancellationToken)
+    internal static async Task WriteUtf8Async(string path, string content, CancellationToken cancellationToken)
     {
         await using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, useAsync: true);
         await using var writer = new StreamWriter(stream, Utf8WithoutBom, 4096, leaveOpen: true) { NewLine = "\n" };
@@ -406,301 +408,6 @@ public sealed class MarkdownReportWriter
         await WriteUtf8Async(Path.Combine(directory, "index.md"), builder.ToString(), cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task WriteAuditMapAsync(
-        string runDirectory,
-        string runId,
-        string projectRoot,
-        AuditFindingPackageViews? views,
-        string viewName,
-        CancellationToken cancellationToken)
-    {
-        var view = viewName == "changed-files" ? views?.ChangedFiles : views?.AllFindings;
-        var directory = Path.Combine(runDirectory, "audit-map", viewName);
-        Directory.CreateDirectory(directory);
-        var builder = new StringBuilder()
-            .Append("# Audit map — ").Append(viewName).Append("\n\n")
-            .Append("Run: ").Append(FormatCodeSpan(runId)).Append("; view: ")
-            .Append(FormatCodeSpan(viewName)).Append(". This is a deterministic technical grouping of source signals, not a claim of shared responsibility, defect cause, or independent changeability. Statically unobserved relationships may be absent.\n\n")
-            .Append(viewName == "all-findings"
-                ? "> **Full-audit scope:** This reference view contains every current finding. Inspect it only when the user explicitly requests a full-repository audit.\n\n"
-                : "Use this selected view as the active assignment. Excluded findings and their details are not copied here.\n\n")
-            .Append("Unique findings: **").Append((view?.FindingCount ?? 0).ToString(CultureInfo.InvariantCulture)).Append("**. Primary package assignments: **")
-            .Append((view?.Packages.Sum(static package => package.Findings.Count) ?? 0).ToString(CultureInfo.InvariantCulture)).Append("**. Context is not counted as another finding.\n\n");
-
-        if (view is null || view.Packages.Count == 0)
-        {
-            builder.Append("No findings are assigned in this view.\n");
-        }
-        else
-        {
-            builder.Append("## Packages\n\n| Package | Technical area | Primary findings | Analyses |\n| --- | --- | ---: | --- |\n");
-            foreach (var package in view.Packages.OrderBy(static item => item.Id, StringComparer.Ordinal))
-            {
-                var packageFile = EncodePathSegment(package.Id) + ".md";
-                var areas = string.Join("; ", package.Areas.Select(area => EscapeInline(area.Name + " — " + area.ProjectPath)));
-                var analyses = string.Join(", ", package.Findings.Select(static finding => finding.Finding.AnalysisId).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
-                builder.Append("| [").Append(package.Id).Append("](").Append(packageFile).Append(") | ")
-                    .Append(areas).Append(" | ").Append(package.Findings.Count.ToString(CultureInfo.InvariantCulture)).Append(" | ")
-                    .Append(FormatCodeSpan(analyses)).Append(" |\n");
-            }
-
-            var mapRows = view.ContextAreas.Select(static row => (row.Area, row.IsContextOnly, row.PackageId))
-                .Concat(view.Packages.SelectMany(package => package.Areas.Select(area => (Area: area, IsContextOnly: false, PackageId: package.Id))))
-                .GroupBy(static row => row.Area.Id, StringComparer.Ordinal)
-                .Select(group => (Area: group.First().Area, IsContextOnly: group.All(static row => row.IsContextOnly),
-                    IsShared: view.ContextAreas.Any(context => context.Area.Id == group.Key && !context.IsContextOnly),
-                    PackageIds: group.Select(static row => row.PackageId).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray()))
-                .OrderBy(static row => row.Area.ProjectPath, StringComparer.Ordinal).ThenBy(static row => row.Area.Name, StringComparer.Ordinal).ToArray();
-            if (mapRows.Length > 0)
-            {
-                builder.Append("\n## Areas and context navigation\n\n")
-                    .Append("These entries provide navigation only. Context-only areas have no primary finding in this view; shared areas participate in a package that owns the listed findings.\n\n");
-                foreach (var row in mapRows)
-                {
-                    builder.Append("<a id=\"area-").Append(row.Area.Id).Append("\"></a>\n")
-                        .Append("- **").Append(row.IsContextOnly ? "Context only" : row.IsShared ? "Shared area" : "Primary area").Append(": ")
-                        .Append(EscapeInline(row.Area.Name)).Append("** (").Append(FormatCodeSpan(row.Area.ProjectPath)).Append(')');
-                    if (row.Area.FilePath is not null)
-                    {
-                        builder.Append(" — [source](").Append(FormatSourceLink(Path.Combine(directory, "index.md"), projectRoot, row.Area.FilePath)).Append(')');
-                    }
-                    else
-                    {
-                        foreach (var location in row.Area.Declarations)
-                        {
-                            builder.Append(" — [").Append(EscapeLinkText(location.Path)).Append(':').Append(location.StartLine.ToString(CultureInfo.InvariantCulture))
-                                .Append("](").Append(FormatSourceLink(Path.Combine(directory, "index.md"), projectRoot, location.Path)).Append('#')
-                                .Append("L").Append(location.StartLine.ToString(CultureInfo.InvariantCulture)).Append(')');
-                        }
-                    }
-
-                    builder.Append("; package ").Append(string.Join(", ", row.PackageIds.Select(packageId => "[" + packageId + "](" + EncodePathSegment(packageId) + ".md)")));
-                    if (row.Area.ContextTypeAreaIds.Count > 0)
-                    {
-                        builder.Append("; type/file fallback: ").Append(EscapeInline(row.Area.IdentityReason));
-                    }
-                    builder.Append("\n");
-                }
-            }
-        }
-
-        await WriteUtf8Async(Path.Combine(directory, "index.md"), builder.ToString(), cancellationToken).ConfigureAwait(false);
-        if (view is null)
-        {
-            return;
-        }
-
-        foreach (var package in view.Packages)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var reportPath = Path.Combine(directory, package.Id + ".md");
-            await WriteUtf8Async(reportPath, FormatAuditPackage(runId, projectRoot, reportPath, viewName, package, view), cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private static string FormatAuditPackage(
-        string runId,
-        string projectRoot,
-        string reportPath,
-        string viewName,
-        AuditFindingPackage package,
-        AuditFindingPackageView view)
-    {
-        var builder = new StringBuilder()
-            .Append("# Audit package ").Append(package.Id).Append("\n\n")
-            .Append("Run: ").Append(FormatCodeSpan(runId))
-            .Append("; view: ").Append(FormatCodeSpan(viewName)).Append("; primary findings: **")
-            .Append(package.Findings.Count.ToString(CultureInfo.InvariantCulture)).Append("**.\n\n")
-            .Append(viewName == "all-findings"
-                ? "Full-audit scope: This reference view contains every current finding. Inspect it only when the user explicitly requests a full-repository audit.\n\n"
-                : string.Empty)
-            .Append("## Assignment\n\n")
-            .Append("Inspect every finding assigned to this package using the source, callers, contracts, and tests below. Classify each ID as false positive, acceptable design, needs clarification, or actionable, and record concrete evidence plus unresolved context. This is a technical grouping; it does not establish common cause or independent changeability. Do not claim a full audit when other packages remain unreviewed.\n\n")
-            .Append("## Areas\n\n");
-        foreach (var area in package.Areas)
-        {
-            builder.Append("- **").Append(EscapeInline(area.Name)).Append("** (").Append(FormatCodeSpan(area.ProjectPath)).Append("; ")
-                .Append(EscapeInline(area.Role == ProjectRole.Tests ? "tests" : "production")).Append("; ")
-                .Append(EscapeInline(area.IdentityReason)).Append(')');
-            if (area.FilePath is not null)
-            {
-                builder.Append(" — [").Append(EscapeLinkText(area.FilePath)).Append("](").Append(FormatSourceLink(reportPath, projectRoot, area.FilePath)).Append(')');
-            }
-            foreach (var location in area.Declarations)
-            {
-                builder.Append(" — [").Append(EscapeLinkText(location.Path)).Append(':').Append(location.StartLine.ToString(CultureInfo.InvariantCulture))
-                    .Append("](").Append(FormatSourceLink(reportPath, projectRoot, location.Path)).Append("#L")
-                    .Append(location.StartLine.ToString(CultureInfo.InvariantCulture)).Append(')');
-            }
-            builder.Append('\n');
-        }
-
-        var fileTargets = package.Findings.SelectMany(static packaged =>
-                packaged.Finding.SubjectOccurrences.Select(static occurrence => occurrence.Symbol.SourcePath)
-                    .Concat(packaged.Finding.Finding.Evidence.Select(static evidence => evidence.SourcePath)))
-            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
-        if (fileTargets.Length > 0)
-        {
-            builder.Append("\n## File navigation\n\n");
-            foreach (var sourcePath in fileTargets)
-            {
-                builder.Append("- [").Append(EscapeLinkText(sourcePath)).Append("](")
-                    .Append(FormatSourceLink(reportPath, projectRoot, sourcePath)).Append(")\n");
-            }
-        }
-
-        var symbolTargets = package.Findings.SelectMany(packaged => packaged.Finding.Occurrences.Concat(packaged.Finding.SubjectOccurrences)
-                .Select(occurrence => (Symbol: occurrence.Symbol, occurrence.Role,
-                    IsSubject: packaged.Finding.SubjectOccurrences.Contains(occurrence))))
-            .DistinctBy(static item => (item.Symbol.ProjectPath, item.Symbol.SourcePath, item.Symbol.SymbolId, item.Symbol.Line,
-                item.Symbol.OccurrenceId, item.Role, item.IsSubject))
-            .OrderBy(static item => item.Symbol.ProjectPath, StringComparer.Ordinal)
-            .ThenBy(static item => item.Symbol.SourcePath, StringComparer.Ordinal)
-            .ThenBy(static item => item.Symbol.Line)
-            .ThenBy(static item => item.Symbol.SymbolId, StringComparer.Ordinal).ToArray();
-        if (symbolTargets.Length > 0)
-        {
-            builder.Append("\n## Symbol navigation\n\n");
-            foreach (var item in symbolTargets)
-            {
-                builder.Append("- ").Append(item.IsSubject ? "Subject" : "Context")
-                    .Append(" (").Append(EscapeInline(item.Role == ProjectRole.Tests ? "tests" : "production"))
-                    .Append("): ").Append(FormatCodeSpan(item.Symbol.SymbolId)).Append(" — [")
-                    .Append(EscapeLinkText(item.Symbol.SourcePath)).Append(':').Append(item.Symbol.Line.ToString(CultureInfo.InvariantCulture))
-                    .Append("](").Append(FormatSourceLink(reportPath, projectRoot, item.Symbol.SourcePath)).Append("#L")
-                    .Append(item.Symbol.Line.ToString(CultureInfo.InvariantCulture)).Append(") in ")
-                    .Append(FormatCodeSpan(item.Symbol.ProjectPath)).Append('\n');
-            }
-        }
-
-        if (package.Findings.Count == 0)
-        {
-            builder.Append("\nNo primary findings.\n");
-        }
-        else
-        {
-            builder.Append("\n## Assigned findings\n\n");
-            foreach (var packaged in package.Findings.OrderBy(static item => item.Id, StringComparer.Ordinal))
-            {
-                var finding = packaged.Finding;
-                var targetArea = GetFindingArea(finding);
-                builder.Append("### ").Append(packaged.Id).Append(" — ").Append(FormatCodeSpan(finding.AnalysisId)).Append("\n\n")
-                    .Append("Original: [").Append(EscapeLinkText(finding.Finding.SubjectId)).Append(" (line ")
-                    .Append(finding.Finding.StartLine.ToString(CultureInfo.InvariantCulture)).Append(")](../../")
-                    .Append(targetArea).Append('/').Append(viewName).Append('/').Append(EncodePathSegment(finding.AnalysisId)).Append(".md#finding-")
-                    .Append(packaged.Id).Append(")\n\n")
-                    .Append("Signal: ").Append(EscapeInline(FormatSignal(finding.AnalysisId, finding.Finding))).Append("\n\n")
-                    .Append("Original rationale: ").Append(EscapeInline(finding.Finding.Rationale)).Append("\n\n")
-                    .Append("Assignment reasons:\n\n");
-                foreach (var assignment in packaged.Assignments)
-                {
-                    builder.Append("- ").Append(EscapeInline(assignment.Role == ProjectRole.Tests ? "tests" : "production"))
-                        .Append(" subject ").Append(FormatCodeSpan(assignment.SymbolId)).Append(" in [")
-                        .Append(EscapeLinkText(assignment.SourcePath)).Append(':').Append(assignment.Line.ToString(CultureInfo.InvariantCulture))
-                        .Append("](").Append(FormatSourceLink(reportPath, projectRoot, assignment.SourcePath)).Append("#L")
-                        .Append(assignment.Line.ToString(CultureInfo.InvariantCulture)).Append("): ")
-                        .Append(EscapeInline(assignment.Reason));
-                    if (assignment.OccurrenceId is not null)
-                    {
-                        builder.Append(" (occurrence ").Append(FormatCodeSpan(assignment.OccurrenceId)).Append(')');
-                    }
-                    builder.Append(" — project ").Append(FormatCodeSpan(assignment.ProjectPath)).Append('\n');
-                }
-                if (finding.Finding.Evidence.Count > 0)
-                {
-                    builder.Append("\nEvidence and source locations:\n\n");
-                    foreach (var evidence in finding.Finding.Evidence)
-                    {
-                        builder.Append("- [").Append(EscapeLinkText(evidence.SourcePath)).Append(':').Append(evidence.Line.ToString(CultureInfo.InvariantCulture))
-                            .Append("](").Append(FormatSourceLink(reportPath, projectRoot, evidence.SourcePath)).Append("#L")
-                            .Append(evidence.Line.ToString(CultureInfo.InvariantCulture)).Append("): ").Append(FormatCodeSpan(evidence.Label));
-                        if (!string.IsNullOrWhiteSpace(evidence.Detail)) builder.Append(" — ").Append(EscapeInline(evidence.Detail));
-                        builder.Append('\n');
-                    }
-                }
-                builder.Append('\n');
-            }
-        }
-
-        if (package.TestTypes.Count > 0)
-        {
-            builder.Append("## Test context\n\n");
-            foreach (var test in package.TestTypes.OrderBy(static item => item.TypeId, StringComparer.Ordinal))
-            {
-                builder.Append("- ").Append(FormatCodeSpan(test.TypeId)).Append(": ").Append(EscapeInline(test.Reason));
-                if (test.HasBindingUncertainty) builder.Append("; binding uncertainty detected");
-                foreach (var declaration in test.Declarations)
-                {
-                    builder.Append(" — [").Append(EscapeLinkText(declaration.Path)).Append(':').Append(declaration.StartLine.ToString(CultureInfo.InvariantCulture))
-                        .Append("](").Append(FormatSourceLink(reportPath, projectRoot, declaration.Path)).Append("#L")
-                        .Append(declaration.StartLine.ToString(CultureInfo.InvariantCulture)).Append(')');
-                }
-                builder.Append('\n');
-            }
-            builder.Append('\n');
-        }
-
-        var areaByTypeId = package.Areas.Concat(view.ContextAreas.Where(row => row.PackageId == package.Id).Select(static row => row.Area))
-            .Where(static area => area.TypeId is not null).DistinctBy(static area => area.Id)
-            .ToDictionary(static area => area.TypeId!, StringComparer.Ordinal);
-        if (package.DirectReferences.Count > 0 || package.DirectUncertainties.Count > 0)
-        {
-            builder.Append("## Direct source context\n\n");
-            foreach (var reference in package.DirectReferences)
-            {
-                var from = reference.SourceTypeId is not null && areaByTypeId.TryGetValue(reference.SourceTypeId, out var fromArea)
-                    ? fromArea.Name : reference.SourcePath;
-                var to = areaByTypeId.TryGetValue(reference.TargetTypeId, out var toArea) ? toArea.Name : reference.TargetTypeId;
-                builder.Append("- ").Append(EscapeInline(from)).Append(" → ").Append(EscapeInline(to))
-                    .Append(reference.TargetMemberId is null ? string.Empty : " / " + EscapeInline(reference.TargetMemberId))
-                    .Append(" (").Append(EscapeInline(reference.SourceRole == ProjectRole.Tests ? "tests" : "production"))
-                    .Append(" → ").Append(EscapeInline(reference.TargetRole == ProjectRole.Tests ? "tests" : "production"))
-                    .Append("; ").Append(EscapeInline(reference.Kind.ToString())).Append(") at [")
-                    .Append(EscapeLinkText(reference.SourcePath)).Append(':').Append(reference.Location.StartLine.ToString(CultureInfo.InvariantCulture))
-                    .Append(':').Append(reference.Location.StartColumn.ToString(CultureInfo.InvariantCulture)).Append("](")
-                    .Append(FormatSourceLink(reportPath, projectRoot, reference.SourcePath)).Append("#L")
-                    .Append(reference.Location.StartLine.ToString(CultureInfo.InvariantCulture)).Append(")\n");
-            }
-            foreach (var uncertainty in package.DirectUncertainties)
-            {
-                builder.Append("- Binding uncertainty in ").Append(uncertainty.OriginTypeId is null
-                        ? "file context" : "type " + FormatCodeSpan(uncertainty.OriginTypeId))
-                    .Append(" (").Append(EscapeInline(uncertainty.SourceRole == ProjectRole.Tests ? "tests" : "production"))
-                    .Append("): ").Append(EscapeInline(uncertainty.Reason)).Append("; candidate ")
-                    .Append(FormatCodeSpan(uncertainty.CandidateSymbolId)).Append(" at [")
-                    .Append(EscapeLinkText(uncertainty.SourcePath)).Append(':').Append(uncertainty.Location.StartLine.ToString(CultureInfo.InvariantCulture))
-                    .Append(':').Append(uncertainty.Location.StartColumn.ToString(CultureInfo.InvariantCulture)).Append("](")
-                    .Append(FormatSourceLink(reportPath, projectRoot, uncertainty.SourcePath)).Append("#L")
-                    .Append(uncertainty.Location.StartLine.ToString(CultureInfo.InvariantCulture)).Append(")\n");
-            }
-            builder.Append('\n');
-        }
-
-        var contextRows = view.ContextAreas.Where(row => row.PackageId == package.Id).ToArray();
-        if (contextRows.Length > 0)
-        {
-            builder.Append("## Context areas\n\n");
-            foreach (var row in contextRows)
-            {
-                builder.Append("- ").Append(row.IsContextOnly ? "Context only" : "Shared area").Append(": [")
-                    .Append(EscapeLinkText(row.Area.Name)).Append("](index.md#area-").Append(row.Area.Id).Append(") — ")
-                    .Append(EscapeInline(row.Area.ProjectPath)).Append("; ").Append(EscapeInline(row.Area.IdentityReason)).Append('\n');
-            }
-            builder.Append('\n');
-        }
-
-        if (package.RelatedPackageIds.Count > 0)
-        {
-            builder.Append("## Related packages\n\n");
-            foreach (var relatedId in package.RelatedPackageIds)
-            {
-                builder.Append("- [").Append(relatedId).Append("](").Append(EncodePathSegment(relatedId)).Append(".md)\n");
-            }
-        }
-        builder.Append("\nThe reference scope is static type and method relationships from the loaded C# snapshot. Property, field, and event access alone is not represented as a relationship. Runtime dispatch, reflection, dependency injection, and other unmodeled relationships may be absent.\n");
-        return builder.ToString();
-    }
-
     private static IReadOnlyList<ReviewFinding> GetFindings(ReviewRunResult result)
     {
         if (result.Findings.Count > 0 || result.DetectedCount == 0)
@@ -746,7 +453,7 @@ public sealed class MarkdownReportWriter
         }
     }
 
-    private static string GetFindingArea(ReviewFinding finding)
+    internal static string GetFindingArea(ReviewFinding finding)
     {
         var roles = finding.SubjectOccurrences.Select(static occurrence => occurrence.Role).Distinct().ToArray();
         if (roles.Contains(ProjectRole.Production) && roles.Contains(ProjectRole.Tests))
@@ -1041,7 +748,7 @@ public sealed class MarkdownReportWriter
         return string.Join(", ", relatedItems);
     }
 
-    private static string FindingKey(ReviewFinding finding) => finding.AnalysisId + "\0" + finding.Finding.ProjectPath + "\0"
+    internal static string FindingKey(ReviewFinding finding) => finding.AnalysisId + "\0" + finding.Finding.ProjectPath + "\0"
         + finding.Finding.SourcePath + "\0" + finding.Finding.SubjectId + "\0" + finding.Finding.Discriminator;
 
     private static string GetOccurrenceRole(ReviewFinding finding, FindingSymbol symbol)
@@ -1066,7 +773,7 @@ public sealed class MarkdownReportWriter
         return occurrence?.Role == ProjectRole.Tests ? "tests" : "production";
     }
 
-    private static string FormatSourceLink(string reportPath, string projectRoot, string sourcePath)
+    internal static string FormatSourceLink(string reportPath, string projectRoot, string sourcePath)
     {
         var absoluteSource = Path.GetFullPath(sourcePath, projectRoot);
         var relative = Path.GetRelativePath(Path.GetDirectoryName(reportPath)!, absoluteSource).Replace('\\', '/');
@@ -1075,7 +782,7 @@ public sealed class MarkdownReportWriter
 
     private static string QuotePowerShell(string value) => "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";
 
-    private static string FormatSignal(string analysisId, FindingDraft finding)
+    internal static string FormatSignal(string analysisId, FindingDraft finding)
     {
         if (analysisId == "dead-code-candidates")
         {
@@ -1321,7 +1028,7 @@ public sealed class MarkdownReportWriter
         _ => throw new ArgumentException("Option contains an undefined JSON value.", nameof(value)),
     };
 
-    private static string FormatCodeSpan(string value)
+    internal static string FormatCodeSpan(string value)
     {
         var content = value.Replace("\r", string.Empty, StringComparison.Ordinal).Replace('\n', ' ');
         var longestBacktickRun = 0;
@@ -1346,7 +1053,7 @@ public sealed class MarkdownReportWriter
             : delimiter + content + delimiter;
     }
 
-    private static string EscapeInline(string value)
+    internal static string EscapeInline(string value)
     {
         var builder = new StringBuilder(value.Length);
         foreach (var character in value)
@@ -1367,9 +1074,9 @@ public sealed class MarkdownReportWriter
         return builder.ToString();
     }
 
-    private static string EscapeLinkText(string value) => EscapeInline(value).Replace("\\-", "-", StringComparison.Ordinal);
+    internal static string EscapeLinkText(string value) => EscapeInline(value).Replace("\\-", "-", StringComparison.Ordinal);
 
-    private static string EncodePathSegment(string segment) => Uri.EscapeDataString(segment);
+    internal static string EncodePathSegment(string segment) => Uri.EscapeDataString(segment);
 
     private static string CreateRunId(DateTimeOffset value) => value.UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture)
         + "-" + Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();

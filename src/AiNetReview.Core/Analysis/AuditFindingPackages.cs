@@ -343,7 +343,10 @@ internal static class AuditFindingPackages
 
         return new AuditFindingPackageView(changedOnly, Array.AsReadOnly(areas.ToArray()),
             Array.AsReadOnly(packageRows.Select(package => package.Freeze(areasById)).ToArray()),
-            Array.AsReadOnly(contextRows), findings.Count, hasCSharpSnapshotChanges);
+            Array.AsReadOnly(contextRows), findings.Count, hasCSharpSnapshotChanges)
+        {
+            ProjectPaths = projects.Values.ToDictionary(static project => project.ProjectId.ToString(), static project => project.ProjectPath, StringComparer.Ordinal),
+        };
     }
 
     private static string? FindContainingType(FindingSymbol symbol, Microsoft.CodeAnalysis.ProjectId projectId, AuditSourceContext context, StringComparer pathComparer) =>
@@ -463,7 +466,10 @@ internal sealed record AuditFindingPackageView(
     IReadOnlyList<AuditFindingPackage> Packages,
     IReadOnlyList<AuditPackageContextArea> ContextAreas,
     int FindingCount,
-    bool? HasCSharpSnapshotChanges);
+    bool? HasCSharpSnapshotChanges)
+{
+    public IReadOnlyDictionary<string, string> ProjectPaths { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
+}
 
 internal sealed record AuditFindingPackageViews(
     AuditFindingPackageView ChangedFiles,
