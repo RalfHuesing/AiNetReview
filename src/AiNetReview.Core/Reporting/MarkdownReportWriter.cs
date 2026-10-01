@@ -419,8 +419,8 @@ public sealed class MarkdownReportWriter
         Directory.CreateDirectory(directory);
         var builder = new StringBuilder()
             .Append("# Audit map — ").Append(viewName).Append("\n\n")
-            .Append("Run: `").Append(EscapeInline(runId)).Append("`; view: `")
-            .Append(viewName).Append("`. This is a deterministic technical grouping of source signals, not a claim of shared responsibility, defect cause, or independent changeability. Statically unobserved relationships may be absent.\n\n")
+            .Append("Run: ").Append(FormatCodeSpan(runId)).Append("; view: ")
+            .Append(FormatCodeSpan(viewName)).Append(". This is a deterministic technical grouping of source signals, not a claim of shared responsibility, defect cause, or independent changeability. Statically unobserved relationships may be absent.\n\n")
             .Append(viewName == "all-findings"
                 ? "> **Full-audit scope:** This reference view contains every current finding. Inspect it only when the user explicitly requests a full-repository audit.\n\n"
                 : "Use this selected view as the active assignment. Excluded findings and their details are not copied here.\n\n")
@@ -441,7 +441,7 @@ public sealed class MarkdownReportWriter
                 var analyses = string.Join(", ", package.Findings.Select(static finding => finding.Finding.AnalysisId).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
                 builder.Append("| [").Append(package.Id).Append("](").Append(packageFile).Append(") | ")
                     .Append(areas).Append(" | ").Append(package.Findings.Count.ToString(CultureInfo.InvariantCulture)).Append(" | ")
-                    .Append(EscapeInline(analyses)).Append(" |\n");
+                    .Append(FormatCodeSpan(analyses)).Append(" |\n");
             }
 
             var mapRows = view.ContextAreas.Select(static row => (row.Area, row.IsContextOnly, row.PackageId))
@@ -459,7 +459,7 @@ public sealed class MarkdownReportWriter
                 {
                     builder.Append("<a id=\"area-").Append(row.Area.Id).Append("\"></a>\n")
                         .Append("- **").Append(row.IsContextOnly ? "Context only" : row.IsShared ? "Shared area" : "Primary area").Append(": ")
-                        .Append(EscapeInline(row.Area.Name)).Append("** (`").Append(EscapeInline(row.Area.ProjectPath)).Append("`)");
+                        .Append(EscapeInline(row.Area.Name)).Append("** (").Append(FormatCodeSpan(row.Area.ProjectPath)).Append(')');
                     if (row.Area.FilePath is not null)
                     {
                         builder.Append(" — [source](").Append(FormatSourceLink(Path.Combine(directory, "index.md"), projectRoot, row.Area.FilePath)).Append(')');
@@ -508,15 +508,15 @@ public sealed class MarkdownReportWriter
     {
         var builder = new StringBuilder()
             .Append("# Audit package ").Append(package.Id).Append("\n\n")
-            .Append("Run: `").Append(runId)
-            .Append("`; view: `").Append(viewName).Append("`; primary findings: **")
+            .Append("Run: ").Append(FormatCodeSpan(runId))
+            .Append("; view: ").Append(FormatCodeSpan(viewName)).Append("; primary findings: **")
             .Append(package.Findings.Count.ToString(CultureInfo.InvariantCulture)).Append("**.\n\n")
             .Append("## Assignment\n\n")
             .Append("Inspect every finding assigned to this package using the source, callers, contracts, and tests below. Classify each ID as false positive, acceptable design, needs clarification, or actionable, and record concrete evidence plus unresolved context. This is a technical grouping; it does not establish common cause or independent changeability. Do not claim a full audit when other packages remain unreviewed.\n\n")
             .Append("## Areas\n\n");
         foreach (var area in package.Areas)
         {
-            builder.Append("- **").Append(EscapeInline(area.Name)).Append("** (`").Append(EscapeInline(area.ProjectPath)).Append("`; ")
+            builder.Append("- **").Append(EscapeInline(area.Name)).Append("** (").Append(FormatCodeSpan(area.ProjectPath)).Append("; ")
                 .Append(EscapeInline(area.Role == ProjectRole.Tests ? "tests" : "production")).Append("; ")
                 .Append(EscapeInline(area.IdentityReason)).Append(')');
             if (area.FilePath is not null)
@@ -562,11 +562,11 @@ public sealed class MarkdownReportWriter
             {
                 builder.Append("- ").Append(item.IsSubject ? "Subject" : "Context")
                     .Append(" (").Append(EscapeInline(item.Role == ProjectRole.Tests ? "tests" : "production"))
-                    .Append("): `").Append(EscapeInline(item.Symbol.SymbolId)).Append("` — [")
+                    .Append("): ").Append(FormatCodeSpan(item.Symbol.SymbolId)).Append(" — [")
                     .Append(EscapeLinkText(item.Symbol.SourcePath)).Append(':').Append(item.Symbol.Line.ToString(CultureInfo.InvariantCulture))
                     .Append("](").Append(FormatSourceLink(reportPath, projectRoot, item.Symbol.SourcePath)).Append("#L")
-                    .Append(item.Symbol.Line.ToString(CultureInfo.InvariantCulture)).Append(") in `")
-                    .Append(EscapeInline(item.Symbol.ProjectPath)).Append("`\n");
+                    .Append(item.Symbol.Line.ToString(CultureInfo.InvariantCulture)).Append(") in ")
+                    .Append(FormatCodeSpan(item.Symbol.ProjectPath)).Append('\n');
             }
         }
 
@@ -581,7 +581,7 @@ public sealed class MarkdownReportWriter
             {
                 var finding = packaged.Finding;
                 var targetArea = GetFindingArea(finding);
-                builder.Append("### ").Append(packaged.Id).Append(" — `").Append(EscapeInline(finding.AnalysisId)).Append("`\n\n")
+                builder.Append("### ").Append(packaged.Id).Append(" — ").Append(FormatCodeSpan(finding.AnalysisId)).Append("\n\n")
                     .Append("Original: [").Append(EscapeLinkText(finding.Finding.SubjectId)).Append(" (line ")
                     .Append(finding.Finding.StartLine.ToString(CultureInfo.InvariantCulture)).Append(")](../../")
                     .Append(targetArea).Append('/').Append(viewName).Append('/').Append(EncodePathSegment(finding.AnalysisId)).Append(".md#finding-")
@@ -624,7 +624,7 @@ public sealed class MarkdownReportWriter
             builder.Append("## Test context\n\n");
             foreach (var test in package.TestTypes.OrderBy(static item => item.TypeId, StringComparer.Ordinal))
             {
-                builder.Append("- `").Append(EscapeInline(test.TypeId)).Append("`: ").Append(EscapeInline(test.Reason));
+                builder.Append("- ").Append(FormatCodeSpan(test.TypeId)).Append(": ").Append(EscapeInline(test.Reason));
                 if (test.HasBindingUncertainty) builder.Append("; binding uncertainty detected");
                 foreach (var declaration in test.Declarations)
                 {
@@ -661,10 +661,10 @@ public sealed class MarkdownReportWriter
             foreach (var uncertainty in package.DirectUncertainties)
             {
                 builder.Append("- Binding uncertainty in ").Append(uncertainty.OriginTypeId is null
-                        ? "file context" : "type `" + EscapeInline(uncertainty.OriginTypeId) + "`")
+                        ? "file context" : "type " + FormatCodeSpan(uncertainty.OriginTypeId))
                     .Append(" (").Append(EscapeInline(uncertainty.SourceRole == ProjectRole.Tests ? "tests" : "production"))
-                    .Append("): ").Append(EscapeInline(uncertainty.Reason)).Append("; candidate `")
-                    .Append(EscapeInline(uncertainty.CandidateSymbolId)).Append("` at [")
+                    .Append("): ").Append(EscapeInline(uncertainty.Reason)).Append("; candidate ")
+                    .Append(FormatCodeSpan(uncertainty.CandidateSymbolId)).Append(" at [")
                     .Append(EscapeLinkText(uncertainty.SourcePath)).Append(':').Append(uncertainty.Location.StartLine.ToString(CultureInfo.InvariantCulture))
                     .Append(':').Append(uncertainty.Location.StartColumn.ToString(CultureInfo.InvariantCulture)).Append("](")
                     .Append(FormatSourceLink(reportPath, projectRoot, uncertainty.SourcePath)).Append("#L")

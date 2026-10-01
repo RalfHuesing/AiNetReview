@@ -25,7 +25,7 @@ public sealed class MarkdownReportWriterTests
         using var temp = TestTempDirectory.Create();
         var analysis = new ReportAnalysis("fixture-analysis", "Fixture analysis", "default");
         var config = CreateConfig(temp.DirectoryPath, analysis);
-        const string productionProject = "src/Sample.csproj";
+        const string productionProject = "src/Sample_project.csproj";
         const string testProject = "tests/Sample.Tests.csproj";
         const string productionPath = "src/Widget.cs";
         const string testPath = "tests/WidgetTests.cs";
@@ -33,8 +33,8 @@ public sealed class MarkdownReportWriterTests
         const string packageId = "package-mixed-widget";
         var symbols = new[]
         {
-            new FindingSymbol(productionProject, productionPath, "M:Sample.Widget.Run", 3, "fragment-a"),
-            new FindingSymbol(productionProject, productionPath, "M:Sample.Widget.Run", 6, "fragment-b"),
+            new FindingSymbol(productionProject, productionPath, "M:Sample.Widget`1.Run_with_under", 3, "fragment-a"),
+            new FindingSymbol(productionProject, productionPath, "M:Sample.Widget`1.Run_with_under", 6, "fragment-b"),
             new FindingSymbol(testProject, testPath, "M:Sample.Tests.WidgetTests.Run", 17, "test-a"),
             new FindingSymbol(testProject, testPath, "M:Sample.Tests.WidgetTests.Run", 22, "test-b"),
         };
@@ -45,7 +45,7 @@ public sealed class MarkdownReportWriterTests
             new ReviewFindingOccurrence(symbols[2], ProjectRole.Tests),
             new ReviewFindingOccurrence(symbols[3], ProjectRole.Tests),
         };
-        var draft = new FindingDraft(productionProject, productionPath, "M:Sample.Widget.Run", "shared-fragment", 4,
+        var draft = new FindingDraft(productionProject, productionPath, "M:Sample.Widget`1.Run_with_under", "shared-fragment", 4,
             "A shared fragment has two production and two test owner occurrences.", new Dictionary<string, double>(), [],
             relatedSymbols: symbols, subjectSymbols: symbols);
         var finding = new ReviewFinding(analysis.Descriptor.AnalysisId, draft, [productionPath, testPath], [], [productionPath, testPath])
@@ -76,12 +76,17 @@ public sealed class MarkdownReportWriterTests
         var packageMarkdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, published.RunId,
             "audit-map", "changed-files", packageId + ".md"));
 
-        Assert.Contains("[src/Widget.cs:3](../../../../src/Widget.cs#L3): production owner (occurrence `fragment-a`) — project `src/Sample.csproj`", packageMarkdown, StringComparison.Ordinal);
-        Assert.Contains("[src/Widget.cs:6](../../../../src/Widget.cs#L6): production owner (occurrence `fragment-b`) — project `src/Sample.csproj`", packageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("[src/Widget.cs:3](../../../../src/Widget.cs#L3): production owner (occurrence `fragment-a`) — project `src/Sample_project.csproj`", packageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("[src/Widget.cs:6](../../../../src/Widget.cs#L6): production owner (occurrence `fragment-b`) — project `src/Sample_project.csproj`", packageMarkdown, StringComparison.Ordinal);
         Assert.Contains("[tests/WidgetTests.cs:17](../../../../tests/WidgetTests.cs#L17): one direct production type reference (occurrence `test-a`) — project `tests/Sample.Tests.csproj`", packageMarkdown, StringComparison.Ordinal);
         Assert.Contains("[tests/WidgetTests.cs:22](../../../../tests/WidgetTests.cs#L22): one direct production type reference (occurrence `test-b`) — project `tests/Sample.Tests.csproj`", packageMarkdown, StringComparison.Ordinal);
         Assert.Contains("Widget.cs:3", packageMarkdown, StringComparison.Ordinal);
         Assert.Contains("Widget.cs:6", packageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("``M:Sample.Widget`1.Run_with_under``", packageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("`src/Sample_project.csproj`", packageMarkdown, StringComparison.Ordinal);
+        var symbolNavigation = packageMarkdown.Split("## Symbol navigation\n\n", StringSplitOptions.None)[1].Split("\n## ", StringSplitOptions.None)[0];
+        Assert.Contains("``M:Sample.Widget`1.Run_with_under`` — [src/Widget.cs:3]", symbolNavigation, StringComparison.Ordinal);
+        Assert.Contains("src/Sample_project.csproj", symbolNavigation, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -147,6 +152,7 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("Context only", await File.ReadAllTextAsync(allIndexPath), StringComparison.Ordinal);
         Assert.Contains("Unique findings: **2**", await File.ReadAllTextAsync(allIndexPath), StringComparison.Ordinal);
         Assert.Contains("Original rationale: The method has a long branch path; binding attribution is uncertain.", allPackageMarkdown, StringComparison.Ordinal);
+        Assert.Contains("### finding-stable — `fixture-analysis`", allPackageMarkdown, StringComparison.Ordinal);
         Assert.Contains("#finding-finding-stable", allPackageMarkdown, StringComparison.Ordinal);
         Assert.Contains("## File navigation", allPackageMarkdown, StringComparison.Ordinal);
         Assert.Contains("## Symbol navigation", allPackageMarkdown, StringComparison.Ordinal);
@@ -156,6 +162,8 @@ public sealed class MarkdownReportWriterTests
         Assert.Equal(1, (await File.ReadAllTextAsync(originalReportPath)).Split("<a id=\"finding-finding-stable\"></a>", StringSplitOptions.None).Length - 1);
         var original = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "fixture-analysis.md"));
         Assert.Contains("<a id=\"finding-finding-stable\"></a>", original, StringComparison.Ordinal);
+        Assert.Contains($"Run: `{report.RunId}`; view: `changed-files`", changedIndex, StringComparison.Ordinal);
+        Assert.DoesNotContain($"Run: `{report.RunId.Replace("-", "\\-", StringComparison.Ordinal)}`", changedIndex, StringComparison.Ordinal);
         var rootIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
         Assert.Contains("(audit-map/changed-files/index.md)", rootIndex, StringComparison.Ordinal);
         Assert.Contains("Do not claim a full audit", allPackageMarkdown, StringComparison.Ordinal);
