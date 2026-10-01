@@ -46,7 +46,7 @@ Für Codeänderungen sind die betroffenen Tests und die erforderlichen Gates gem
 
   **Abschlussnachweis:** Alle vier Analysen prüfen erkannte Produktions- und Testprojekte; ihre `BehaviorVersion`-Werte sind 2 und Deskriptoren sowie aktuelle Analyse-/Entwicklerdokumentation nennen den erweiterten Scope. FastTests belegen Testhelper und `Fact(Skip)`-Vorkommen, Generated-Ausschlüsse, unveränderte Duplikatnormalisierung sowie strukturelle Bindungs- und Fragmentgrenzen. Jede Duplikationsanalyse erhält genau vollständige Production-only-, Test-only- und Mixed-Gruppen. Ein echter Runnerlauf mit beiden Duplikationsanalysen zeigt bei ausschließlich geänderter Testdatei die vollständigen Findings samt Produktions- und Testvorkommen in `changed-files`; die Weiterleitungsanalyse bildet eine übersprungene Testwurzel mit Helperkette projektintern ab. Verifiziert: `build.ps1` 0 Warnungen/Fehler, `test-fast.ps1` 332/332, `test-integration.ps1` 109/109; `git diff --check` sauber.
 
-- [x] **4 — Dead-Code-Testscope mit vollständigem Frameworkschutz freigeben**
+- [ ] **4 — Dead-Code-Testscope mit vollständigem Frameworkschutz freigeben**
 
   **Intention:** Veraltete Testhelpers sichtbar machen, ohne runnergebundene Tests, Hooks, Fixtures und Datenquellen als unbenutzt auszugeben.
 
@@ -70,7 +70,7 @@ Für Codeänderungen sind die betroffenen Tests und die erforderlichen Gates gem
 
   **Abschlussnachweis:** `WriteAsync_PublishesThreeCompleteAreasWithScopeProvenanceAndCrossAreaRelatedLinks`, `CurrentFindingValidator_RejectsEmptyOrNonRelatedSubjectSymbols`, die MTE-Hostregression `ReviewCommand_MissingTestEvidenceUsesSnapshotWideChangedFilesAndPublishesOnlyCompleteRuns` und `ProcessInvocation_ChangedSourcePublishesBothViewsAndExecutesGeneratedBaselineCommand` prüfen Layout, Rollen/Kontext, Links und unveränderten CLI-Rootpfad. `build.ps1` bestand mit 0 Warnungen/Fehlern, `test-fast.ps1` mit 342/342 und `test-integration.ps1` mit 109/109; `git diff --check` ist sauber.
 
-- [x] **6 — Durchgehende Produkt- und Baselineverträge abnehmen**
+- [ ] **6 — Durchgehende Produkt- und Baselineverträge abnehmen**
 
   **Intention:** Die zusammengesetzten Änderungen funktionieren über den echten Host und behalten die Grenzen zwischen vollständigen Ergebnissen, Dateiänderungen und Testpfadevidenz.
 
@@ -132,6 +132,8 @@ Für Codeänderungen sind die betroffenen Tests und die erforderlichen Gates gem
   Final verification: `pwsh -File ./scripts/build.ps1` passed with **0 warnings and 0 errors**; `pwsh -File ./scripts/test-fast.ps1` passed **343/343**; `pwsh -File ./scripts/test-integration.ps1` passed **111/111**; and `git diff --check` passed. The package criteria are met without refactoring the audited input, changing thresholds, suppressing findings, or claiming an unmeasured larger duplicate workload.
 
 - [ ] **8 — Unabhängiges Abschlussaudit**
+
+  **Independent audit result (implementation `f8858b2`):** All twelve criteria and non-goals were checked against code, tests, current documents, defaults and generated reports; see the [criterion matrix and reproducible findings](audit.md#independent-final-audit-package-8). **P1:** genuine MSTest 4.3.3 metadata is rejected by the old assembly-name gate, producing an unused-type finding for a valid test/hook class. **P2:** ambiguous named provider binding marks only exact-name matches uncertain, rather than all plausible members of its known source type as agreed; the universal public-static predicate also misses plausible private NUnit providers when a source name cannot be resolved. These were reproduced with actual MSTest, xUnit and NUnit package metadata through successful isolated CLI runs. Criterion 5 remains unmet; packages 4 and 6 are reopened and overall acceptance/package 8 remains open. Other criteria have the evidence recorded in the matrix; no additional non-goal breach was found. The corrected practical report's 89 relative links were independently rechecked (0 missing). Existing final 0-warning/error build and 343/343 fast / 111/111 integration artifacts were inspected without repeating full gates. Product and test-suite sources were unchanged. Per workflow, at most one correction implementer follows this audit.
 
   **Intention:** Nach den fachlichen Paketen prüfen, ob Umsetzung, Nachweise und tatsächlicher Agentenauftrag das freigegebene Konzept vollständig erfüllen.
 

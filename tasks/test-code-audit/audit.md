@@ -1,3 +1,88 @@
+# Independent final audit (package 8)
+
+Audited implementation: `f8858b24a60e330805eaf1aa7597a3189c850d75`, initially clean. The approved concept, roadmap/evidence, current documentation, configuration, changed production/test sources and generated reports were inspected independently. C# navigation began with AiNetLinter read-only symbol tools. No product or test-suite source was changed. Three isolated real-framework CLI inputs were created under ignored `temp/`; all completed successfully and demonstrate the defects below. Package 8 remains open; packages 4 and 6 are reopened because their complete framework-protection acceptance is not met. The workflow permits at most one correction implementer after this audit.
+
+## Findings
+
+### P1 — Real MSTest 4.x metadata loses all attribute protection
+
+`src/AiNetReview.Core/ReviewAnalyses/DeadCodeCandidates/DeadCodeTestFrameworkUsageCollector.cs:675-679` accepts MSTest metadata only when the assembly name starts with `Microsoft.VisualStudio.TestPlatform.TestFramework`. Installed MSTest.TestFramework **4.3.3** uses `MSTest.TestFramework.dll`; the actual assembly identity has that new name. The [primary framework project](https://github.com/microsoft/testfx/blob/main/src/TestFramework/TestFramework/TestFramework.csproj) declares it, and the [AssemblyFixtureProvider API](https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.testtools.unittesting.assemblyfixtureproviderattribute) documents the same assembly. Consequently genuine TestClass/TestMethod, hooks, DynamicData, and modern AssemblyFixtureProvider attributes fail this identity gate. The emitted matrix at `tests/AiNetReview.FastTests/ReviewAnalyses/DeadCodeCandidatesAnalysisTests.cs:702` instead combines modern fixture-provider/global-hook APIs with the old assembly name, hiding the failure.
+
+Reproduction: isolated .NET 10 solution `temp/final-audit-8-mstest/Repro.slnx`, project `Repro.Tests.csproj`, PackageReference `MSTest.TestFramework` pinned to `4.3.3`; dead-code enabled with `apiSurface: "closed_solution"`, all other analyses explicitly disabled. Ordinary SDK restore succeeded. Its complete input is:
+
+```csharp
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+[TestClass]
+public sealed class ValidTests
+{
+    [TestMethod] public void ValidCase() { }
+    [TestInitialize] public void Setup() { }
+    private void OrdinaryHelper() { }
+}
+```
+
+Run from the repository root: `src/AiNetReview/bin/Debug/net10.0/AiNetReview.exe review temp/final-audit-8-mstest`. Actual exit 0, detected 1, run `20261001T103352Z-7ce77c61`: `tests/all-findings/dead-code-candidates.md` reports **T:ValidTests, Type without known use**. The root correctly classifies the project as tests. Expected under the approved protection contract: ValidTests and its test/hook are protected; only OrdinaryHelper remains a candidate. This is a grouped false unused finding over a genuine runner-bound test class, not a missing package or a compile failure. Correct identity recognition and verify real metadata from both old and new assembly generations. Affects concept criterion 5 and package 4, plus the complete-acceptance claim in package 6.
+
+### P2 — Local provider uncertainty misses agreed plausible members
+
+`DeadCodeTestFrameworkUsageCollector.cs:357-379` protects/marks only exact-name matches when there are multiple matches. In contrast, the concept's dead-code contract requires **all plausible provider members of the known source type** to be uncertain for ambiguous named sources. The existing ambiguity case at `DeadCodeCandidatesAnalysisTests.cs:772` checks private-helper candidacy but has no differently named plausible public static provider, so it cannot distinguish these behaviors.
+
+Reproduction: isolated .NET 10 solution `temp/final-audit-8-xunit/Repro.slnx`, actual `xunit.v3.extensibility.core` **3.2.2**, same dead-code-only configuration and closed-solution API mode:
+
+```csharp
+using Xunit;
+using System.Collections.Generic;
+public sealed class Tests
+{
+    [Theory, MemberData("Rows")] public void Case(int value) { }
+    public static IEnumerable<object[]> Rows() => [];
+    public static IEnumerable<object[]> Rows(int count) => [];
+    public static IEnumerable<object[]> Alternative() => [];
+    private void PrivateHelper() { }
+}
+```
+
+Restore and `src/AiNetReview/bin/Debug/net10.0/AiNetReview.exe review temp/final-audit-8-xunit` both succeeded. Run `20261001T103532Z-696fe157` reports **Alternative and PrivateHelper** (detected 2). Alternative satisfies the collector's own plausible-provider predicate at `:551-553`; the two Rows overloads make the name ambiguous. The approved conservative contract selects only PrivateHelper here. Apply the same type-local plausible-provider uncertainty, including inherited providers, that is already used for unknown names; retain private-helper and unrelated-project candidacy. This finding concerns the explicitly approved uncertainty contract, not a claim that xUnit executes Alternative. Affects criterion 5, package 4 and package 6's complete acceptance.
+
+The same uncertainty policy also fails for legitimate **private NUnit providers**: the shared predicate at `:551-553` requires `public static` for every framework, although the [primary NUnit TestCaseSource documentation](https://docs.nunit.org/articles/nunit/writing-tests/attributes/testcasesource.html) includes private static enumerable source methods. The primary [MSTest data-source documentation](https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-mstest-writing-tests-data-driven) requires public static members; no analogous private-source claim is made for MSTest.
+
+Additional real-framework reproduction: `temp/final-audit-8-nunit/Repro.slnx`, NUnit **3.14.0**, same SDK/configuration, with this input:
+
+```csharp
+using NUnit.Framework;
+using System.Collections.Generic;
+[TestFixture]
+public sealed class Tests
+{
+    [TestCaseSource((string)null)] public void Case(int value) { }
+    private static IEnumerable<object[]> PrivateRows() => [];
+    private static void PrivateHelper() { }
+}
+```
+
+Restore succeeded; the CLI review completed exit 0, run `20261001T104022Z-c4342ed2`, detected **PrivateRows and PrivateHelper**. The null source name enters the statically unavailable-name branch `:343-354` in a known source type; PrivateRows must be treated conservatively as a plausible NUnit provider, while the private void helper stays a candidate. Replacing null with the unresolved static name `"UnknownRows"` exercises `:358-370` and gives the same two findings (run `20261001T103944Z-c6be76c8`). These are binding-uncertainty inputs; the audit does not claim their data source resolves at runtime. Provider plausibility must follow supported framework data signatures/visibility, including inherited sources, rather than suppressing all ordinary private methods.
+
+## Criterion matrix and boundaries
+
+| Criterion | Independent evidence and conclusion |
+| --- | --- |
+| 1 — Long tests/string fixtures | CodeSizeCandidatesAnalysis applies project options before all three collectors; FastTests at CodeSizeCandidatesAnalysisTests:384 cover the original extremes and raw-string distinction. Corrected practical reports show LongScenario 1009 token-start lines and StringFixtureTests 3118 physical lines, with no inflated raw-string member. Met. |
+| 2 — Seven maintenance analyses | No remaining IsTestProject exclusion in their candidate paths; the sole production-only selector remains MissingTestEvidenceCandidateSelector. Duplicate/structural/forwarding/non-ASCII tests include helpers and skipped declarations. Dead-code includes test projects but its framework safety is incomplete under criterion 5. |
+| 3 — Statistics | Size and control-flow loops select and measure each project separately. Inclusive/tie/extreme FastTests and MethodControlFlowOutliersIntegrationTests:18 verify independent populations/options (production remains 2 findings while test P99/P50 changes 1 to 2). Met. |
+| 4 — Full clusters | StructuralDuplicationCandidatesAnalysisTests:328 and ReviewRunnerTests:371 verify production/test/mixed completeness and test-only change selection. The fingerprint prepass retains distinct-owner requirements; full ordinal normalized strings remain authoritative at StructuralDuplicateDetector:275-284, with unchanged containment. No truncation or role split found. Met. |
+| 5 — Framework protection | Metadata/derived/inherited tests, hooks, fixtures, interfaces, skipped tests, providers, lookalike rejection, both API modes and broad reachable-project exclusions inspected in the collector, indirect index and matrix tests. Unknown names scan inherited members but the plausible-member policy is incomplete; unknown types expose reachable-area reasons. **Not met: P1/P2 above.** Emitted references alone do not prove actual modern MSTest identity. |
+| 6 — Roles/generated boundaries | ReviewSourceClassifier:57-85 and its tests expose reference/name/path/no-marker reasons. ReviewRunner and FindingDraft.SubjectSymbols/ReviewFinding.SubjectOccurrences preserve origin independently of contextual RelatedSymbols; validation requires nonempty related subjects. Generated/path filters remain; no new marker or per-method role system found. Met. |
+| 7 — Reports | Writer:87-125 emits six indexes and only nonempty area/view analysis files; FormatRelated:666-697 uses whole-view visibility. Source/evidence/occurrence roles, MTE production origin, representative pair counts, sort and partial/unbounded/full instructions checked against tests and generated output. Rechecked **89 relative links in 25 Markdown files, 0 missing**, corrected root counts 2/9/1. Met. |
+| 8 — Baseline | HostAdapterIntegrationTests:464 verifies all eight analyses, no-baseline views, unchanged newly enabled test scope in all-findings only, complete mixed partial cluster after test change, byte-identical baseline. Existing MTE host case at :323 covers snapshot-wide added/changed/deleted C# and non-C# behavior. Hash calculation remains source-based. Met. |
+| 9 — Product/publication | Writer owns a temporary directory and publishes one final rename, with cancellation checks and failure cleanup; host/publication tests preserve previous runs on errors/cancellation. Review remains exit 0 with findings (also observed in all audit repros); no refactoring/build-failure conversion introduced. Met. |
+| 10 — Practical audit | Package-7 original flat rerun/evidence, generated final reports and all reported subject identities checked: 12 findings, production 2/tests 9/mixed 1, all eight analyses active, every present signal assessed, separate tests-only boundary explicit. Recorded 12.573 s/74.5 MiB samples are not a new measurement by this auditor or a release/larger-workload claim. The two 100-statement-owner regression remains bounded; 1005-by-1005 is unmeasured. Met. |
+| 11 — Test options | Shared descriptor validation, ResolveTestOptions inheritance, ForProject selection, effective/provenance reporting inspected. Validator tests:114-164 cover partial/empty, disabled invalid/duplicate/type/range/unsupported cases; size/control-flow integration cases observe higher/lower/percentile selection without source changes. Met. |
+| 12 — Complete defaults | Generator enumerates registry descriptor defaults and supported TestOptions; repository file includes all eight, arrays/API mode and only two test objects. DefaultReviewConfigGeneratorTests compare every default; Bootstrap/ReviewAnalysisServiceRegistrationTests compare root config to registered descriptors; ZeroConfig tests preserve user files in both commands. Met. |
+
+All concept non-goals were checked against the changed-file set and implementation: no new quality analyses, runner execution, external/unloaded test scans, separate CLI/baseline/opt-in, test suppression/Top-N, higher defaults/multipliers, new control-flow parameters or profiles, method-level roles, loosened generated/path boundaries, new workflows/scheduler, old-run mutation, recursive tests-for-tests or automatic refactors/build-breaking review findings. The MTE active-root/path semantics are unchanged. No further non-goal violation was found. Current documentation was checked; its full MSTest/protection claims require correction alongside P1/P2, not a new product feature.
+
+Existing final gate artifacts were inspected: `temp/build.log` records 0 warnings/errors, `temp/test-fast.log` and `TestResults/FastTests.trx` 343/343, `temp/test-integration.log` and `TestResults/IntegrationTests.trx` 111/111. Full gates were not rerun for this read-only audit. New verification was limited to the actual-framework CLI repros and report-link resolution. Passing prior gates does not resolve these reproducible contract failures. Documentation diff review and `git diff --check` passed for this audit-result commit.
+
 # Practical audit fixture and reproduction
 
 Package 7 was audited on implementation commit `99b2853f79e520e5469d27212986dfa5eebe6e5e`, with all eight production analyses enabled and their repository defaults unchanged. This is an explicit **FULL AUDIT** of an isolated input solution; it is not an audit of the AiNetReview product's own findings. The source assessments, initial run evidence, and defect-resolution record are documented directly under package 7 in [the roadmap](roadmap.md).
