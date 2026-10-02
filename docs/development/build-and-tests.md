@@ -74,10 +74,10 @@ Automate the release process using the release script:
 
 ```powershell
 # Validate working tree, run test suite, tag, and trigger GitHub release
-pwsh -File ./scripts/create-release.ps1
+pwsh -File ./scripts/release.ps1
 
 # Dry-run mode to inspect planned steps without committing or tagging
-pwsh -File ./scripts/create-release.ps1 -DryRun
+pwsh -File ./scripts/release.ps1 -DryRun
 ```
 
 The script verifies a clean working tree, synchronizes with `origin/main`, runs `FastTests` and `IntegrationTests`, updates `<Version>` in `src/AiNetReview/AiNetReview.csproj`, tags `vX.Y.Z`, and pushes the tag to GitHub where `.github/workflows/release.yml` publishes `AiNetReview-win-x64.zip`.
