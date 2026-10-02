@@ -1,695 +1,169 @@
 namespace AiNetReview.Core.Reporting;
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using AiNetReview.Core.Analysis;
+using AiNetReview.Core.Findings;
 
+/// <summary>Writes a compact, directly navigable Markdown index for one selected finding view.</summary>
 internal static class AuditMapReportWriter
 {
-    internal const int ReferencePageByteLimit = 16 * 1024;
-    internal const int ReferencePageEntryLimit = 128;
     internal static async Task WriteAuditMapAsync(
         string runDirectory,
         string runId,
         string projectRoot,
-        AuditFindingPackageViews? views,
+        IReadOnlyList<ReviewFinding> findings,
         string viewName,
         CancellationToken cancellationToken)
     {
-        var view = viewName == "changed-files" ? views?.ChangedFiles : views?.AllFindings;
+        ArgumentNullException.ThrowIfNull(findings);
+        if (viewName is not ("changed-files" or "all-findings"))
+        {
+            throw new ArgumentOutOfRangeException(nameof(viewName), viewName, "Audit map view must be changed-files or all-findings.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
         var directory = Path.Combine(runDirectory, "audit-map", viewName);
         Directory.CreateDirectory(directory);
-        var navigation = CreateAreaNavigation(view, directory);
+        var indexPath = Path.Combine(directory, "index.md");
         var builder = new StringBuilder()
             .Append("# Audit map — ").Append(viewName).Append("\n\n")
             .Append("Run: ").Append(MarkdownReportWriter.FormatCodeSpan(runId)).Append("; view: ")
-            .Append(MarkdownReportWriter.FormatCodeSpan(viewName)).Append(". This is a deterministic technical grouping of source signals, not a claim of shared responsibility, defect cause, or independent changeability. Statically unobserved relationships may be absent.\n\n")
+            .Append(MarkdownReportWriter.FormatCodeSpan(viewName)).Append(". Findings are grouped by their representative project and source file. A shared group is a navigation aid and does not claim a common cause or responsibility.\n\n")
             .Append(viewName == "all-findings"
-                ? "> **Full-audit scope:** This reference view contains every current finding. Inspect it only when the user explicitly requests a full-repository audit.\n\n"
-                : "Use this selected view as the active assignment. Excluded findings and their details are not copied here.\n\n")
-            .Append("Unique findings: **").Append((view?.FindingCount ?? 0).ToString(CultureInfo.InvariantCulture)).Append("**. Primary package assignments: **")
-            .Append((view?.Packages.Sum(static package => package.Findings.Count) ?? 0).ToString(CultureInfo.InvariantCulture)).Append("**. Context is not counted as another finding.\n\n");
+                ? "> **Full-audit scope:** This view contains every current finding. Inspect it only when the user explicitly requests a full-repository audit.\n\n"
+                : "This view contains the selected changed-file findings. Missing-test-evidence findings follow the snapshot-wide selection rule.\n\n")
+            .Append("Unique findings: **").Append(findings.Count.ToString(CultureInfo.InvariantCulture)).Append("**. Each finding appears once and links to its original analysis report and source locations.\n\n");
 
-        if (view is null || view.Packages.Count == 0)
+        if (findings.Count == 0)
         {
             builder.Append("No findings are assigned in this view.\n");
         }
         else
         {
-            builder.Append("## Primary packages\n\nThe navigation entry is a deterministic starting point for each package; it does not assert ownership. Primary areas counts every area participating in the package, and each area links to the same package assignment.\n\n| Package | Navigation entry | Primary areas | Findings | Analyses |\n| --- | --- | ---: | ---: | --- |\n");
-            foreach (var package in view.Packages
-                         .Select(item => (Package: item, Primary: GetPrimaryArea(item)))
-                         .OrderBy(static item => item.Primary.Area.ProjectPath, StringComparer.Ordinal)
-                         .ThenBy(static item => item.Primary.SourceFolder, StringComparer.Ordinal)
-                         .ThenBy(static item => item.Primary.Area.Name, StringComparer.Ordinal)
-                         .ThenBy(static item => item.Package.Id, StringComparer.Ordinal))
+            var reportGroups = findings
+                .GroupBy(static finding => finding.Finding.ProjectPath + "\0" + finding.Finding.SourcePath, StringComparer.Ordinal)
+                .OrderBy(static group => group.First().Finding.ProjectPath, StringComparer.Ordinal)
+                .ThenBy(static group => group.First().Finding.SourcePath, StringComparer.Ordinal);
+            string? previousProject = null;
+            foreach (var group in reportGroups)
             {
-                var packageFile = MarkdownReportWriter.EncodePathSegment(package.Package.Id) + ".md";
-                var analyses = string.Join(", ", package.Package.Findings.Select(static finding => finding.Finding.AnalysisId).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
-                builder.Append("| [").Append(package.Package.Id).Append("](").Append(packageFile).Append(") | ")
-                    .Append(MarkdownReportWriter.EscapeInline(package.Primary.Area.Name)).Append(" — ")
-                    .Append(MarkdownReportWriter.FormatCodeSpan(package.Primary.Area.ProjectPath)).Append(" / ")
-                    .Append(MarkdownReportWriter.EscapeInline(package.Primary.SourceFolder)).Append(" | ")
-                    .Append(package.Package.Areas.Count.ToString(CultureInfo.InvariantCulture)).Append(" | ")
-                    .Append(package.Package.Findings.Count.ToString(CultureInfo.InvariantCulture)).Append(" | ")
-                    .Append(MarkdownReportWriter.FormatCodeSpan(analyses)).Append(" |\n");
-            }
-
-            if (navigation.Projects.Count > 0)
-            {
-                builder.Append("\n## Project navigation\n\n");
-                foreach (var project in navigation.Projects)
+                cancellationToken.ThrowIfCancellationRequested();
+                var first = group.First();
+                var projectPath = first.Finding.ProjectPath;
+                var sourcePath = first.Finding.SourcePath;
+                if (!string.Equals(previousProject, projectPath, StringComparison.Ordinal))
                 {
-                    builder.Append("- [").Append(MarkdownReportWriter.EscapeLinkText(project.ProjectPath)).Append("](")
-                        .Append(ToMarkdownLink(Path.Combine(directory, "index.md"), project.IndexPath)).Append(")\n");
+                    builder.Append("## Project ").Append(MarkdownReportWriter.FormatCodeSpan(projectPath)).Append("\n\n");
+                    previousProject = projectPath;
                 }
+
+                builder.Append("### [")
+                    .Append(MarkdownReportWriter.EscapeLinkText(sourcePath)).Append("](")
+                    .Append(MarkdownReportWriter.FormatSourceLink(indexPath, projectRoot, sourcePath)).Append(")\n\n");
+
+                foreach (var finding in group.OrderBy(static item => item.AnalysisId, StringComparer.Ordinal)
+                             .ThenBy(MarkdownReportWriter.GetFindingId, StringComparer.Ordinal))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var findingId = MarkdownReportWriter.GetFindingId(finding);
+                    var area = MarkdownReportWriter.GetFindingArea(finding);
+                    var detailPath = "../../" + area + "/" + viewName + "/"
+                        + MarkdownReportWriter.EncodePathSegment(finding.AnalysisId) + ".md#finding-" + findingId;
+                    var signal = MarkdownReportWriter.FormatSignal(finding.AnalysisId, finding.Finding);
+                    builder.Append("- [")
+                        .Append(MarkdownReportWriter.EscapeLinkText(findingId)).Append("](")
+                        .Append(detailPath).Append(") — ")
+                        .Append(MarkdownReportWriter.FormatCodeSpan(finding.AnalysisId)).Append(": ")
+                        .Append(MarkdownReportWriter.EscapeInline(signal)).Append('\n');
+
+                    AppendSubjectSources(builder, indexPath, projectRoot, finding);
+                    AppendAdditionalSources(builder, indexPath, projectRoot, finding);
+                }
+
+                builder.Append('\n');
             }
         }
 
-        await MarkdownReportWriter.WriteUtf8Async(Path.Combine(directory, "index.md"), builder.ToString(), cancellationToken).ConfigureAwait(false);
-        await WriteAreaNavigationAsync(view, projectRoot, navigation, viewName, runId, cancellationToken).ConfigureAwait(false);
-        if (view is null)
+        await MarkdownReportWriter.WriteUtf8Async(indexPath, builder.ToString(), cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void AppendSubjectSources(StringBuilder builder, string reportPath, string projectRoot, ReviewFinding finding)
+    {
+        if (finding.SubjectOccurrences.Count == 0)
+        {
+            builder.Append("  - Representative source: ");
+            AppendSourceLocation(builder, reportPath, projectRoot, finding.Finding.SourcePath, finding.Finding.StartLine);
+            builder.Append('\n');
+            return;
+        }
+
+        builder.Append("  - Subject occurrences: ");
+        var ordered = finding.SubjectOccurrences
+            .OrderBy(static occurrence => occurrence.Symbol.ProjectPath, StringComparer.Ordinal)
+            .ThenBy(static occurrence => occurrence.Symbol.SourcePath, StringComparer.Ordinal)
+            .ThenBy(static occurrence => occurrence.Symbol.Line)
+            .ThenBy(static occurrence => occurrence.Symbol.SymbolId, StringComparer.Ordinal)
+            .ToArray();
+        for (var index = 0; index < ordered.Length; index++)
+        {
+            if (index > 0)
+            {
+                builder.Append("; ");
+            }
+
+            var occurrence = ordered[index];
+            AppendSourceLocation(builder, reportPath, projectRoot, occurrence.Symbol.SourcePath, occurrence.Symbol.Line);
+            builder.Append(" (").Append(occurrence.Role).Append("; project ")
+                .Append(MarkdownReportWriter.FormatCodeSpan(occurrence.Symbol.ProjectPath)).Append(')');
+        }
+
+        builder.Append('\n');
+    }
+
+    private static void AppendAdditionalSources(StringBuilder builder, string reportPath, string projectRoot, ReviewFinding finding)
+    {
+        var subjectPaths = finding.SubjectOccurrences.Select(static occurrence => occurrence.Symbol.SourcePath)
+            .Append(finding.Finding.SourcePath)
+            .ToHashSet(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        var additionalPaths = finding.SourcePaths.Where(path => !subjectPaths.Contains(path))
+            .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal).ToArray();
+        if (additionalPaths.Length == 0)
         {
             return;
         }
 
-        foreach (var package in view.Packages)
+        builder.Append("  - Other finding sources: ");
+        for (var index = 0; index < additionalPaths.Length; index++)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var reportPath = Path.Combine(directory, package.Id + ".md");
-            await MarkdownReportWriter.WriteUtf8Async(reportPath, await FormatAuditPackageAsync(runId, projectRoot, reportPath, viewName, package, view, navigation, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private static AreaNavigation CreateAreaNavigation(AuditFindingPackageView? view, string directory)
-    {
-        if (view is null)
-        {
-            return AreaNavigation.Empty;
-        }
-
-        var rows = view.ContextAreas.Select(static row => (row.Area, row.IsContextOnly, row.PackageId, IsPrimary: false))
-            .Concat(view.Packages.SelectMany(package => package.Areas.Select(area => (Area: area, IsContextOnly: false, PackageId: package.Id, IsPrimary: true))))
-            .GroupBy(static row => row.Area.Id, StringComparer.Ordinal)
-            .Select(group => new AreaNavigationArea(group.First().Area, group.All(static row => row.IsContextOnly),
-                group.Where(static row => row.IsPrimary).Select(static row => row.PackageId).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(),
-                group.Where(static row => !row.IsPrimary).Select(static row => row.PackageId).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray()))
-            .OrderBy(static row => row.Area.ProjectPath, StringComparer.Ordinal)
-            .ThenBy(static row => row.Area.Name, StringComparer.Ordinal)
-            .ThenBy(static row => row.Area.Id, StringComparer.Ordinal)
-            .ToArray();
-
-        var entries = rows.SelectMany(row => GetSourceFolders(row.Area).Select(folder =>
-            new AreaNavigationEntry(row.Area, row.IsContextOnly, row.PrimaryPackageIds, row.ContextPackageIds, folder))).ToArray();
-        var projects = entries.GroupBy(static entry => entry.Area.ProjectPath, StringComparer.Ordinal)
-            .OrderBy(static group => group.Key, StringComparer.Ordinal)
-            .Select(group =>
+            if (index > 0)
             {
-                var projectDirectory = Path.Combine(directory, "area-navigation", "project-" + StablePathId(group.Key));
-                return new AreaNavigationProject(group.Key, Path.Combine(projectDirectory, "index.md"), group.ToArray());
-            }).ToArray();
-        var areaPagePaths = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-        foreach (var project in projects)
-        {
-            foreach (var group in project.Entries.GroupBy(static entry => entry.SourceFolder, StringComparer.Ordinal))
-            {
-                var pagePath = Path.Combine(Path.GetDirectoryName(project.IndexPath)!, "folder-" + StablePathId(group.Key) + ".md");
-                foreach (var entry in group)
-                {
-                    if (!areaPagePaths.TryGetValue(entry.Area.Id, out var paths))
-                    {
-                        paths = [];
-                        areaPagePaths.Add(entry.Area.Id, paths);
-                    }
-                    if (!paths.Contains(pagePath, StringComparer.Ordinal)) paths.Add(pagePath);
-                }
-            }
-        }
-
-        return new AreaNavigation(projects,
-            areaPagePaths.ToDictionary(static pair => pair.Key,
-                static pair => (IReadOnlyList<string>)pair.Value.Order(StringComparer.Ordinal).ToArray(), StringComparer.Ordinal));
-    }
-
-    private static (AuditFindingArea Area, string SourceFolder) GetPrimaryArea(AuditFindingPackage package)
-    {
-        var area = package.Areas.OrderBy(static item => item.ProjectPath, StringComparer.Ordinal)
-            .ThenBy(GetPrimaryFolder, StringComparer.Ordinal).ThenBy(static item => item.Name, StringComparer.Ordinal)
-            .ThenBy(static item => item.Id, StringComparer.Ordinal).First();
-        return (area, GetPrimaryFolder(area));
-    }
-
-    private static string GetPrimaryFolder(AuditFindingArea area)
-    {
-        var path = area.FilePath ?? area.Declarations.Select(static location => location.Path).Order(StringComparer.Ordinal).FirstOrDefault();
-        return path is null ? "(source folder unavailable)" : GetSourceFolder(path);
-    }
-
-    private static string[] GetSourceFolders(AuditFindingArea area)
-    {
-        var sourcePaths = area.FilePath is not null ? [area.FilePath] : area.Declarations.Select(static location => location.Path).Distinct(StringComparer.Ordinal).ToArray();
-        if (sourcePaths.Length == 0) return ["(source folder unavailable)"];
-        return sourcePaths.Select(GetSourceFolder).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
-    }
-
-    private static string GetSourceFolder(string sourcePath)
-    {
-        var normalized = sourcePath.Replace('\\', '/');
-        var separator = normalized.LastIndexOf('/');
-        return separator < 0 ? "." : separator == 0 ? "/" : normalized[..separator];
-    }
-
-    private static string StablePathId(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
-
-    private static string ToMarkdownLink(string sourceMarkdownPath, string targetMarkdownPath)
-    {
-        var relative = Path.GetRelativePath(Path.GetDirectoryName(sourceMarkdownPath)!, targetMarkdownPath).Replace('\\', '/');
-        return string.Join('/', relative.Split('/').Select(static segment => segment is "." or ".." ? segment : MarkdownReportWriter.EncodePathSegment(segment)));
-    }
-
-    private static async Task WriteAreaNavigationAsync(AuditFindingPackageView? view, string projectRoot, AreaNavigation navigation,
-        string viewName, string runId, CancellationToken cancellationToken)
-    {
-        if (view is null) return;
-        foreach (var project in navigation.Projects)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            Directory.CreateDirectory(Path.GetDirectoryName(project.IndexPath)!);
-            var projectBuilder = new StringBuilder().Append("# Project navigation\n\nProject: ")
-                .Append(MarkdownReportWriter.FormatCodeSpan(project.ProjectPath)).Append("\n\n");
-            AppendNavigationGuard(projectBuilder, runId, viewName);
-            foreach (var folder in project.Entries.Select(static entry => entry.SourceFolder).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
-            {
-                var pagePath = Path.Combine(Path.GetDirectoryName(project.IndexPath)!, "folder-" + StablePathId(folder) + ".md");
-                projectBuilder.Append("- [").Append(MarkdownReportWriter.EscapeLinkText(folder)).Append("](")
-                    .Append(ToMarkdownLink(project.IndexPath, pagePath)).Append(")\n");
-            }
-            await MarkdownReportWriter.WriteUtf8Async(project.IndexPath, projectBuilder.ToString(), cancellationToken).ConfigureAwait(false);
-
-            foreach (var group in project.Entries.GroupBy(static entry => entry.SourceFolder, StringComparer.Ordinal))
-            {
-                var pagePath = Path.Combine(Path.GetDirectoryName(project.IndexPath)!, "folder-" + StablePathId(group.Key) + ".md");
-                var folderBuilder = new StringBuilder().Append("# Source folder navigation\n\nProject: ")
-                    .Append(MarkdownReportWriter.FormatCodeSpan(project.ProjectPath)).Append("; source folder: ")
-                    .Append(MarkdownReportWriter.FormatCodeSpan(group.Key)).Append("\n\n")
-                    .Append("[Main audit map](../../index.md) · [Project navigation](index.md)\n\n");
-                AppendNavigationGuard(folderBuilder, runId, viewName);
-                foreach (var entry in group.OrderBy(static item => item.Area.Name, StringComparer.Ordinal).ThenBy(static item => item.Area.Id, StringComparer.Ordinal))
-                {
-                    folderBuilder.Append("<a id=\"area-").Append(entry.Area.Id).Append("\"></a>\n- **")
-                        .Append(entry.IsContextOnly ? "Context only: " : "Area: ")
-                        .Append(MarkdownReportWriter.EscapeInline(entry.Area.Name)).Append("** — ")
-                        .Append(MarkdownReportWriter.EscapeInline(entry.Area.IdentityReason)).Append("\n");
-                    if (entry.Area.TypeId is not null)
-                    {
-                        folderBuilder.Append("  - Type: ").Append(MarkdownReportWriter.FormatCodeSpan(entry.Area.TypeId)).Append("\n");
-                    }
-                    var sourceLocations = entry.Area.FilePath is not null
-                        ? entry.Area.Declarations.Count == 0
-                            ? [(Path: entry.Area.FilePath, Line: (int?)null)]
-                            : entry.Area.Declarations.Select(static location => (Path: location.Path, Line: (int?)location.StartLine)).Distinct().ToArray()
-                        : entry.Area.Declarations.Select(static location => (Path: location.Path, Line: (int?)location.StartLine)).Distinct().ToArray();
-                    foreach (var source in sourceLocations.OrderBy(static location => location.Path, StringComparer.Ordinal).ThenBy(static location => location.Line))
-                    {
-                        folderBuilder.Append("  - Source: [").Append(MarkdownReportWriter.EscapeLinkText(source.Path));
-                        if (source.Line is not null) folderBuilder.Append(':').Append(source.Line.Value.ToString(CultureInfo.InvariantCulture));
-                        folderBuilder.Append("](").Append(MarkdownReportWriter.FormatSourceLink(pagePath, projectRoot, source.Path));
-                        if (source.Line is not null) folderBuilder.Append("#L").Append(source.Line.Value.ToString(CultureInfo.InvariantCulture));
-                        folderBuilder.Append(")\n");
-                    }
-                    foreach (var packageId in entry.PrimaryPackageIds)
-                    {
-                        folderBuilder.Append("  - Primary package")
-                            .Append(": [").Append(packageId).Append("](")
-                            .Append(ToMarkdownLink(pagePath, Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(pagePath)!)!)!, packageId + ".md")))
-                            .Append(")\n");
-                    }
-                    foreach (var packageId in entry.ContextPackageIds.Except(entry.PrimaryPackageIds, StringComparer.Ordinal))
-                    {
-                        folderBuilder.Append("  - Context package: [").Append(packageId).Append("](")
-                            .Append(ToMarkdownLink(pagePath, Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(pagePath)!)!)!, packageId + ".md")))
-                            .Append(")\n");
-                    }
-                }
-                await MarkdownReportWriter.WriteUtf8Async(pagePath, folderBuilder.ToString(), cancellationToken).ConfigureAwait(false);
-            }
-        }
-    }
-
-    private static void AppendNavigationGuard(StringBuilder builder, string runId, string viewName)
-    {
-        builder.Append("Run: ").Append(MarkdownReportWriter.FormatCodeSpan(runId)).Append("; view: ")
-            .Append(MarkdownReportWriter.FormatCodeSpan(viewName)).Append(".\n\n");
-        if (viewName == "all-findings")
-        {
-            builder.Append("> **Full-audit scope:** This reference navigation contains every current finding. Inspect it only when the user explicitly requests a full-repository audit.\n\n");
-        }
-    }
-
-    private sealed record AreaNavigationArea(AuditFindingArea Area, bool IsContextOnly,
-        IReadOnlyList<string> PrimaryPackageIds, IReadOnlyList<string> ContextPackageIds);
-    private sealed record AreaNavigationEntry(AuditFindingArea Area, bool IsContextOnly,
-        IReadOnlyList<string> PrimaryPackageIds, IReadOnlyList<string> ContextPackageIds, string SourceFolder);
-    private sealed record AreaNavigationProject(string ProjectPath, string IndexPath, IReadOnlyList<AreaNavigationEntry> Entries);
-    private sealed record AreaNavigation(IReadOnlyList<AreaNavigationProject> Projects, IReadOnlyDictionary<string, IReadOnlyList<string>> AreaPagePaths)
-    {
-        internal static AreaNavigation Empty { get; } = new([], new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal));
-    }
-
-    private static async Task<string> FormatAuditPackageAsync(
-        string runId,
-        string projectRoot,
-        string reportPath,
-        string viewName,
-        AuditFindingPackage package,
-        AuditFindingPackageView view,
-        AreaNavigation navigation,
-        CancellationToken cancellationToken)
-    {
-        var builder = new StringBuilder()
-            .Append("# Audit package ").Append(package.Id).Append("\n\n")
-            .Append("Run: ").Append(MarkdownReportWriter.FormatCodeSpan(runId))
-            .Append("; view: ").Append(MarkdownReportWriter.FormatCodeSpan(viewName)).Append("; primary findings: **")
-            .Append(package.Findings.Count.ToString(CultureInfo.InvariantCulture)).Append("**.\n\n")
-            .Append(viewName == "all-findings"
-                ? "Full-audit scope: This reference view contains every current finding. Inspect it only when the user explicitly requests a full-repository audit.\n\n"
-                : string.Empty)
-            .Append("## Assignment\n\n")
-            .Append("Inspect every finding assigned to this package using the source, callers, contracts, and tests below. Classify each ID as false positive, acceptable design, needs clarification, or actionable, and record concrete evidence plus unresolved context. This is a technical grouping; it does not establish common cause or independent changeability. Do not claim a full audit when other packages remain unreviewed. Shared audit guidance: [run index](../../index.md).\n\n")
-            .Append("## Areas\n\n");
-        foreach (var area in package.Areas.OrderBy(static item => item.ProjectPath, StringComparer.Ordinal)
-                     .ThenBy(GetPrimaryFolder, StringComparer.Ordinal).ThenBy(static item => item.Name, StringComparer.Ordinal)
-                     .ThenBy(static item => item.Id, StringComparer.Ordinal))
-        {
-            builder.Append("- **").Append(MarkdownReportWriter.EscapeInline(area.Name)).Append("** (").Append(MarkdownReportWriter.FormatCodeSpan(area.ProjectPath)).Append("; ")
-                .Append(MarkdownReportWriter.EscapeInline(area.Role == ProjectRole.Tests ? "tests" : "production")).Append("; ")
-                .Append(MarkdownReportWriter.EscapeInline(area.IdentityReason)).Append(')');
-            if (area.FilePath is not null)
-            {
-                builder.Append(" — [").Append(MarkdownReportWriter.EscapeLinkText(area.FilePath)).Append("](").Append(MarkdownReportWriter.FormatSourceLink(reportPath, projectRoot, area.FilePath)).Append(')');
-            }
-            foreach (var location in area.Declarations)
-            {
-                builder.Append(" — [").Append(MarkdownReportWriter.EscapeLinkText(location.Path)).Append(':').Append(location.StartLine.ToString(CultureInfo.InvariantCulture))
-                    .Append("](").Append(MarkdownReportWriter.FormatSourceLink(reportPath, projectRoot, location.Path)).Append("#L")
-                    .Append(location.StartLine.ToString(CultureInfo.InvariantCulture)).Append(')');
-            }
-            builder.Append('\n');
-        }
-
-        var fileTargets = package.Findings.SelectMany(static packaged =>
-                packaged.Finding.SubjectOccurrences.Select(static occurrence => occurrence.Symbol.SourcePath)
-                    .Concat(packaged.Finding.Finding.Evidence.Select(static evidence => evidence.SourcePath)))
-            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
-        if (fileTargets.Length > 0)
-        {
-            builder.Append("\n## File navigation\n\n");
-            foreach (var sourcePath in fileTargets)
-            {
-                builder.Append("- [").Append(MarkdownReportWriter.EscapeLinkText(sourcePath)).Append("](")
-                    .Append(MarkdownReportWriter.FormatSourceLink(reportPath, projectRoot, sourcePath)).Append(")\n");
-            }
-        }
-
-        var symbolTargets = package.Findings.SelectMany(packaged => packaged.Finding.Occurrences.Concat(packaged.Finding.SubjectOccurrences)
-                .Select(occurrence => (Symbol: occurrence.Symbol, occurrence.Role,
-                    IsSubject: packaged.Finding.SubjectOccurrences.Contains(occurrence))))
-            .DistinctBy(static item => (item.Symbol.ProjectPath, item.Symbol.SourcePath, item.Symbol.SymbolId, item.Symbol.Line,
-                item.Symbol.OccurrenceId, item.Role, item.IsSubject))
-            .OrderBy(static item => item.Symbol.ProjectPath, StringComparer.Ordinal)
-            .ThenBy(static item => item.Symbol.SourcePath, StringComparer.Ordinal)
-            .ThenBy(static item => item.Symbol.Line)
-            .ThenBy(static item => item.Symbol.SymbolId, StringComparer.Ordinal).ToArray();
-        if (symbolTargets.Length > 0)
-        {
-            builder.Append("\n## Symbol navigation\n\n");
-            foreach (var item in symbolTargets)
-            {
-                builder.Append("- ").Append(item.IsSubject ? "Subject" : "Context")
-                    .Append(" (").Append(MarkdownReportWriter.EscapeInline(item.Role == ProjectRole.Tests ? "tests" : "production"))
-                    .Append("): ").Append(MarkdownReportWriter.FormatCodeSpan(item.Symbol.SymbolId)).Append(" — [")
-                    .Append(MarkdownReportWriter.EscapeLinkText(item.Symbol.SourcePath)).Append(':').Append(item.Symbol.Line.ToString(CultureInfo.InvariantCulture))
-                    .Append("](").Append(MarkdownReportWriter.FormatSourceLink(reportPath, projectRoot, item.Symbol.SourcePath)).Append("#L")
-                    .Append(item.Symbol.Line.ToString(CultureInfo.InvariantCulture)).Append(") in ")
-                    .Append(MarkdownReportWriter.FormatCodeSpan(item.Symbol.ProjectPath)).Append('\n');
-            }
-        }
-
-        if (package.Findings.Count == 0)
-        {
-            builder.Append("\nNo primary findings.\n");
-        }
-        else
-        {
-            builder.Append("\n## Assigned findings\n\n");
-            foreach (var packaged in package.Findings.OrderBy(static item => item.Id, StringComparer.Ordinal))
-            {
-                var finding = packaged.Finding;
-                var targetArea = MarkdownReportWriter.GetFindingArea(finding);
-                builder.Append("### ").Append(packaged.Id).Append(" — ").Append(MarkdownReportWriter.FormatCodeSpan(finding.AnalysisId)).Append("\n\n")
-                    .Append("Original finding, including rationale, metrics and evidence: [").Append(MarkdownReportWriter.EscapeLinkText(finding.Finding.SubjectId)).Append(" (line ")
-                    .Append(finding.Finding.StartLine.ToString(CultureInfo.InvariantCulture)).Append(")](../../")
-                    .Append(targetArea).Append('/').Append(viewName).Append('/').Append(MarkdownReportWriter.EncodePathSegment(finding.AnalysisId)).Append(".md#finding-")
-                    .Append(packaged.Id).Append(")\n\n")
-                    .Append("Signal: ").Append(MarkdownReportWriter.EscapeInline(MarkdownReportWriter.FormatSignal(finding.AnalysisId, finding.Finding))).Append("\n\n")
-                    .Append("Assignment reasons:\n\n");
-                foreach (var assignment in packaged.Assignments)
-                {
-                    builder.Append("- ").Append(MarkdownReportWriter.EscapeInline(assignment.Role == ProjectRole.Tests ? "tests" : "production"))
-                        .Append(" subject ").Append(MarkdownReportWriter.FormatCodeSpan(assignment.SymbolId)).Append(" in [")
-                        .Append(MarkdownReportWriter.EscapeLinkText(assignment.SourcePath)).Append(':').Append(assignment.Line.ToString(CultureInfo.InvariantCulture))
-                        .Append("](").Append(MarkdownReportWriter.FormatSourceLink(reportPath, projectRoot, assignment.SourcePath)).Append("#L")
-                        .Append(assignment.Line.ToString(CultureInfo.InvariantCulture)).Append("): ")
-                        .Append(MarkdownReportWriter.EscapeInline(assignment.Reason));
-                    if (assignment.OccurrenceId is not null)
-                    {
-                        builder.Append(" (occurrence ").Append(MarkdownReportWriter.FormatCodeSpan(assignment.OccurrenceId)).Append(')');
-                    }
-                    builder.Append(" — project ").Append(MarkdownReportWriter.FormatCodeSpan(assignment.ProjectPath)).Append('\n');
-                }
-                if (finding.Finding.Evidence.Count > 0)
-                {
-                    builder.Append("\nEvidence and source locations:\n\n");
-                    foreach (var evidence in finding.Finding.Evidence)
-                    {
-                        builder.Append("- [").Append(MarkdownReportWriter.EscapeLinkText(evidence.SourcePath)).Append(':').Append(evidence.Line.ToString(CultureInfo.InvariantCulture))
-                            .Append("](").Append(MarkdownReportWriter.FormatSourceLink(reportPath, projectRoot, evidence.SourcePath)).Append("#L")
-                            .Append(evidence.Line.ToString(CultureInfo.InvariantCulture)).Append("): ").Append(MarkdownReportWriter.FormatCodeSpan(evidence.Label));
-                        if (!string.IsNullOrWhiteSpace(evidence.Detail)) builder.Append(" — ").Append(MarkdownReportWriter.EscapeInline(evidence.Detail));
-                        builder.Append('\n');
-                    }
-                }
-                builder.Append('\n');
-            }
-        }
-
-        if (package.TestTypes.Count > 0)
-        {
-            builder.Append("## Test context\n\n");
-            foreach (var test in package.TestTypes.OrderBy(static item => item.TypeId, StringComparer.Ordinal))
-            {
-                builder.Append("- ").Append(MarkdownReportWriter.FormatCodeSpan(test.TypeId)).Append(": ").Append(MarkdownReportWriter.EscapeInline(test.Reason));
-                if (test.HasBindingUncertainty) builder.Append("; binding uncertainty detected");
-                foreach (var declaration in test.Declarations)
-                {
-                    builder.Append(" — [").Append(MarkdownReportWriter.EscapeLinkText(declaration.Path)).Append(':').Append(declaration.StartLine.ToString(CultureInfo.InvariantCulture))
-                        .Append("](").Append(MarkdownReportWriter.FormatSourceLink(reportPath, projectRoot, declaration.Path)).Append("#L")
-                        .Append(declaration.StartLine.ToString(CultureInfo.InvariantCulture)).Append(')');
-                }
-                builder.Append('\n');
-            }
-            builder.Append('\n');
-        }
-
-        if (package.DirectReferences.Count > 0 || package.DirectUncertainties.Count > 0)
-        {
-            builder.Append("## Direct source context\n\n");
-            var groups = CreateReferenceGroups(package, view, reportPath, projectRoot);
-            var detailPages = await WriteReferenceDetailsAsync(runId, viewName, package.Id, reportPath, groups, cancellationToken).ConfigureAwait(false);
-            builder.Append("Direct source references: **").Append(package.DirectReferences.Count.ToString(CultureInfo.InvariantCulture))
-                .Append(" locations** in **").Append(package.DirectReferences.Select(reference => ReferenceGroupKey(reference, view.ProjectPaths)).Distinct(StringComparer.Ordinal).Count().ToString(CultureInfo.InvariantCulture))
-                .Append(" groups**; binding uncertainty origins: **").Append(package.DirectUncertainties.Count.ToString(CultureInfo.InvariantCulture)).Append("**.\n\n");
-            var groupRows = groups.Select(group => FormatGroupSummary(package.Id, group, detailPages[group])).ToArray();
-            if (groupRows.Length > ReferencePageEntryLimit || Encoding.UTF8.GetByteCount(string.Concat(groupRows)) > ReferencePageByteLimit)
-            {
-                var groupPages = await WriteReferenceGroupIndexAsync(runId, viewName, package.Id, reportPath, groupRows, cancellationToken).ConfigureAwait(false);
-                builder.Append("Browse all reference groups: ").Append(string.Join(", ", groupPages.Select(page => "[page "
-                    + page.ToString(CultureInfo.InvariantCulture) + "](" + MarkdownReportWriter.EncodePathSegment(package.Id + "-reference-groups-"
-                    + page.ToString("D4", CultureInfo.InvariantCulture)) + ".md)"))).Append(".\n");
-            }
-            else
-            {
-                foreach (var row in groupRows) builder.Append(row);
-            }
-            builder.Append('\n');
-        }
-
-        var contextRows = view.ContextAreas.Where(row => row.PackageId == package.Id).ToArray();
-        if (contextRows.Length > 0)
-        {
-            builder.Append("## Context areas\n\n");
-            foreach (var row in contextRows)
-            {
-                var links = navigation.AreaPagePaths.GetValueOrDefault(row.Area.Id, []);
-                builder.Append("- ").Append(row.IsContextOnly ? "Context only" : "Shared area").Append(": ")
-                    .Append(MarkdownReportWriter.EscapeInline(row.Area.Name)).Append(" (")
-                    .Append(MarkdownReportWriter.FormatCodeSpan(row.Area.ProjectPath)).Append("); ")
-                    .Append(MarkdownReportWriter.EscapeInline(row.Area.IdentityReason));
-                if (links.Count > 0)
-                {
-                    builder.Append(" — navigation: ").Append(string.Join(", ", links.Select(path => "[source folder](" + ToMarkdownLink(reportPath, path) + "#area-" + row.Area.Id + ")")));
-                }
-                builder.Append('\n');
-            }
-            builder.Append('\n');
-        }
-
-        if (package.RelatedPackageIds.Count > 0)
-        {
-            builder.Append("## Related packages\n\n");
-            foreach (var relatedId in package.RelatedPackageIds)
-            {
-                builder.Append("- [").Append(relatedId).Append("](").Append(MarkdownReportWriter.EncodePathSegment(relatedId)).Append(".md)\n");
-            }
-        }
-        builder.Append("\nThe reference scope is static type and method relationships from the loaded C# snapshot. Property, field, and event access alone is not represented as a relationship. Runtime dispatch, reflection, dependency injection, and other unmodeled relationships may be absent.\n");
-        return builder.ToString();
-    }
-
-    private static IReadOnlyList<ReferenceDetailGroup> CreateReferenceGroups(
-        AuditFindingPackage package,
-        AuditFindingPackageView view,
-        string reportPath,
-        string projectRoot)
-    {
-        var groups = new List<ReferenceDetailGroup>();
-        var projectPaths = view.ProjectPaths;
-        foreach (var group in package.DirectReferences.GroupBy(reference => string.Join("\0",
-                     IsOutgoing(package, reference, projectPaths) ? "outgoing" : "incoming",
-                     projectPaths.GetValueOrDefault(reference.SourceProjectId.ToString(), reference.SourcePath), reference.SourcePath, reference.SourceTypeId, reference.SourceRole,
-                     projectPaths.GetValueOrDefault(reference.TargetProjectId.ToString(), reference.TargetTypeId), reference.TargetTypeId, reference.TargetMemberId, reference.TargetRole, reference.Kind), StringComparer.Ordinal)
-                 .OrderBy(static group => group.Key, StringComparer.Ordinal))
-        {
-            var first = group.First();
-            var direction = IsOutgoing(package, first, projectPaths) ? "outgoing" : "incoming";
-            var sourceProject = projectPaths.GetValueOrDefault(first.SourceProjectId.ToString(), first.SourcePath);
-            var targetProject = projectPaths.GetValueOrDefault(first.TargetProjectId.ToString(), first.TargetTypeId);
-            var targetArea = view.Areas.FirstOrDefault(area => area.TypeId == first.TargetTypeId
-                && string.Equals(area.ProjectPath, targetProject, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
-            var targetLocations = targetArea?.Declarations.Select(location => "[" + MarkdownReportWriter.EscapeLinkText(location.Path) + ":"
-                + location.StartLine.ToString(CultureInfo.InvariantCulture) + "](" + MarkdownReportWriter.FormatSourceLink(reportPath, projectRoot, location.Path)
-                + "#L" + location.StartLine.ToString(CultureInfo.InvariantCulture) + ")").ToArray() ?? Array.Empty<string>();
-            var label = $"{direction}: {MarkdownReportWriter.FormatCodeSpan(first.SourceTypeId ?? first.SourcePath)} in [{MarkdownReportWriter.EscapeLinkText(first.SourcePath)}]({MarkdownReportWriter.FormatSourceLink(reportPath, projectRoot, first.SourcePath)}) ({first.SourceRole}, project {MarkdownReportWriter.FormatCodeSpan(sourceProject)}) → {MarkdownReportWriter.FormatCodeSpan(first.TargetTypeId)} ({first.TargetRole}, project {MarkdownReportWriter.FormatCodeSpan(targetProject)})"
-                + (first.TargetMemberId is null ? string.Empty : " / " + MarkdownReportWriter.FormatCodeSpan(first.TargetMemberId))
-                + (targetLocations.Length == 0 ? string.Empty : "; target declarations " + string.Join(", ", targetLocations))
-                + $"; {first.Kind}";
-            var entries = group.OrderBy(static item => item.SourcePath, StringComparer.Ordinal)
-                .ThenBy(static item => item.Location.Span.Start).ThenBy(static item => item.Location.Span.Length)
-                .ThenBy(static item => item.Location.StartLine).ThenBy(static item => item.Location.StartColumn)
-                .ThenBy(static item => item.Location.EndLine).ThenBy(static item => item.Location.EndColumn)
-                .Select(item => $"- Source project {MarkdownReportWriter.FormatCodeSpan(projectPaths.GetValueOrDefault(item.SourceProjectId.ToString(), item.SourcePath))}; source {MarkdownReportWriter.FormatCodeSpan(item.SourceTypeId ?? "file context")}; target project {MarkdownReportWriter.FormatCodeSpan(projectPaths.GetValueOrDefault(item.TargetProjectId.ToString(), item.TargetTypeId))}; target {MarkdownReportWriter.FormatCodeSpan(item.TargetTypeId)}; member {MarkdownReportWriter.FormatCodeSpan(item.TargetMemberId ?? "(type)")}; roles {item.SourceRole} → {item.TargetRole}; binding {item.Kind}; span {item.Location.Span.Start}..{item.Location.Span.End}; location {item.Location.StartLine}:{item.Location.StartColumn}–{item.Location.EndLine}:{item.Location.EndColumn} at [{MarkdownReportWriter.EscapeLinkText(item.SourcePath)}:{item.Location.StartLine}:{item.Location.StartColumn}]({MarkdownReportWriter.FormatSourceLink(reportPath, projectRoot, item.SourcePath)}#L{item.Location.StartLine}); target declarations {string.Join(", ", view.Areas.Where(area => area.TypeId == item.TargetTypeId && string.Equals(area.ProjectPath, projectPaths.GetValueOrDefault(item.TargetProjectId.ToString(), item.TargetTypeId), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)).SelectMany(static area => area.Declarations).Select(location => "[" + MarkdownReportWriter.EscapeLinkText(location.Path) + ":" + location.StartLine.ToString(CultureInfo.InvariantCulture) + "](" + MarkdownReportWriter.FormatSourceLink(reportPath, projectRoot, location.Path) + "#L" + location.StartLine.ToString(CultureInfo.InvariantCulture) + ")"))}\n")
-                .ToArray();
-            groups.Add(new ReferenceDetailGroup(label, entries));
-        }
-
-        foreach (var group in package.DirectUncertainties.GroupBy(item => string.Join("\0", projectPaths.GetValueOrDefault(item.SourceProjectId.ToString(), item.SourcePath), item.SourcePath,
-                     item.OriginTypeId, item.SourceRole, item.Reason, item.CandidateTypeId, item.CandidateSymbolId), StringComparer.Ordinal)
-                 .OrderBy(static group => group.Key, StringComparer.Ordinal))
-        {
-            var first = group.First();
-            var label = $"binding uncertainty: {first.SourceRole}, project {MarkdownReportWriter.FormatCodeSpan(projectPaths.GetValueOrDefault(first.SourceProjectId.ToString(), first.SourcePath))}, origin {MarkdownReportWriter.FormatCodeSpan(first.OriginTypeId ?? "file context")}; {MarkdownReportWriter.EscapeInline(first.Reason)}; candidate {MarkdownReportWriter.FormatCodeSpan(first.CandidateSymbolId)}";
-            var entries = group.OrderBy(static item => item.SourcePath, StringComparer.Ordinal)
-                .ThenBy(static item => item.Location.Span.Start).ThenBy(static item => item.Location.Span.Length)
-                .ThenBy(static item => item.Location.StartLine).ThenBy(static item => item.Location.StartColumn)
-                .ThenBy(static item => item.Location.EndLine).ThenBy(static item => item.Location.EndColumn)
-                .Select(item => $"- Source project {MarkdownReportWriter.FormatCodeSpan(projectPaths.GetValueOrDefault(item.SourceProjectId.ToString(), item.SourcePath))}; origin project/type {MarkdownReportWriter.FormatCodeSpan(projectPaths.GetValueOrDefault(item.SourceProjectId.ToString(), item.SourcePath))} / {MarkdownReportWriter.FormatCodeSpan(item.OriginTypeId ?? "file context")}; role {item.SourceRole}; candidate type {MarkdownReportWriter.FormatCodeSpan(item.CandidateTypeId ?? "(unresolved)")}; candidate symbol {MarkdownReportWriter.FormatCodeSpan(item.CandidateSymbolId)}; reason {MarkdownReportWriter.EscapeInline(item.Reason)}; span {item.Location.Span.Start}..{item.Location.Span.End}; location {item.Location.StartLine}:{item.Location.StartColumn}–{item.Location.EndLine}:{item.Location.EndColumn}; at [{MarkdownReportWriter.EscapeLinkText(item.SourcePath)}:{item.Location.StartLine}:{item.Location.StartColumn}]({MarkdownReportWriter.FormatSourceLink(reportPath, projectRoot, item.SourcePath)}#L{item.Location.StartLine})\n")
-                .ToArray();
-            groups.Add(new ReferenceDetailGroup(label, entries));
-        }
-
-        return groups;
-    }
-
-    private static bool IsOutgoing(AuditFindingPackage package, AuditSourceReference reference, IReadOnlyDictionary<string, string> projectPaths)
-    {
-        if (package.Areas.Any(area => area.TypeId is not null && area.TypeId == reference.SourceTypeId))
-        {
-            return true;
-        }
-
-        var sourceProjectPath = projectPaths.GetValueOrDefault(reference.SourceProjectId.ToString());
-        var pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        return sourceProjectPath is not null && package.Areas.Any(area => area.FilePath is not null
-            && string.Equals(area.ProjectPath, sourceProjectPath, pathComparison)
-            && string.Equals(area.FilePath, reference.SourcePath, pathComparison));
-    }
-
-    private static string ReferenceGroupKey(AuditSourceReference reference, IReadOnlyDictionary<string, string> projectPaths) => string.Join("\0",
-        projectPaths.GetValueOrDefault(reference.SourceProjectId.ToString(), reference.SourcePath), reference.SourcePath,
-        reference.SourceTypeId, reference.SourceRole, projectPaths.GetValueOrDefault(reference.TargetProjectId.ToString(), reference.TargetTypeId),
-        reference.TargetTypeId, reference.TargetMemberId, reference.TargetRole, reference.Kind);
-
-    private static string FormatGroupSummary(string packageId, ReferenceDetailGroup group, IReadOnlyList<int> pages) =>
-        "- " + group.Label + " — **" + group.Entries.Count.ToString(CultureInfo.InvariantCulture) + " source locations**; details: "
-        + string.Join(", ", pages.Select(page => "[page " + page.ToString(CultureInfo.InvariantCulture) + "](" + MarkdownReportWriter.EncodePathSegment(
-            packageId + "-references-" + page.ToString("D4", CultureInfo.InvariantCulture)) + ".md)")) + "\n";
-
-    private static async Task<IReadOnlyList<int>> WriteReferenceGroupIndexAsync(string runId, string viewName, string packageId,
-        string packagePath, IReadOnlyList<string> rows, CancellationToken cancellationToken)
-    {
-        var directory = Path.GetDirectoryName(packagePath)!;
-        var pages = new List<int>();
-        var current = new List<string>();
-        var pageNumber = 0;
-        foreach (var row in rows)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            current.Add(row);
-            var content = FormatGroupIndexPage(runId, viewName, packageId, pageNumber + 1, current);
-            if (current.Count > ReferencePageEntryLimit || Encoding.UTF8.GetByteCount(content) > ReferencePageByteLimit)
-            {
-                current.RemoveAt(current.Count - 1);
-                if (current.Count > 0)
-                {
-                    pageNumber++;
-                    await WriteGroupIndexPageAsync(directory, runId, viewName, packageId, pageNumber, current, cancellationToken).ConfigureAwait(false);
-                    pages.Add(pageNumber);
-                    current.Clear();
-                }
-                current.Add(row);
-                if (Encoding.UTF8.GetByteCount(FormatGroupIndexPage(runId, viewName, packageId, pageNumber + 1, current)) > ReferencePageByteLimit)
-                {
-                    current.Insert(0, "> This complete group summary exceeds the 16-KiB page target; it is retained intact.\n\n");
-                    pageNumber++;
-                    await WriteGroupIndexPageAsync(directory, runId, viewName, packageId, pageNumber, current, cancellationToken).ConfigureAwait(false);
-                    pages.Add(pageNumber);
-                    current.Clear();
-                }
-            }
-        }
-        if (current.Count > 0)
-        {
-            pageNumber++;
-            await WriteGroupIndexPageAsync(directory, runId, viewName, packageId, pageNumber, current, cancellationToken).ConfigureAwait(false);
-            pages.Add(pageNumber);
-        }
-        return pages;
-    }
-
-    private static Task WriteGroupIndexPageAsync(string directory, string runId, string viewName, string packageId, int page,
-        IReadOnlyList<string> rows, CancellationToken cancellationToken)
-    {
-        var name = packageId + "-reference-groups-" + page.ToString("D4", CultureInfo.InvariantCulture) + ".md";
-        return MarkdownReportWriter.WriteUtf8Async(Path.Combine(directory, name), FormatGroupIndexPage(runId, viewName, packageId, page, rows), cancellationToken);
-    }
-
-    private static string FormatGroupIndexPage(string runId, string viewName, string packageId, int page, IReadOnlyList<string> rows)
-    {
-        var builder = new StringBuilder().Append("# Reference groups — ").Append(packageId).Append(" — page ")
-            .Append(page.ToString(CultureInfo.InvariantCulture)).Append("\n\nRun: ").Append(MarkdownReportWriter.FormatCodeSpan(runId))
-            .Append("; view: ").Append(MarkdownReportWriter.FormatCodeSpan(viewName)).Append("; package: ").Append(packageId).Append(".\n\n")
-            .Append(viewName == "all-findings"
-                ? "> **Full-audit scope:** This reference view contains every current finding. Inspect it only when the user explicitly requests a full-repository audit.\n\n"
-                : "> Scope: selected changed-files findings and their direct source context only.\n\n");
-        builder.Append("[Back to package](").Append(MarkdownReportWriter.EncodePathSegment(packageId)).Append(".md)\n\n");
-        foreach (var row in rows) builder.Append(row);
-        return builder.ToString();
-    }
-
-    private static async Task<IReadOnlyDictionary<ReferenceDetailGroup, IReadOnlyList<int>>> WriteReferenceDetailsAsync(
-        string runId,
-        string viewName,
-        string packageId,
-        string packagePath,
-        IReadOnlyList<ReferenceDetailGroup> groups,
-        CancellationToken cancellationToken)
-    {
-        var pageByGroup = new Dictionary<ReferenceDetailGroup, IReadOnlyList<int>>();
-        var pageNumber = 0;
-        foreach (var group in groups)
-        {
-            var pages = new List<int>();
-            var entryPages = PartitionReferenceEntries(group.Entries, (offset, entries) =>
-                FormatReferencePage(runId, viewName, packageId, pageNumber + offset, group.Label, entries));
-            foreach (var entries in entryPages)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                pageNumber++;
-                await WriteReferencePageAsync(runId, viewName, packageId, packagePath, pageNumber, group.Label, entries, cancellationToken).ConfigureAwait(false);
-                pages.Add(pageNumber);
-            }
-            pageByGroup[group] = pages;
-        }
-        return pageByGroup;
-    }
-
-    internal static IReadOnlyList<IReadOnlyList<string>> PartitionReferenceEntries(
-        IReadOnlyList<string> entries,
-        Func<int, IReadOnlyList<string>, string> formatPage)
-    {
-        ArgumentNullException.ThrowIfNull(entries);
-        ArgumentNullException.ThrowIfNull(formatPage);
-        var pages = new List<IReadOnlyList<string>>();
-        var current = new List<string>();
-        foreach (var entry in entries)
-        {
-            current.Add(entry);
-            if (current.Count <= ReferencePageEntryLimit
-                && Encoding.UTF8.GetByteCount(formatPage(pages.Count + 1, current)) <= ReferencePageByteLimit)
-            {
-                continue;
+                builder.Append("; ");
             }
 
-            current.RemoveAt(current.Count - 1);
-            if (current.Count > 0)
-            {
-                pages.Add(current.ToArray());
-                current.Clear();
-            }
-            current.Add(entry);
-            if (Encoding.UTF8.GetByteCount(formatPage(pages.Count + 1, current)) > ReferencePageByteLimit)
-            {
-                pages.Add(current.ToArray());
-                current.Clear();
-            }
+            AppendSourceLocation(builder, reportPath, projectRoot, additionalPaths[index], 0);
         }
 
-        if (current.Count > 0) pages.Add(current.ToArray());
-        return pages;
+        builder.Append('\n');
     }
 
-    private static async Task WriteReferencePageAsync(string runId, string viewName, string packageId, string packagePath,
-        int page, string label, IReadOnlyList<string> entries, CancellationToken cancellationToken)
+    private static void AppendSourceLocation(StringBuilder builder, string reportPath, string projectRoot, string sourcePath, int line)
     {
-        var name = packageId + "-references-" + page.ToString("D4", CultureInfo.InvariantCulture) + ".md";
-        var path = Path.Combine(Path.GetDirectoryName(packagePath)!, name);
-        await MarkdownReportWriter.WriteUtf8Async(path, FormatReferencePage(runId, viewName, packageId, page, label, entries), cancellationToken).ConfigureAwait(false);
-    }
-
-    private static string FormatReferencePage(string runId, string viewName, string packageId, int page, string label, IReadOnlyList<string> entries)
-    {
-        var builder = new StringBuilder().Append("# Reference details — ").Append(packageId).Append(" — page ")
-            .Append(page.ToString(CultureInfo.InvariantCulture)).Append("\n\nRun: ").Append(MarkdownReportWriter.FormatCodeSpan(runId))
-            .Append("; view: ").Append(MarkdownReportWriter.FormatCodeSpan(viewName)).Append("; package: ").Append(packageId).Append(".\n\n");
-        builder.Append(viewName == "all-findings"
-            ? "> **Full-audit scope:** This reference view contains every current finding. Inspect it only when the user explicitly requests a full-repository audit.\n\n"
-            : "> Scope: selected changed-files findings and their direct source context only.\n\n");
-        builder.Append("[Back to package](").Append(MarkdownReportWriter.EncodePathSegment(packageId)).Append(".md)\n\n");
-        builder.Append("## ").Append(label).Append("\n\n");
-        if (entries.Count == 1 && Encoding.UTF8.GetByteCount(builder.ToString()) + Encoding.UTF8.GetByteCount(entries[0]) > ReferencePageByteLimit)
+        var label = line > 0 ? sourcePath + ":" + line.ToString(CultureInfo.InvariantCulture) : sourcePath;
+        builder.Append('[').Append(MarkdownReportWriter.EscapeLinkText(label)).Append("](")
+            .Append(MarkdownReportWriter.FormatSourceLink(reportPath, projectRoot, sourcePath));
+        if (line > 0)
         {
-            builder.Append("> This complete single reference record exceeds the 16-KiB page target; it is retained intact.\n\n");
+            builder.Append("#L").Append(line.ToString(CultureInfo.InvariantCulture));
         }
-        foreach (var entry in entries) builder.Append(entry);
-        return builder.ToString();
+
+        builder.Append(')');
     }
-
-    private sealed record ReferenceDetailGroup(string Label, IReadOnlyList<string> Entries);
-
 }

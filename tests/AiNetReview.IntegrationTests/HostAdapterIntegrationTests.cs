@@ -234,14 +234,15 @@ public sealed class HostAdapterIntegrationTests
         var packageReports = Directory.GetFiles(Path.Combine(structuralRunDirectory, "audit-map", "all-findings"), "*.md")
             .Where(path => !Path.GetFileName(path).Equals("index.md", StringComparison.Ordinal))
             .Select(File.ReadAllText).ToArray();
-        var structuralPackage = Assert.Single(packageReports.Where(markdown => markdown.Contains("structural-duplication-candidates.md#finding-", StringComparison.Ordinal)));
-        Assert.Contains("ProductA/First.cs", structuralPackage, StringComparison.Ordinal);
-        Assert.Contains("ProductB/Second.cs", structuralPackage, StringComparison.Ordinal);
+        Assert.Empty(packageReports);
+        Assert.Contains("structural-duplication-candidates.md#finding-", mapIndex, StringComparison.Ordinal);
+        Assert.Contains("ProductA/First.cs", mapIndex, StringComparison.Ordinal);
+        Assert.Contains("ProductB/Second.cs", mapIndex, StringComparison.Ordinal);
         var anchorStart = structuralReport.IndexOf("<a id=\"finding-", StringComparison.Ordinal);
         Assert.True(anchorStart >= 0);
         var anchorEnd = structuralReport.IndexOf("\"></a>", anchorStart, StringComparison.Ordinal);
         var findingAnchor = structuralReport[(anchorStart + "<a id=\"".Length)..anchorEnd];
-        Assert.Contains("#" + findingAnchor, structuralPackage, StringComparison.Ordinal);
+        Assert.Contains("#" + findingAnchor, mapIndex, StringComparison.Ordinal);
         AssertMarkdownLinksResolve(structuralRunDirectory);
 
         await WriteStructuralDuplicateConfigAsync(configPath, includeStructural: true, structuralEnabled: false);

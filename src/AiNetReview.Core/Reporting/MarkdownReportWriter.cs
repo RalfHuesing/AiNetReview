@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -73,9 +74,9 @@ public sealed class MarkdownReportWriter
 
         var findings = GetFindings(result);
         var changedFindings = findings.Where(finding => IsChangedForReport(finding, result)).ToArray();
-        ValidateAuditPackages(result.AuditPackages, findings, changedFindings);
-        var changedPackagedFindingIds = GetPackagedFindingIds(result.AuditPackages?.ChangedFiles);
-        var allPackagedFindingIds = GetPackagedFindingIds(result.AuditPackages?.AllFindings);
+        ValidateFindingIds(findings);
+        var changedFindingIds = GetFindingIds(changedFindings);
+        var allFindingIds = GetFindingIds(findings);
         Directory.CreateDirectory(config.ResolvedOutputDirectory);
 
         while (true)
@@ -102,10 +103,10 @@ public sealed class MarkdownReportWriter
                         var changedArea = analysisChangedFindings.Where(finding => GetFindingArea(finding) == area).ToArray();
                         var allArea = allFindings.Where(finding => GetFindingArea(finding) == area).ToArray();
                         await WriteViewAnalysisAsync(temporaryPath, config.ProjectRoot, area, "changed-files", configuredAnalysis, changedArea, changedFindings, findings,
-                                changedPackagedFindingIds, cancellationToken)
+                                changedFindingIds, cancellationToken)
                             .ConfigureAwait(false);
                         await WriteViewAnalysisAsync(temporaryPath, config.ProjectRoot, area, "all-findings", configuredAnalysis, allArea, findings, findings,
-                                allPackagedFindingIds, cancellationToken)
+                                allFindingIds, cancellationToken)
                             .ConfigureAwait(false);
                     }
                 }
@@ -122,9 +123,9 @@ public sealed class MarkdownReportWriter
                         .ConfigureAwait(false);
                 }
 
-                await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, config.ProjectRoot, result.AuditPackages,
+                await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, config.ProjectRoot, changedFindings,
                     "changed-files", cancellationToken).ConfigureAwait(false);
-                await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, config.ProjectRoot, result.AuditPackages,
+                await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, config.ProjectRoot, findings,
                     "all-findings", cancellationToken).ConfigureAwait(false);
 
                 cancellationToken.ThrowIfCancellationRequested();
@@ -239,7 +240,7 @@ public sealed class MarkdownReportWriter
             .Append("For test findings, examine the behavior under test, assertion strength, whether expected results are independent of production logic, isolation, failure localization, and the role of setup, fixtures, hooks, data providers, fakes, mocks, builders, and helpers. Distinguish executable code from declarative test data and string fixtures. For mixed findings, assess production behavior and tests together, especially whether expectations independently verify the implementation. Do not mechanically split tests, merge scenarios, remove infrastructure, or refactor solely to lower a metric; change code only when contextual evidence supports it.\n\n");
 
         builder.Append("## Audit map\n\n")
-            .Append("The [changed-files audit map](audit-map/changed-files/index.md) contains the active, selected package assignments. Use one package as one bounded investigation: inspect its assigned findings through their direct links, then examine the listed implementation, callers, contracts, and tests. For each finding, report its ID, classification (false positive, acceptable design, needs clarification, or actionable), concrete evidence, and unresolved context. Name unreviewed packages explicitly; a partial package or map review is not a complete audit. The [all-findings map](audit-map/all-findings/index.md) is reference-only and requires an explicitly requested full-repository audit.\n\n");
+            .Append("The [changed-files audit map](audit-map/changed-files/index.md) lists every selected finding once, grouped by project and representative source file. Use each finding's direct link to inspect its original signal and evidence, then examine the relevant implementation, callers, contracts, and tests. For each finding, report its ID, classification (false positive, acceptable design, needs clarification, or actionable), concrete evidence, and unresolved context. Name unreviewed findings or source-file groups explicitly; a partial map review is not a complete audit. The [all-findings map](audit-map/all-findings/index.md) is reference-only and requires an explicitly requested full-repository audit.\n\n");
 
         var changedCount = changedFindings.Count;
         var allCount = findings.Count;
@@ -422,33 +423,18 @@ public sealed class MarkdownReportWriter
         })).ToArray();
     }
 
-    private static IReadOnlyDictionary<string, string> GetPackagedFindingIds(AuditFindingPackageView? view) =>
-        view?.Packages.SelectMany(static package => package.Findings)
-            .ToDictionary(static item => FindingKey(item.Finding), static item => item.Id, StringComparer.Ordinal)
-        ?? new Dictionary<string, string>(StringComparer.Ordinal);
+    private static IReadOnlyDictionary<string, string> GetFindingIds(IEnumerable<ReviewFinding> findings) =>
+        findings.ToDictionary(FindingKey, GetFindingId, StringComparer.Ordinal);
 
-    private static void ValidateAuditPackages(
-        AuditFindingPackageViews? views,
-        IReadOnlyList<ReviewFinding> findings,
-        IReadOnlyList<ReviewFinding> changedFindings)
+    private static void ValidateFindingIds(IReadOnlyList<ReviewFinding> findings)
     {
-        if (views is null)
+        var identities = new HashSet<string>(StringComparer.Ordinal);
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var finding in findings)
         {
-            return;
-        }
-
-        ValidateView(views.AllFindings, findings, "all-findings");
-        ValidateView(views.ChangedFiles, changedFindings, "changed-files");
-
-        static void ValidateView(AuditFindingPackageView view, IReadOnlyList<ReviewFinding> expected, string name)
-        {
-            var packaged = view.Packages.SelectMany(static package => package.Findings).ToArray();
-            if (view.FindingCount != expected.Count || packaged.Length != expected.Count
-                || packaged.Select(static item => FindingKey(item.Finding)).Distinct(StringComparer.Ordinal).Count() != expected.Count
-                || !packaged.Select(static item => FindingKey(item.Finding)).ToHashSet(StringComparer.Ordinal)
-                    .SetEquals(expected.Select(FindingKey)))
+            if (!identities.Add(FindingKey(finding)) || !ids.Add(GetFindingId(finding)))
             {
-                throw new InvalidOperationException($"Audit map '{name}' must assign every selected finding exactly once.");
+                throw new InvalidOperationException("Review findings must have unique identities and stable IDs.");
             }
         }
     }
@@ -465,7 +451,9 @@ public sealed class MarkdownReportWriter
     }
 
     private static bool IsChangedForReport(ReviewFinding finding, ReviewRunResult result) =>
-        AuditFindingPackages.IsChangedForReport(finding, result.HasCSharpSnapshotChanges);
+        finding.AnalysisId == "missing-test-evidence-candidates"
+            ? result.HasCSharpSnapshotChanges != false
+            : finding.IsChanged;
 
     private static async Task WriteViewAnalysisAsync(
         string runDirectory,
@@ -476,7 +464,7 @@ public sealed class MarkdownReportWriter
         IReadOnlyList<ReviewFinding> findings,
         IReadOnlyList<ReviewFinding> visibleViewFindings,
         IReadOnlyList<ReviewFinding> allFindings,
-        IReadOnlyDictionary<string, string> packagedFindingIds,
+        IReadOnlyDictionary<string, string> findingIds,
         CancellationToken cancellationToken)
     {
         if (findings.Count == 0)
@@ -487,7 +475,7 @@ public sealed class MarkdownReportWriter
         var reportDirectory = Path.Combine(runDirectory, area, viewDirectory);
         Directory.CreateDirectory(reportDirectory);
         var analysisPath = Path.Combine(reportDirectory, configuredAnalysis.AnalysisId + ".md");
-        await WriteUtf8Async(analysisPath, FormatAnalysisReport(configuredAnalysis, projectRoot, analysisPath, area, viewDirectory, findings, visibleViewFindings, allFindings, packagedFindingIds), cancellationToken)
+        await WriteUtf8Async(analysisPath, FormatAnalysisReport(configuredAnalysis, projectRoot, analysisPath, area, viewDirectory, findings, visibleViewFindings, allFindings, findingIds), cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -500,7 +488,7 @@ public sealed class MarkdownReportWriter
         IReadOnlyList<ReviewFinding> findings,
         IReadOnlyList<ReviewFinding> visibleViewFindings,
         IReadOnlyList<ReviewFinding> allFindings,
-        IReadOnlyDictionary<string, string> packagedFindingIds)
+        IReadOnlyDictionary<string, string> findingIds)
     {
         var descriptor = configuredAnalysis.Analysis.Descriptor;
         var builder = new StringBuilder();
@@ -618,7 +606,7 @@ public sealed class MarkdownReportWriter
                 foreach (var reviewFinding in group.Findings)
                 {
                     var finding = reviewFinding.Finding;
-                    if (packagedFindingIds.TryGetValue(FindingKey(reviewFinding), out var findingId))
+                    if (findingIds.TryGetValue(FindingKey(reviewFinding), out var findingId))
                     {
                         builder.Append("<a id=\"finding-").Append(findingId).Append("\"></a>\n");
                     }
@@ -750,6 +738,12 @@ public sealed class MarkdownReportWriter
 
     internal static string FindingKey(ReviewFinding finding) => finding.AnalysisId + "\0" + finding.Finding.ProjectPath + "\0"
         + finding.Finding.SourcePath + "\0" + finding.Finding.SubjectId + "\0" + finding.Finding.Discriminator;
+
+    internal static string GetFindingId(ReviewFinding finding)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(FindingKey(finding)));
+        return "finding-" + Convert.ToHexString(bytes.AsSpan(0, 12)).ToLowerInvariant();
+    }
 
     private static string GetOccurrenceRole(ReviewFinding finding, FindingSymbol symbol)
     {

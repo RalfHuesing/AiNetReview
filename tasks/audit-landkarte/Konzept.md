@@ -10,6 +10,10 @@ Ein auditierender Agent soll einen zusammenhängenden Arbeitsbereich mit seinen 
 
 Das Tool bleibt generisch für die geladenen C#-Quellen unterschiedlichster Anwendungen, etwa MCP-Server, Blazor-Server und Bibliotheken. Es leistet möglichst gute technische Vorarbeit für den Audit-Agenten: Signale bündeln, belegte Beziehungen zugänglich machen und den nötigen Einstiegskontext zeigen. Fachliche Bedeutung und tatsächliche Verantwortungsgrenzen untersucht der Agent anhand des jeweiligen Projekts.
 
+### Genehmigte kompakte Ausgabe
+
+Für den bestehenden Produktumfang gilt die vom Nutzer genehmigte Begrenzung auf höchstens eine kompakte Markdown-Datei je Sicht: `audit-map/changed-files/index.md` und `audit-map/all-findings/index.md`. Jede Datei gruppiert validierte Findings nach Projekt und repräsentativer Quelldatei. Sie bewahrt das kurze Originalsignal, die Finding-ID und direkte Links zu Finding und Quelle. Ein Finding mit Vorkommen in mehreren Dateien bleibt einmalig primär zugeordnet; alle Vorkommensquellen und Rollen stehen inline. Finding-Identitäten, Rollen, Auswahl einschließlich `missing-test-evidence-candidates` sowie Originalberichte mit vollständiger Analysebegründung bleiben unverändert. Es entstehen keine Paket-, Referenzdetail-, Gruppen- oder Bereichsnavigationsseiten. Die `all-findings`-Sicht setzt weiterhin einen ausdrücklich beauftragten vollständigen Audit voraus. Diese genehmigte Ausgabeentscheidung ersetzt entgegenstehende Detailseiten-, semantische Paketvorbereitung- und Mehrseitennavigationsanforderungen dieses Konzepts für die kompakte Umsetzung.
+
 Die Landkarte organisiert den Prüfauftrag. Sie bewertet keine Findings, behauptet keine gemeinsamen Fehlerursachen und verlangt keine Refaktorierung. Ein Paket kann Größen-, Kontrollfluss-, Dead-Code-, Duplikations- und Testpfadsignale gemeinsam enthalten. Seine Bezeichnung beschreibt den untersuchten Codebereich, nicht die Analyseart.
 
 ## Entscheidung und Vorgehen
