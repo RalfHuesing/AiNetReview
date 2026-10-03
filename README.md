@@ -14,6 +14,7 @@ AiNetReview helps audit C# code after the usual build, tests, and static analysi
 | `missing-test-evidence-candidates` | Structurally nontrivial production functions with no static test path, or only an indirect path when both higher complexity thresholds are met; this is not runtime coverage evidence. |
 | `non-ascii-identifiers` | Production and test declarations whose identifiers contain characters outside the supported ASCII set. |
 | `code-size-candidates` | Executable members, classes, and source files selected by project-relative size and control-flow thresholds for focused review. |
+| `type-dependency-cycle-candidates` | Maximal groups of at least three production types across at least three declaration files with mutual direct static dependencies; reports every internal edge witness and one example cycle. |
 
 The reports are prompts for an audit, not defect claims. See [Current findings](docs/review/findings.md) for the analyses' scope and limitations.
 
@@ -28,7 +29,7 @@ GitHub [releases](https://github.com/RalfHuesing/AiNetReview/releases) provide W
    .\AiNetReview.exe review C:\path\to\project
    ```
 
-3. Open the `index.md` named by the command's JSON response. It gives shared audit guidance and links to `production/`, `tests/`, and `mixed/`. Without a baseline, each area has an `all-findings/` view and `audit-map/all-findings/index.md` is the normal entry point for an unbounded audit. With a baseline, each area additionally has a `changed-files/` view and `audit-map/changed-files/index.md` groups selected findings by project and source file; the complete view then requires an explicitly requested full audit. For `missing-test-evidence-candidates`, a baseline selects all current findings when any C# snapshot path was added, changed, or deleted, and none when the C# snapshot is unchanged. Each run gets its own report directory, so earlier reports remain available. See [Current findings](docs/review/findings.md) for the map contract.
+3. Open the `index.md` named by the command's JSON response. It gives shared audit guidance and links to `production/`, `tests/`, and `mixed/`. Without a baseline, each area has an `all-findings/` view and `audit-map/all-findings/index.md` is the normal entry point for an unbounded audit. With a baseline, each area additionally has a `changed-files/` view and `audit-map/changed-files/index.md` groups selected findings by project and source file; the complete view then requires an explicitly requested full audit. `missing-test-evidence-candidates` and `type-dependency-cycle-candidates` use snapshot-wide C# selection: with a baseline, any added, changed, or deleted C# path selects every current finding from that analysis, and an unchanged C# snapshot selects none. Each run gets its own report directory, so earlier reports remain available. See [Current findings](docs/review/findings.md) for the map contract.
 
 The command requires a loadable C# solution without compiler errors. A completed review exits with code `0` even when it reports findings. See the [configuration reference](docs/configuration/file-format.md) and [CLI contract](docs/interfaces/cli.md) for options and failure codes.
 

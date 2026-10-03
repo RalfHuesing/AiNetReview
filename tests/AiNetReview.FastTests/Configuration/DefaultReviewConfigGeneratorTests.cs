@@ -12,6 +12,7 @@ using AiNetReview.Core.ReviewAnalyses.IndirectionDriftCandidates;
 using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
 using AiNetReview.Core.ReviewAnalyses.CodeSizeCandidates;
 using AiNetReview.Core.ReviewAnalyses.StructuralDuplicationCandidates;
+using AiNetReview.Core.ReviewAnalyses.TypeDependencyCycleCandidates;
 
 public sealed class DefaultReviewConfigGeneratorTests
 {
@@ -36,6 +37,7 @@ public sealed class DefaultReviewConfigGeneratorTests
             new MissingTestEvidenceCandidatesAnalysis(),
             new CodeSizeCandidatesAnalysis(),
             new StructuralDuplicationCandidatesAnalysis(),
+            new TypeDependencyCycleCandidatesAnalysis(),
         ]);
         var generator = new DefaultReviewConfigGenerator(registry);
 
@@ -86,6 +88,7 @@ public sealed class DefaultReviewConfigGeneratorTests
         Assert.Equal(2, missingTestEvidence.GetProperty("minDecisionNesting").GetInt32());
         Assert.Equal(5, missingTestEvidence.GetProperty("minIndirectDecisionCount").GetInt32());
         Assert.Equal(3, missingTestEvidence.GetProperty("minIndirectDecisionNesting").GetInt32());
+        Assert.True(generatedAnalyses.GetProperty("type-dependency-cycle-candidates").GetProperty("enabled").GetBoolean());
     }
 
     [Fact]

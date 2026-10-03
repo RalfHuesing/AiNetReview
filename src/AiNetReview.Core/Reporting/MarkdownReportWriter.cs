@@ -279,9 +279,9 @@ public sealed class MarkdownReportWriter
                 : "No findings were found.\n\n");
         }
 
-        if (hasBaseline && analyses.Any(static analysis => analysis.Enabled && analysis.AnalysisId == "missing-test-evidence-candidates"))
+        if (hasBaseline && analyses.Any(static analysis => analysis.Enabled && analysis.AnalysisId is "missing-test-evidence-candidates" or "type-dependency-cycle-candidates"))
         {
-            builder.Append("Changed-files selection for `missing-test-evidence-candidates` follows the complete C# snapshot: it shows every current finding when any C# path was added, changed, or deleted, and none when the C# snapshot is unchanged. Other analyses keep their file-based selection.\n\n");
+            builder.Append("Changed-files selection for `missing-test-evidence-candidates` and `type-dependency-cycle-candidates` follows the complete C# snapshot: each shows every current finding when any C# path was added, changed, or deleted, and none when the C# snapshot is unchanged. Other analyses keep their file-based selection.\n\n");
         }
 
         builder.Append("## Audit scope\n\n");
@@ -506,7 +506,7 @@ public sealed class MarkdownReportWriter
     }
 
     private static bool IsChangedForReport(ReviewFinding finding, ReviewRunResult result) =>
-        finding.AnalysisId == "missing-test-evidence-candidates"
+        finding.AnalysisId is "missing-test-evidence-candidates" or "type-dependency-cycle-candidates"
             ? result.HasCSharpSnapshotChanges != false
             : finding.IsChanged;
 
@@ -609,6 +609,15 @@ public sealed class MarkdownReportWriter
             }
         }
 
+        if (configuredAnalysis.AnalysisId == "type-dependency-cycle-candidates")
+        {
+            builder.Append("\nSelection: A finding represents one maximal strongly connected component in the production type graph. It must contain at least three distinct types and at least three distinct canonical declaration source files; both floors are inclusive. Every internal directed edge and retained source witness is listed, along with every participating type declaration and one genuine deterministic cycle as an example. Counts use distinct type pairs and canonical declaration paths. Test, generated, metadata, dynamic, and implicit compiler-created types are outside the graph. This is a static dependency signal, not proof of runtime recursion or an architectural violation.\n");
+            if (viewDirectory == "changed-files")
+            {
+                builder.Append("\nChanged-files selection is snapshot-wide because a C# change or deletion can alter components and edge counts in unchanged declarations. Any added, changed, or deleted C# path selects all current findings; an unchanged C# snapshot selects none. The source status in each file heading describes only that representative file relative to the baseline.\n");
+            }
+        }
+
         var groups = findings
             .GroupBy(static item => (item.Finding.ProjectPath, item.Finding.SourcePath))
             .OrderBy(static group => group.Key.ProjectPath, StringComparer.Ordinal)
@@ -652,7 +661,7 @@ public sealed class MarkdownReportWriter
             {
                 builder.Append("#### File: ").Append(EscapeInline(group.SourcePath)).Append(" (")
                     .Append(group.Findings.Length.ToString(CultureInfo.InvariantCulture)).Append(" findings");
-                if (viewDirectory == "changed-files" && configuredAnalysis.AnalysisId == "missing-test-evidence-candidates")
+                if (viewDirectory == "changed-files" && configuredAnalysis.AnalysisId is "missing-test-evidence-candidates" or "type-dependency-cycle-candidates")
                 {
                     builder.Append("; ").Append(GetMissingTestSourceStatus(group.Findings, group.SourcePath));
                 }
@@ -716,6 +725,19 @@ public sealed class MarkdownReportWriter
                             var path = finding.Evidence.Skip(1)
                                 .Select(evidence => $"{FormatCodeSpan(evidence.Label)} ({FormatCodeSpan(evidence.SourcePath + ":" + evidence.Line.ToString(CultureInfo.InvariantCulture))}; {GetEvidenceOccurrenceRole(reviewFinding, evidence)})");
                             builder.Append("  - Shortest resolved test path: ").Append(string.Join(" -> ", path)).Append('\n');
+                        }
+                    }
+                    else if (reviewFinding.AnalysisId == "type-dependency-cycle-candidates")
+                    {
+                        builder.Append("- Dependency group: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
+                        builder.Append("  - Example cycle and review question: ").Append(EscapeInline(finding.Rationale)).Append('\n');
+                        builder.Append("  - Participating declarations and internal edge witnesses:\n");
+                        foreach (var item in finding.Evidence)
+                        {
+                            builder.Append("    - [").Append(EscapeLinkText(item.SourcePath)).Append("](")
+                                .Append(FormatSourceLink(reportPath, projectRoot, item.SourcePath)).Append("):")
+                                .Append(item.Line.ToString(CultureInfo.InvariantCulture)).Append(": ")
+                                .Append(FormatCodeSpan(item.Label)).Append(" — ").Append(EscapeInline(item.Detail)).Append('\n');
                         }
                     }
                     else if (isCluster)
@@ -891,6 +913,14 @@ public sealed class MarkdownReportWriter
             return FormatNumber(Metric(finding, "forwardingEdgeCount")) + " forwarding edges across "
                 + FormatNumber(Metric(finding, "distinctTypeCount")) + " types and "
                 + FormatNumber(Metric(finding, "distinctFileCount")) + " files";
+        }
+
+        if (analysisId == "type-dependency-cycle-candidates")
+        {
+            return FormatNumber(Metric(finding, "typeCount")) + " production types in "
+                + FormatNumber(Metric(finding, "declarationFileCount")) + " declaration files across "
+                + FormatNumber(Metric(finding, "projectCount")) + " projects; "
+                + FormatNumber(Metric(finding, "internalEdgeCount")) + " directed dependencies";
         }
 
         if (analysisId == "non-ascii-identifiers")

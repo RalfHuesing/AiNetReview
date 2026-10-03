@@ -54,6 +54,9 @@
     },
     "structural-duplication-candidates": {
       "enabled": true
+    },
+    "type-dependency-cycle-candidates": {
+      "enabled": true
     }
   }
 }

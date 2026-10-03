@@ -40,7 +40,7 @@ internal static class AuditMapReportWriter
             .Append(viewName == "all-findings" && hasBaseline
                 ? "> **Full-audit scope:** This view contains every current finding. Inspect it only when the user explicitly requests a full-repository audit.\n\n"
                 : viewName == "changed-files"
-                    ? "This view contains the selected changed-file findings. Missing-test-evidence findings follow the snapshot-wide selection rule.\n\n"
+                    ? "This view contains the selected changed-file findings. Missing-test-evidence and cyclic-type-dependency findings follow the snapshot-wide selection rule.\n\n"
                     : "This view contains every current finding.\n\n")
             .Append("Unique findings: **").Append(findings.Count.ToString(CultureInfo.InvariantCulture)).Append("**. Each finding appears once and links to its original analysis report and source locations.\n\n");
 

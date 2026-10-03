@@ -17,10 +17,69 @@ using AiNetReview.Core.ReviewAnalyses.NonAsciiIdentifiers;
 using AiNetReview.Core.ReviewAnalyses.IndirectionDriftCandidates;
 using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
 using AiNetReview.Core.ReviewAnalyses.StructuralDuplicationCandidates;
+using AiNetReview.Core.ReviewAnalyses.TypeDependencyCycleCandidates;
 using Microsoft.CodeAnalysis;
 
 public sealed class MarkdownReportWriterTests
 {
+    [Fact]
+    public async Task WriteAsync_PublishesCycleEvidenceAndUsesOnlyCycleSnapshotWideSelection()
+    {
+        using var temp = TestTempDirectory.Create();
+        var analysis = new TypeDependencyCycleCandidatesAnalysis();
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        const string project = "Sample/Sample.csproj";
+        var symbols = new[]
+        {
+            new FindingSymbol(project, "A.cs", "T:Sample.A", 1),
+            new FindingSymbol(project, "B.cs", "T:Sample.B", 1),
+            new FindingSymbol(project, "C.cs", "T:Sample.C", 1),
+        };
+        var finding = new FindingDraft(project, "A.cs", "T:Sample.A", "strongly-connected-production-type-group", 1,
+            "3 production types in 3 distinct declaration files form a mutually dependent group (3 directed dependencies). Example: A -> B -> C -> A. Review whether the dependencies are intentional.",
+            new Dictionary<string, double> { ["typeCount"] = 3, ["declarationFileCount"] = 3, ["projectCount"] = 1, ["internalEdgeCount"] = 3 },
+            [
+                new FindingEvidence("A.cs", 1, "T:Sample.A", "Declaration of participating production type.", "class A"),
+                new FindingEvidence("B.cs", 1, "T:Sample.B", "Declaration of participating production type.", "class B"),
+                new FindingEvidence("C.cs", 1, "T:Sample.C", "Declaration of participating production type.", "class C"),
+                new FindingEvidence("A.cs", 1, "T:Sample.A -> Sample/Sample.csproj::T:Sample.B", "MemberUse dependency in project Sample/Sample.csproj.", "class A"),
+            ], symbols, symbols);
+        var reviewFinding = new ReviewFinding(analysis.Descriptor.AnalysisId, finding, ["A.cs", "B.cs", "C.cs"], [], [])
+        {
+            Occurrences = symbols.Select(static symbol => new ReviewFindingOccurrence(symbol, ProjectRole.Production)).ToArray(),
+            SubjectOccurrences = symbols.Select(static symbol => new ReviewFindingOccurrence(symbol, ProjectRole.Production)).ToArray(),
+        };
+        var result = new ReviewRunResult([new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([finding]))])
+        {
+            Findings = [reviewFinding],
+            ProjectClassifications = [new ProjectClassification(project, ProjectRole.Production, ProjectClassificationReason.NoTestMarker)],
+            HasCSharpSnapshotChanges = false,
+        };
+
+        var unchangedReport = await new MarkdownReportWriter().WriteAsync(config, result);
+        var unchangedDirectory = Path.Combine(config.ResolvedOutputDirectory, unchangedReport.RunId);
+        var all = await File.ReadAllTextAsync(Path.Combine(unchangedDirectory, "production", "all-findings", "type-dependency-cycle-candidates.md"));
+        var changedMap = await File.ReadAllTextAsync(Path.Combine(unchangedDirectory, "audit-map", "changed-files", "index.md"));
+        var allMap = await File.ReadAllTextAsync(Path.Combine(unchangedDirectory, "audit-map", "all-findings", "index.md"));
+        Assert.Contains("at least three distinct canonical declaration source files", all, StringComparison.Ordinal);
+        Assert.Contains("T:Sample.A -> Sample/Sample.csproj::T:Sample.B", all, StringComparison.Ordinal);
+        Assert.Contains("[B.cs:1]", allMap, StringComparison.Ordinal);
+        Assert.Contains("Unique findings: **0**", changedMap, StringComparison.Ordinal);
+        Assert.Contains("Unique findings: **1**", allMap, StringComparison.Ordinal);
+
+        var changedReport = await new MarkdownReportWriter().WriteAsync(config, result with { HasCSharpSnapshotChanges = true });
+        var changedDirectory = Path.Combine(config.ResolvedOutputDirectory, changedReport.RunId);
+        var changedCycle = await File.ReadAllTextAsync(Path.Combine(changedDirectory, "production", "changed-files", "type-dependency-cycle-candidates.md"));
+        var selectedMap = await File.ReadAllTextAsync(Path.Combine(changedDirectory, "audit-map", "changed-files", "index.md"));
+        Assert.Contains("Any added, changed, or deleted C# path selects all current findings", changedCycle, StringComparison.Ordinal);
+        Assert.Contains("Unique findings: **1**", selectedMap, StringComparison.Ordinal);
+        Assert.Contains("#### File: A.cs (1 findings; source unchanged; included snapshot-wide)", changedCycle, StringComparison.Ordinal);
+
+        var noBaselineReport = await new MarkdownReportWriter().WriteAsync(config, result with { HasCSharpSnapshotChanges = null });
+        var noBaselineDirectory = Path.Combine(config.ResolvedOutputDirectory, noBaselineReport.RunId);
+        Assert.False(Directory.EnumerateFileSystemEntries(noBaselineDirectory, "changed-files", SearchOption.AllDirectories).Any());
+    }
+
     [Fact]
     public async Task WriteAsync_WithoutBaselinePublishesOnlyCompleteAuditAndDoesNotMentionChangedFiles()
     {

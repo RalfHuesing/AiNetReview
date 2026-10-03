@@ -15,6 +15,7 @@ using AiNetReview.Core.ReviewAnalyses.IndirectionDriftCandidates;
 using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
 using AiNetReview.Core.ReviewAnalyses.CodeSizeCandidates;
 using AiNetReview.Core.ReviewAnalyses.StructuralDuplicationCandidates;
+using AiNetReview.Core.ReviewAnalyses.TypeDependencyCycleCandidates;
 using AiNetReview.IntegrationTests.FixtureAnalyses;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -31,7 +32,7 @@ public sealed class AnalysisServiceRegistrationTests
         var analyses = provider.GetServices<IReviewAnalysis>().ToArray();
         var registry = provider.GetRequiredService<ReviewAnalysisRegistry>();
 
-        Assert.Equal(8, analyses.Length);
+        Assert.Equal(9, analyses.Length);
         Assert.Contains(analyses, static analysis => analysis is MethodControlFlowOutliersAnalysis);
         Assert.Contains(analyses, static analysis => analysis is DeadCodeCandidatesAnalysis);
         Assert.Contains(analyses, static analysis => analysis is DuplicateCodeCandidatesAnalysis);
@@ -40,7 +41,8 @@ public sealed class AnalysisServiceRegistrationTests
         Assert.Contains(analyses, static analysis => analysis is MissingTestEvidenceCandidatesAnalysis);
         Assert.Contains(analyses, static analysis => analysis is CodeSizeCandidatesAnalysis);
         Assert.Contains(analyses, static analysis => analysis is StructuralDuplicationCandidatesAnalysis);
-        Assert.Equal(new[] { "code-size-candidates", "dead-code-candidates", "duplicate-code-candidates", "indirection-drift-candidates", "method-control-flow-outliers", "missing-test-evidence-candidates", "non-ascii-identifiers", "structural-duplication-candidates" }, registry.Analyses.Select(static analysis => analysis.Descriptor.AnalysisId));
+        Assert.Contains(analyses, static analysis => analysis is TypeDependencyCycleCandidatesAnalysis);
+        Assert.Equal(new[] { "code-size-candidates", "dead-code-candidates", "duplicate-code-candidates", "indirection-drift-candidates", "method-control-flow-outliers", "missing-test-evidence-candidates", "non-ascii-identifiers", "structural-duplication-candidates", "type-dependency-cycle-candidates" }, registry.Analyses.Select(static analysis => analysis.Descriptor.AnalysisId));
         Assert.Same(analyses.Single(static analysis => analysis is MethodControlFlowOutliersAnalysis), registry.GetRequired("method-control-flow-outliers"));
         Assert.Same(analyses.Single(static analysis => analysis is DeadCodeCandidatesAnalysis), registry.GetRequired("dead-code-candidates"));
         Assert.Same(analyses.Single(static analysis => analysis is DuplicateCodeCandidatesAnalysis), registry.GetRequired("duplicate-code-candidates"));
@@ -49,6 +51,7 @@ public sealed class AnalysisServiceRegistrationTests
         Assert.Same(analyses.Single(static analysis => analysis is MissingTestEvidenceCandidatesAnalysis), registry.GetRequired("missing-test-evidence-candidates"));
         Assert.Same(analyses.Single(static analysis => analysis is CodeSizeCandidatesAnalysis), registry.GetRequired("code-size-candidates"));
         Assert.Same(analyses.Single(static analysis => analysis is StructuralDuplicationCandidatesAnalysis), registry.GetRequired("structural-duplication-candidates"));
+        Assert.Same(analyses.Single(static analysis => analysis is TypeDependencyCycleCandidatesAnalysis), registry.GetRequired("type-dependency-cycle-candidates"));
         Assert.False(registry.TryGet("fixture-finding", out _));
     }
 
@@ -119,7 +122,7 @@ public sealed class AnalysisServiceRegistrationTests
 
         var registry = provider.GetRequiredService<ReviewAnalysisRegistry>();
 
-        Assert.Equal(new[] { "code-size-candidates", "dead-code-candidates", "duplicate-code-candidates", "fixture-finding", "indirection-drift-candidates", "method-control-flow-outliers", "missing-test-evidence-candidates", "non-ascii-identifiers", "structural-duplication-candidates" }, registry.Analyses.Select(static analysis => analysis.Descriptor.AnalysisId));
+        Assert.Equal(new[] { "code-size-candidates", "dead-code-candidates", "duplicate-code-candidates", "fixture-finding", "indirection-drift-candidates", "method-control-flow-outliers", "missing-test-evidence-candidates", "non-ascii-identifiers", "structural-duplication-candidates", "type-dependency-cycle-candidates" }, registry.Analyses.Select(static analysis => analysis.Descriptor.AnalysisId));
         Assert.IsType<FixtureFindingAnalysis>(registry.GetRequired("fixture-finding"));
     }
 
