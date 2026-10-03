@@ -109,6 +109,7 @@ public sealed class MarkdownReportWriter
                         .ConfigureAwait(false);
                 }
 
+                await MapsReportWriter.WriteMapsAsync(temporaryPath, result.Maps, cancellationToken).ConfigureAwait(false);
                 await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, findings, cancellationToken).ConfigureAwait(false);
 
                 cancellationToken.ThrowIfCancellationRequested();
@@ -217,8 +218,8 @@ public sealed class MarkdownReportWriter
             .Append("## Review guidance\n\n")
             .Append("Review each finding in scope against source, callers, contracts, tests, and repository design. Classify with concrete evidence as false positive, acceptable design, needs clarification, or actionable. A signal alone does not require a change; avoid metric-driven refactoring. Findings describe static evidence in the loaded snapshot, not execution, runtime coverage, test quality, or defects.\n\n")
             .Append("A complete audit covers all findings in the three areas below. Name any assigned areas left unreviewed; related findings may be assessed together.\n\n")
-            .Append("## Audit map\n\n")
-            .Append("Audit map: `audit-map/index.md`; findings are grouped by project and representative source file. Each grouped row gives stable finding IDs and a canonical analysis report path relative to this map. Source paths are repository-relative; `Lnn` refers to the file group above. Report each ID's classification, evidence, and unresolved context; name unreviewed findings or source groups explicitly.\n\n");
+            .Append("## Maps\n\n")
+            .Append("Choose a solution or project map through `maps/index.md`. The findings map is `maps/audit/index.md`; it routes each finding ID to canonical analysis details. Source paths are project-root-relative; `Lnn` refers to the file group above. Report each ID's classification, evidence, and unresolved context; name unreviewed findings or source groups explicitly.\n\n");
 
         if (findings.Count == 0)
         {
@@ -239,15 +240,7 @@ public sealed class MarkdownReportWriter
         {
             builder.Append("- ").Append(FormatCodeSpan(area + "/index.md")).Append('\n');
         }
-        builder.Append("- ").Append(FormatCodeSpan("audit-map/index.md")).Append('\n');
-
-        builder.Append("\n## Loaded C# projects\n\n| Project | Role | Classification reason |\n| --- | --- | --- |\n");
-        foreach (var project in result.ProjectClassifications.OrderBy(static item => item.ProjectPath, StringComparer.Ordinal))
-        {
-            builder.Append("| ").Append(FormatCodeSpan(project.ProjectPath)).Append(" | ")
-                .Append(project.Role == ProjectRole.Tests ? "tests" : "production").Append(" | ")
-                .Append(FormatCodeSpan(project.Reason.ToString())).Append(" |\n");
-        }
+        builder.Append("- ").Append(FormatCodeSpan("maps/index.md")).Append('\n');
 
         builder.Append("\n## Analyses and effective options\n\n| Analysis | Enabled | Subject scope | Effective options |\n| --- | --- | --- | --- |\n");
         foreach (var analysis in analyses)

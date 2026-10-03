@@ -30,7 +30,7 @@ GitHub [releases](https://github.com/RalfHuesing/AiNetReview/releases) provide W
    .\AiNetReview.exe review C:\path\to\project
    ```
 
-3. Open the `index.md` named by the command's JSON response. It provides shared audit guidance and routes to `production/`, `tests/`, `mixed/`, and `audit-map/index.md`. Each area has an `index.md` and direct `production/<analysis>.md`, `tests/<analysis>.md`, or `mixed/<analysis>.md` reports for analyses with findings. The audit map groups findings by project and representative source file, listing each canonical report path once with its stable IDs. Detailed reports carry concise evidence and repository-root-relative source locations. Each run gets its own report directory, so earlier reports remain available. See [Current findings](docs/review/findings.md) for the map contract.
+3. Open the `index.md` named by the command's JSON response. It provides shared audit guidance and routes to `production/`, `tests/`, `mixed/`, and `maps/index.md`. Choose project structure and type dependency maps there; `maps/audit/index.md` routes findings to canonical analysis details. Each finding area has an `index.md` and direct `<area>/<analysis>.md` reports for analyses with findings. Detailed reports carry concise evidence and project-root-relative source locations. Each run gets its own report directory, so earlier reports remain available. See [Current findings](docs/review/findings.md) for the map contract.
 
 The command requires a loadable C# solution without compiler errors. A completed review exits with code `0` even when it reports findings. See the [configuration reference](docs/configuration/file-format.md) and [CLI contract](docs/interfaces/cli.md) for options and failure codes.
 

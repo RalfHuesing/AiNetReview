@@ -79,13 +79,15 @@ public sealed partial class AuditRepositoryIntegrationTests
 
         var runDirectory = Path.Combine(outputDirectory, published.RunId);
         Assert.True(File.Exists(Path.Combine(runDirectory, "index.md")));
-        Assert.True(File.Exists(Path.Combine(runDirectory, "audit-map", "index.md")));
+        Assert.True(File.Exists(Path.Combine(runDirectory, "maps", "audit", "index.md")));
+        Assert.True(File.Exists(Path.Combine(runDirectory, "maps", "index.md")));
+        Assert.True(File.Exists(Path.Combine(runDirectory, "maps", "projects.md")));
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
         var repositoryMetadata = Assert.Single(index.Split('\n').Where(static line => line.StartsWith("Repository:", StringComparison.Ordinal)));
         Assert.Equal(
             $"Repository: {MarkdownReportWriter.FormatCodeSpan(repositoryPath)}; solution: {MarkdownReportWriter.FormatCodeSpan(solution)}.",
             repositoryMetadata);
-        Assert.Contains("audit-map/index.md", index, StringComparison.Ordinal);
+        Assert.Contains("maps/audit/index.md", index, StringComparison.Ordinal);
         Assert.Equal(Path.Combine(outputDirectory, published.RunId, "index.md"),
             Path.GetFullPath(Path.Combine(repositoryPath, published.IndexPath.Replace('/', Path.DirectorySeparatorChar))));
         Assert.Equal(targetConfigExisted, File.Exists(targetConfigPath));
@@ -101,7 +103,7 @@ public sealed partial class AuditRepositoryIntegrationTests
         Assert.DoesNotContain("findings.json", publishedFiles, StringComparer.Ordinal);
         Assert.All(publishedFiles, path => Assert.True(
             path == "index.md"
-                || (path.StartsWith("audit-map/", StringComparison.Ordinal) && path.EndsWith(".md", StringComparison.Ordinal))
+                || (path.StartsWith("maps/", StringComparison.Ordinal) && path.EndsWith(".md", StringComparison.Ordinal))
                 || (new[] { "production", "tests", "mixed" }.Any(area =>
                     path.StartsWith(area + "/", StringComparison.Ordinal))
                     && path.EndsWith(".md", StringComparison.Ordinal)),

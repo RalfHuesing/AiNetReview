@@ -8,7 +8,7 @@
 
 The shared source-classifier tests also verify the reason for each existing test-project marker. `ReviewRunnerTests` verify that every loaded C# project appears in the run's classification overview, including a project with no recognized test marker and a project with no findings, and that finding occurrence roles come from represented symbols independently of evidence files. Multiple represented occurrences remain separate even when they share the same owner and line.
 
-Audit-map coverage is in `MarkdownReportWriterTests`: every run publishes one compact complete map at `audit-map/index.md`. It groups each canonical report path once with its routed stable IDs, while analysis details preserve source locations and necessary role context. Generated navigation uses plain paths without Markdown links or HTML anchors.
+Map coverage is in `MarkdownReportWriterTests`: every run publishes `maps/index.md`, the project and source maps, and one compact complete findings map at `maps/audit/index.md`. The findings map groups each canonical report path once with its routed stable IDs, while analysis details preserve source locations and necessary role context. Generated navigation uses plain paths without Markdown links or HTML anchors.
 
 The solution `AiNetReview.slnx` contains five projects:
 
@@ -34,7 +34,7 @@ pwsh -File ./scripts/build.ps1
 
 TreatWarningsAsErrors and Nullable reference types are enabled across all projects in `Directory.Build.props`.
 
-`MarkdownReportWriterTests` verify the complete report and single compact audit map, exact unique finding counts, stable text IDs and canonical report paths, representative source locations, cross-file occurrence roles, related finding IDs, deterministic output, explicit empty areas, and omission of excluded finding details. Host integration tests exercise report publication to external audit output roots, production CLI publication, and the existing cancellation/failure guarantees for complete atomic runs.
+`MarkdownReportWriterTests` verify the complete report and map routes, exact unique finding counts, stable text IDs and canonical report paths, representative source locations, cross-file occurrence roles, related finding IDs, deterministic output, explicit empty areas, and omission of excluded finding details. Host integration tests exercise report publication to external audit output roots, production CLI publication, and the existing cancellation/failure guarantees for complete atomic runs.
 
 ## Host Logging
 
@@ -83,6 +83,6 @@ pwsh -File ./scripts/release.ps1 -DryRun
 The script verifies a clean working tree, synchronizes with `origin/main`, runs `FastTests` and `IntegrationTests`, updates `<Version>` in `src/AiNetReview/AiNetReview.csproj`, tags `vX.Y.Z`, and pushes the tag to GitHub where `.github/workflows/release.yml` publishes `AiNetReview-win-x64.zip`.
 
 Agents and automation tools can inspect the static log files in `temp/` directly.
-The cycle-analysis host integration test verifies an enabled production registration, complete component declarations and edge evidence, precise source locations and audit-map entries, deterministic finding identity, empty results, and atomic non-publication after analysis failure or cancellation.
+The cycle-analysis host integration test verifies an enabled production registration, complete component declarations and edge evidence, precise source locations and findings-map entries, deterministic finding identity, empty results, and atomic non-publication after analysis failure or cancellation.
 
 The dependency-hub host integration test runs both type-dependency analyses through the registered CLI. It verifies every direct production consumer and dependency, partial hub declarations, separate direct test-consumer context with production-only origin, source locations and related finding IDs, a stable hub map identity, configurable thresholds, empty results, and atomic non-publication after failure or cancellation. FastTests additionally verify independent inclusive thresholds and linked-neighbor file deduplication across project-specific type nodes.

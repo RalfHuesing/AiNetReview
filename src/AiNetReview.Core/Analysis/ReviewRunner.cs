@@ -87,11 +87,14 @@ public sealed class ReviewRunner
             }));
         }
 
+        var maps = await ReviewMapBuilder.BuildAsync(context, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         var reviewedFindings = ReviewFindingBuilder.Build(results, projectClassifications);
         return new ReviewRunResult(Array.AsReadOnly(results.ToArray()))
         {
             Findings = reviewedFindings,
             ProjectClassifications = Array.AsReadOnly(projectClassifications),
+            Maps = maps,
         };
     }
 
@@ -114,5 +117,8 @@ public sealed record ReviewRunResult(IReadOnlyList<ReviewAnalysisRunResult> Anal
 
     /// <summary>Classification of every loaded C# project, including projects without findings.</summary>
     public IReadOnlyList<ProjectClassification> ProjectClassifications { get; init; } = Array.Empty<ProjectClassification>();
+
+    /// <summary>Complete source maps prepared from the loaded solution snapshot, when available.</summary>
+    public ReviewMaps? Maps { get; init; }
 
 }

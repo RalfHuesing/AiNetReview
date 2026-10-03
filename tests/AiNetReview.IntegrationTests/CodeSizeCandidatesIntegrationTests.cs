@@ -130,7 +130,7 @@ public sealed class CodeSizeCandidatesIntegrationTests
         Assert.Contains("Member: ", sizeReport, StringComparison.Ordinal);
         Assert.Contains("relative length\\-and\\-control\\-flow criterion", sizeReport, StringComparison.Ordinal);
         Assert.Contains("extreme member\\-size threshold", sizeReport, StringComparison.Ordinal);
-        var auditMap = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", firstRunId, "audit-map", "index.md"));
+        var auditMap = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", firstRunId, "maps", "audit", "index.md"));
         var relatedFindingIds = auditMap.Split('\n')
             .Where(static line => line.Contains("method-control-flow-outliers.md", StringComparison.Ordinal))
             .Select(line => Regex.Match(line, @"finding-[a-f0-9]{24}", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)).Value)

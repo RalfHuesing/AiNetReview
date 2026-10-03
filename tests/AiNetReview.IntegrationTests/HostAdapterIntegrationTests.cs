@@ -59,7 +59,7 @@ public sealed class HostAdapterIntegrationTests
         var firstRunDirectory = Path.Combine(projectRoot, "reports", firstRunId);
         var allReportPath = Path.Combine(firstRunDirectory, "production",  "type-dependency-cycle-candidates.md");
         var allReport = await File.ReadAllTextAsync(allReportPath);
-        var firstMap = await File.ReadAllTextAsync(Path.Combine(firstRunDirectory, "audit-map",  "index.md"));
+        var firstMap = await File.ReadAllTextAsync(Path.Combine(firstRunDirectory, "maps", "audit",  "index.md"));
         Assert.Contains("3 production types in 3 distinct declaration files", allReport, StringComparison.Ordinal);
         Assert.Contains("Example:", allReport, StringComparison.Ordinal);
         Assert.Contains("L1", allReport, StringComparison.Ordinal);
@@ -77,7 +77,7 @@ public sealed class HostAdapterIntegrationTests
         Assert.Equal(0, repeated.ExitCode);
         using var repeatedResponse = JsonDocument.Parse(repeated.Output);
         var repeatedDirectory = Path.Combine(projectRoot, "reports", repeatedResponse.RootElement.GetProperty("runId").GetString()!);
-        var repeatedMap = await File.ReadAllTextAsync(Path.Combine(repeatedDirectory, "audit-map",  "index.md"));
+        var repeatedMap = await File.ReadAllTextAsync(Path.Combine(repeatedDirectory, "maps", "audit",  "index.md"));
         Assert.Equal(firstId, GetFirstAuditMapFindingId(repeatedMap));
 
         var publishedRuns = Directory.GetDirectories(Path.Combine(projectRoot, "reports"), "20*", SearchOption.TopDirectoryOnly).Length;
@@ -157,7 +157,7 @@ public sealed class HostAdapterIntegrationTests
         var firstRunDirectory = Path.Combine(projectRoot, "reports", firstRunId);
         var hubReportPath = Path.Combine(firstRunDirectory, "production",  "type-dependency-hub-candidates.md");
         var hubReport = await File.ReadAllTextAsync(hubReportPath);
-        var firstMap = await File.ReadAllTextAsync(Path.Combine(firstRunDirectory, "audit-map",  "index.md"));
+        var firstMap = await File.ReadAllTextAsync(Path.Combine(firstRunDirectory, "maps", "audit",  "index.md"));
         Assert.Contains("10 production consumer types (minimum 10", hubReport, StringComparison.Ordinal);
         Assert.Contains("10 production dependency types (minimum 10", hubReport, StringComparison.Ordinal);
         Assert.Contains("1 direct test consumer types are listed separately", hubReport, StringComparison.Ordinal);
@@ -182,7 +182,7 @@ public sealed class HostAdapterIntegrationTests
         Assert.Equal(0, repeated.ExitCode);
         using var repeatedResponse = JsonDocument.Parse(repeated.Output);
         var repeatedDirectory = Path.Combine(projectRoot, "reports", repeatedResponse.RootElement.GetProperty("runId").GetString()!);
-        var repeatedMap = await File.ReadAllTextAsync(Path.Combine(repeatedDirectory, "audit-map",  "index.md"));
+        var repeatedMap = await File.ReadAllTextAsync(Path.Combine(repeatedDirectory, "maps", "audit",  "index.md"));
         Assert.Equal(firstId, GetAuditMapFindingId(repeatedMap, "type-dependency-hub-candidates"));
 
         var explicitDefaultConfig = await File.ReadAllTextAsync(configPath);
@@ -442,9 +442,9 @@ public sealed class HostAdapterIntegrationTests
         var structuralSecondOccurrence = Assert.Single(structuralReport.Split('\n').Where(static line => line.Contains("ProductB/Second.cs", StringComparison.Ordinal)));
         Assert.Matches(@"\[`1:\d+`–`1:\d+`\)", structuralSecondOccurrence);
         var structuralRunDirectory = Path.Combine(projectRoot, "reports", together.RunId);
-        var mapIndex = await File.ReadAllTextAsync(Path.Combine(structuralRunDirectory, "audit-map",  "index.md"));
+        var mapIndex = await File.ReadAllTextAsync(Path.Combine(structuralRunDirectory, "maps", "audit",  "index.md"));
         Assert.Contains("Findings: **2**", mapIndex, StringComparison.Ordinal);
-        var packageReports = Directory.GetFiles(Path.Combine(structuralRunDirectory, "audit-map"), "*.md")
+        var packageReports = Directory.GetFiles(Path.Combine(structuralRunDirectory, "maps", "audit"), "*.md")
             .Where(path => !Path.GetFileName(path).Equals("index.md", StringComparison.Ordinal))
             .Select(File.ReadAllText).ToArray();
         Assert.Empty(packageReports);
