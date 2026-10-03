@@ -4,6 +4,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using System.Threading.Tasks;
 using AiNetReview.Bootstrap;
@@ -103,15 +104,18 @@ public sealed class HostProcessIntegrationTests
     {
         var repositoryRoot = SolutionRootLocator.Find();
         var configPath = Path.Combine(repositoryRoot, "ainetreview.json");
+        var configuration = typeof(HostProcessIntegrationTests).Assembly
+            .GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration
+            ?? throw new InvalidOperationException("Could not determine the integration test build configuration.");
         var executablePath = Path.Combine(
             repositoryRoot,
             "src",
             "AiNetReview",
             "bin",
-            "Debug",
+            configuration,
             "net10.0",
             OperatingSystem.IsWindows() ? "AiNetReview.exe" : "AiNetReview");
-        Assert.True(File.Exists(executablePath), $"The Debug host executable was not found at '{executablePath}'.");
+        Assert.True(File.Exists(executablePath), $"The {configuration} host executable was not found at '{executablePath}'.");
         Assert.True(File.Exists(configPath), $"The repository configuration was not found at '{configPath}'.");
 
         var outputDirectory = Path.Combine(repositoryRoot, "audit-reporting");
@@ -130,7 +134,7 @@ public sealed class HostProcessIntegrationTests
         startInfo.ArgumentList.Add(repositoryRoot);
 
         using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("AiNetReview Debug host process could not be started.");
+            ?? throw new InvalidOperationException($"AiNetReview {configuration} host process could not be started.");
         var (stdout, stderr) = await ReadProcessOutputAsync(process);
 
         Assert.True(process.ExitCode == 0, $"Repository review failed with exit code {process.ExitCode}. stdout: {stdout}{Environment.NewLine}stderr: {stderr}");

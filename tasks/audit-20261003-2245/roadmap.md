@@ -10,12 +10,14 @@ Only F-001, F-003, and the configuration-aware executable selection in F-004 are
 
 - [ ] F-001: restore cross-compilation static test edges and verify the self-review regression.
 - [x] F-003: clean up interrupted configuration bootstrap and verify retry/preservation.
-- [ ] F-004 (4.1 only): select the current Debug/Release host artifact and verify Release execution.
+- [x] F-004 (4.1 only): select the current Debug/Release host artifact and verify Release execution.
 - [ ] Final verification and independent GPT-6.1-Sol/medium audit; Luna fix rounds if required.
 
 Implementation baseline: `4f7a0a741aba4b3416852fdaa3507657d37e2366`; working tree clean before changes. Implementation agents: GPT-6-Luna/high. The orchestrator owns this checklist and task-slice commits.
 
 F-003 verification: the new cancellation regression failed against the original direct write (final file remained). After the fix, 19 ZeroConfig tests and a focused 20-test bootstrap/cancellation selection passed. Same-directory temporary publication preserves existing configuration and permits a successful retry; cleanup is restricted to the owned temporary file. Broad gates and the final audit follow after all selected fixes.
+
+F-004 (4.1) verification: the audit's clean Release-only run records the old missing-Debug failure. With the fix, the focused repository process test passed in Release (1/1). Executable selection uses the test assembly's build configuration without a fallback to other outputs. Release pipeline changes remain outside the selected scope.
 
 ---
 
