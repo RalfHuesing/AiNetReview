@@ -1,6 +1,6 @@
 # Ideen für fachliche Review-Signale
 
-Status: Ideensammlung für weitere fachliche Signale, keine verbindliche Spezifikation und kein implementiertes Produktverhalten. Die statistische Ausreißer-Analyse für Methoden wurde bereits als Analyse `method-control-flow-outliers` umgesetzt (siehe [Current findings](../../docs/review/findings.md)).
+Status: Ideensammlung für weitere fachliche Signale, keine verbindliche Spezifikation und kein implementiertes Produktverhalten. Bereits implementierte Analysen wie `method-control-flow-outliers`, `code-size-candidates`, `duplicate-code-candidates`, `structural-duplication-candidates`, `indirection-drift-candidates` und `missing-test-evidence-candidates` sind in [Current findings](../../docs/review/findings.md) dokumentiert.
 
 ## Ziel
 
@@ -8,25 +8,16 @@ AiNetReview soll einem Agenten nach einem Entwicklungstask Stellen zeigen, die e
 
 Fachliche Auswertungen sollten deshalb alle nach einem nachvollziehbaren Kriterium relevanten Kandidaten liefern. Eine feste Höchstzahl würde weitere relevante Stellen verbergen. Der Agent liest die betroffenen Stellen und ihre Aufrufer, prüft Absicht und Verantwortung und bespricht erst dann mit dem Nutzer, ob überhaupt Handlungsbedarf besteht.
 
-## Prioritäten
+## Verbleibende Prioritäten
 
 | Priorität | Signal | Warum es für agentische Entwicklung nützlich sein könnte | Einschätzung |
 | --- | --- | --- | --- |
-| 1 | Gleichzeitige Auffälligkeit in mehreren einfachen Messgrößen | Ein langer linearer Mapper und eine verzweigte Ablaufsteuerung werden unterscheidbar. | Früh ergänzen, ohne Gesamtscore |
-| 2 | Über Dateien verteilte Verständniskosten | Zeigt, wenn ein Agent für eine Änderung viele Aufruf- und Zustandsübergänge verfolgen muss. | Hoher Nutzen, schwerer sauber zu messen |
-| 3 | Entwicklung über vollständige Review-Läufe | Wiederholtes Wachstum oder neu entstehende Abhängigkeiten können wichtiger sein als ein einmalig hoher Wert. | Nach stabiler Messung und Historie |
-| 4 | Konzentration von Entscheidungen und Abhängigkeiten | Macht zentrale Engstellen auf Modul- oder Klassenebene sichtbar. | Ergänzender Überblick |
-| 5 | Duplikate und auseinanderlaufende ähnliche Implementierungen | Agenten können lokale Muster kopieren, die später unterschiedlich weiterentwickelt werden. | Nur mit konkreten, überprüfbaren Belegen |
-| 6 | Klassen- und Dateiumfang sowie Kohäsion | Kann auf vermischte Verantwortungen hinweisen, ist allein aber besonders leicht fehlzuinterpretieren. | Später, zunächst Kontextmetrik |
-| 7 | Test- und Dokumentationsbezug | Fehlende Absicherung oder widersprüchliche Erklärungen können agentische Änderungen erschweren. | Potenziell wertvoll, aber hohe Gefahr unbelegter Aussagen |
+| 1 | Über Dateien verteilte Verständniskosten | Zeigt, wenn ein Agent für eine Änderung viele Aufruf- und Zustandsübergänge verfolgen muss. | Hoher Nutzen, schwerer sauber zu messen (jenseits reiner Weiterleitungsketten) |
+| 2 | Entwicklung über vollständige Review-Läufe | Wiederholtes Wachstum oder neu entstehende Abhängigkeiten über viele Läufe hinweg können wichtiger sein als ein einmalig hoher Wert. | Nach stabiler Messung und Historie |
+| 3 | Konzentration von Entscheidungen und Abhängigkeiten | Macht zentrale Engstellen auf Modul- oder Klassenebene sichtbar. | Ergänzender Überblick (vgl. Type-Dependency-Konzepte) |
+| 4 | Dokumentationsbezug | Widersprüchliche Erklärungen zwischen Dokumentation und Code können agentische Änderungen erschweren. | Potenziell wertvoll, aber hohe Gefahr unbelegter Aussagen |
 
 Die Reihenfolge bewertet den erwarteten Nutzen als **Review-Wegweiser**, nicht die Schwere eines möglichen Problems. Sie ist eine Arbeitshypothese und sollte anhand echter Review-Entscheidungen angepasst werden.
-
-## Mehrere schwache Signale gemeinsam betrachten
-
-Ein Einzelwert ist meist mehrdeutig. Umfang, Entscheidungswege und gegebenenfalls Verschachtelung können gemeinsam zeigen, **warum** eine Methode oben auf der Liste steht. Die Ausgabe sollte die Rohwerte und die konkrete Code-Stelle enthalten. Eine Methode nur deshalb als dringend zu markieren, weil sie in mehreren oberen Perzentilen liegt, wäre bereits eine Wertung, die erst mit Review-Erfahrung gerechtfertigt wäre.
-
-Weitere Kombinationen für spätere Versuche: großer lokaler Ablauf plus viele externe Aufrufe; große Klasse plus viele verschiedene Abhängigkeitsbereiche; starke Änderung seit dem letzten Lauf plus hohe strukturelle Auffälligkeit.
 
 ## Verteilte Verständniskosten
 
@@ -40,19 +31,9 @@ Mit mehreren vollständigen Review-Läufen lassen sich Fragen stellen wie: Welch
 
 Auf Projekt- und Modulniveau wäre interessant, ob ein kleiner Teil der Klassen einen großen Teil der Entscheidungen, Aufrufbeziehungen oder Änderungen trägt. Das ist zunächst eine Landkarte für die Navigation. Für eine Aussage über zu viele Verantwortungen braucht es konkrete Evidenz, etwa unabhängige Aufrufergruppen oder nicht zusammenhängende Abhängigkeitsbereiche. Reine Klassen- oder Dateilänge liefert diese Evidenz nicht. Eine große Datei mit einem klaren Zweck kann völlig angemessen sein.
 
-## Ähnliche Implementierungen und Drift
+## Dokumentation als Kontext
 
-Für agentische Entwicklung besonders relevant ist kopierter oder nachgebauter Code: Ein Agent folgt einem vorhandenen Muster, später ändern sich die Kopien unterschiedlich. Ein Hinweis sollte betroffene Methoden nebeneinander und die konkrete strukturelle Ähnlichkeit zeigen. Reine Textähnlichkeit erzeugt bei trivialen Mappings und Boilerplate viel Rauschen. Diese Analyse wäre eher ein späteres Experiment als die erste fachliche Analyse.
-
-## Tests und Dokumentation als Kontext
-
-Ein schwer zu ändernder Bereich kann auffallen, weil Tests seine beobachtbaren Verträge nicht gut abdecken oder weil Dokumentation und Code auseinanderlaufen. Beides wäre für Agenten nützlich, ist statisch aber schwer zuverlässig zu beweisen: Ein nicht gefundener Test ist kein Nachweis fehlender Tests; eine anders formulierte Beschreibung ist nicht automatisch falsch. Solche Hinweise brauchen besonders konkrete Quellen und vorsichtige Formulierungen.
-
-## Offene Produktfrage: Rangliste oder dauerhaftes Finding?
-
-Die bestehende Finding-Architektur vergibt stabile IDs und erlaubt `accepted` oder `false-positive` mit Wiederöffnung bei relevanter Änderung. Auch bei einer Perzentilgrenze ist die Auswahl relativ: Eine unveränderte Methode kann unter die Auswahlgrenze fallen, weil anderswo Code wächst, und später ohne eigene Änderung wieder darüber liegen. Würde jeder ausgewählte Kandidat als Finding gespeichert, könnten `resolved` und `reopened` allein durch Änderungen an anderen Methoden entstehen. Das könnte Entscheidungen und Berichte unnötig unruhig machen.
-
-Für den ersten Versuch erscheint deshalb eine **Momentaufnahme im Bericht** plausibel. Dauerhafte Findings sollten erst entstehen, wenn eine Aussage mit stabiler Identität, klarer Evidenz und sinnvoller Wiederöffnungsbedingung formuliert werden kann. Ob AiNetReview dafür einen zusätzlichen Berichtstyp erhält oder die vorhandenen Analyseverträge erweitert werden, ist eine spätere Produktentscheidung; dieses Dokument legt keinen neuen Vertrag fest.
+Dokumentation und Code können auseinanderlaufen. Dies wäre für Agenten nützlich, ist statisch aber schwer zuverlässig zu beweisen: Eine anders formulierte Beschreibung ist nicht automatisch falsch. Solche Hinweise brauchen besonders konkrete Quellen und vorsichtige Formulierungen.
 
 ## Wie wir den Nutzen prüfen könnten
 
