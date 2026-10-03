@@ -14,7 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed class CodeSizeCandidatesIntegrationTests
 {
     [Fact]
-    public async Task ReviewCommand_AppliesIndependentTestSizeThresholdsAndKeepsOptionsOutOfSourceSelection()
+    public async Task ReviewCommand_AppliesIndependentTestSizeThresholdsAndReportsEveryFinding()
     {
         using var tempDirectory = TestTempDirectory.Create("ainet-code-size-test-options-");
         var projectRoot = tempDirectory.GetPath("review-project");
@@ -39,26 +39,19 @@ public sealed class CodeSizeCandidatesIntegrationTests
         await File.WriteAllTextAsync(configPath, lowOptionsJson);
         await using var services = BuildServices();
 
-        var baseline = await InvokeAsync(["baseline", projectRoot], services);
-        Assert.Equal(0, baseline.ExitCode);
-        Assert.Empty(baseline.Error);
-        using var baselineDocument = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", "baseline.json")));
-        var baselineFiles = baselineDocument.RootElement.GetProperty("files").GetRawText();
-
         var low = await InvokeAsync(["review", projectRoot], services);
         Assert.Equal(0, low.ExitCode);
         Assert.Empty(low.Error);
         var lowRunId = GetRunId(low.Output);
         var lowDirectory = Path.Combine(projectRoot, "reports", lowRunId);
-        var lowReport = await File.ReadAllTextAsync(Path.Combine(lowDirectory, "production", "all-findings", "code-size-candidates.md"));
-        var lowTestReport = await File.ReadAllTextAsync(Path.Combine(lowDirectory, "tests", "all-findings", "code-size-candidates.md"));
+        var lowReport = await File.ReadAllTextAsync(Path.Combine(lowDirectory, "production", "code-size-candidates.md"));
+        var lowTestReport = await File.ReadAllTextAsync(Path.Combine(lowDirectory, "tests", "code-size-candidates.md"));
         Assert.Contains("Total findings: 1", lowReport, StringComparison.Ordinal);
         Assert.Contains("Sample/Class1.cs", lowReport, StringComparison.Ordinal);
         Assert.Contains("Total findings: 1", lowTestReport, StringComparison.Ordinal);
         Assert.Contains("Tests/Class1.cs", lowTestReport, StringComparison.Ordinal);
         Assert.Contains("Effective options", lowReport, StringComparison.Ordinal);
         Assert.Contains("extremeMemberCodeLines", lowReport, StringComparison.Ordinal);
-        Assert.False(File.Exists(Path.Combine(lowDirectory, "production", "changed-files", "code-size-candidates.md")));
         Assert.Equal(lowOptionsJson, await File.ReadAllTextAsync(configPath));
 
         var highOptionsJson = "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"code-size-candidates\":{\"extremeMemberCodeLines\":1,\"testOptions\":{\"extremeMemberCodeLines\":1000}}}}";
@@ -68,17 +61,14 @@ public sealed class CodeSizeCandidatesIntegrationTests
         Assert.Empty(high.Error);
         var highRunId = GetRunId(high.Output);
         var highDirectory = Path.Combine(projectRoot, "reports", highRunId);
-        var highReport = await File.ReadAllTextAsync(Path.Combine(highDirectory, "production", "all-findings", "code-size-candidates.md"));
+        var highReport = await File.ReadAllTextAsync(Path.Combine(highDirectory, "production", "code-size-candidates.md"));
         Assert.Contains("Total findings: 1", highReport, StringComparison.Ordinal);
         Assert.Contains("Sample/Class1.cs", highReport, StringComparison.Ordinal);
         Assert.DoesNotContain("Tests/Class1.cs", highReport, StringComparison.Ordinal);
         Assert.Contains("Effective options (production projects)", highReport, StringComparison.Ordinal);
         Assert.Contains("Effective options (test projects)", highReport, StringComparison.Ordinal);
-        Assert.False(File.Exists(Path.Combine(highDirectory, "production", "changed-files", "code-size-candidates.md")));
-        Assert.False(File.Exists(Path.Combine(highDirectory, "tests", "all-findings", "code-size-candidates.md")));
+        Assert.False(File.Exists(Path.Combine(highDirectory, "tests", "code-size-candidates.md")));
         Assert.Equal(highOptionsJson, await File.ReadAllTextAsync(configPath));
-        using var baselineAfter = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", "baseline.json")));
-        Assert.Equal(baselineFiles, baselineAfter.RootElement.GetProperty("files").GetRawText());
     }
 
     [Fact]
@@ -128,7 +118,7 @@ public sealed class CodeSizeCandidatesIntegrationTests
         Assert.Equal(0, initial.ExitCode);
         Assert.Empty(initial.Error);
         var firstRunId = GetRunId(initial.Output);
-        var reportDirectory = Path.Combine(projectRoot, "reports", firstRunId, "production", "all-findings");
+        var reportDirectory = Path.Combine(projectRoot, "reports", firstRunId, "production");
         var sizeReportPath = Path.Combine(reportDirectory, "code-size-candidates.md");
         var flowReportPath = Path.Combine(reportDirectory, "method-control-flow-outliers.md");
         Assert.True(File.Exists(sizeReportPath));
@@ -140,8 +130,8 @@ public sealed class CodeSizeCandidatesIntegrationTests
         Assert.Contains("Member: ", sizeReport, StringComparison.Ordinal);
         Assert.Contains("relative length\\-and\\-control\\-flow criterion", sizeReport, StringComparison.Ordinal);
         Assert.Contains("extreme member\\-size threshold", sizeReport, StringComparison.Ordinal);
-        var allFindingsMap = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", firstRunId, "audit-map", "all-findings", "index.md"));
-        var relatedFindingIds = allFindingsMap.Split('\n')
+        var auditMap = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", firstRunId, "audit-map", "index.md"));
+        var relatedFindingIds = auditMap.Split('\n')
             .Where(static line => line.Contains("method-control-flow-outliers.md", StringComparison.Ordinal))
             .Select(line => Regex.Match(line, @"finding-[a-f0-9]{24}", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)).Value)
             .Where(static id => id.Length > 0)
@@ -179,20 +169,25 @@ public sealed class CodeSizeCandidatesIntegrationTests
         var repeated = await InvokeAsync(["review", projectRoot], services);
         Assert.Equal(0, repeated.ExitCode);
         var repeatedRunId = GetRunId(repeated.Output);
-        Assert.Equal(sizeReport, await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", repeatedRunId, "production", "all-findings", "code-size-candidates.md")));
-        Assert.Equal(flowReport, await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", repeatedRunId, "production", "all-findings", "method-control-flow-outliers.md")));
+        Assert.Equal(sizeReport, await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", repeatedRunId, "production", "code-size-candidates.md")));
+        Assert.Equal(flowReport, await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", repeatedRunId, "production", "method-control-flow-outliers.md")));
 
-        var baseline = await InvokeAsync(["baseline", projectRoot], services);
-        Assert.Equal(0, baseline.ExitCode);
-        Assert.Empty(baseline.Error);
-        await File.AppendAllTextAsync(secondPartPath, "// changed non-representative partial declaration\n");
-        var changed = await InvokeAsync(["review", projectRoot], services);
-        Assert.Equal(0, changed.ExitCode);
-        Assert.Empty(changed.Error);
-        var changedRunId = GetRunId(changed.Output);
-        var changedSizeReport = Path.Combine(projectRoot, "reports", changedRunId, "production", "changed-files", "code-size-candidates.md");
-        Assert.True(File.Exists(changedSizeReport));
-        Assert.Contains("Shared", await File.ReadAllTextAsync(changedSizeReport), StringComparison.Ordinal);
+        await File.WriteAllTextAsync(secondPartPath,
+            "namespace Sample;\n"
+            + "public partial class Shared\n"
+            + "{\n"
+            + "    public int Other(int value) => value;\n"
+            + "    public void AddedAfterFirstAudit(bool value) { if (value) { } }\n"
+            + "}\n");
+        var secondReview = await InvokeAsync(["review", projectRoot], services);
+        Assert.Equal(0, secondReview.ExitCode);
+        Assert.Empty(secondReview.Error);
+        var secondRunId = GetRunId(secondReview.Output);
+        var completeSizeReport = Path.Combine(projectRoot, "reports", secondRunId, "production", "code-size-candidates.md");
+        Assert.True(File.Exists(completeSizeReport));
+        var updatedReport = await File.ReadAllTextAsync(completeSizeReport);
+        Assert.Contains("Shared", updatedReport, StringComparison.Ordinal);
+        Assert.Contains("AddedAfterFirstAudit", updatedReport, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -243,12 +238,11 @@ public sealed class CodeSizeCandidatesIntegrationTests
         Assert.Equal(0, result.ExitCode);
         var runId = GetRunId(result.Output);
         var runDirectory = Path.Combine(projectRoot, "reports", runId);
-        Assert.False(Directory.EnumerateFileSystemEntries(runDirectory, "changed-files", SearchOption.AllDirectories).Any());
         foreach (var area in new[] { "production", "tests", "mixed" })
         {
-            var viewDirectory = Path.Combine(runDirectory, area, "all-findings");
-            Assert.False(File.Exists(Path.Combine(viewDirectory, "code-size-candidates.md")));
-            Assert.DoesNotContain(Directory.GetFiles(viewDirectory), static path => Path.GetFileName(path) == "code-size-candidates.md");
+            var areaDirectory = Path.Combine(runDirectory, area);
+            Assert.True(File.Exists(Path.Combine(areaDirectory, "index.md")));
+            Assert.DoesNotContain(Directory.GetFiles(areaDirectory), static path => Path.GetFileName(path) == "code-size-candidates.md");
         }
     }
 

@@ -3,10 +3,7 @@
 param(
     [Parameter()]
     [ValidatePattern('^[a-z0-9][a-z0-9-]{0,63}$')]
-    [string]$Target = 'ainetreview',
-
-    [Parameter()]
-    [switch]$BaselineOnly
+    [string]$Target = 'ainetreview'
 )
 
 Set-StrictMode -Version Latest
@@ -41,13 +38,10 @@ $logFile = Join-Path $tempDir "test-audit-$Target.log"
 $trxFile = "Audit-$Target.trx"
 $projectPath = Join-Path $repoRoot 'tests/AiNetReview.IntegrationTests/AiNetReview.IntegrationTests.csproj'
 $previousTarget = [Environment]::GetEnvironmentVariable('AINETREVIEW_AUDIT_TARGET', 'Process')
-$previousBaselineOnly = [Environment]::GetEnvironmentVariable('AINETREVIEW_AUDIT_BASELINE_ONLY', 'Process')
 
 try {
     [Environment]::SetEnvironmentVariable('AINETREVIEW_AUDIT_TARGET', $Target, 'Process')
-    [Environment]::SetEnvironmentVariable('AINETREVIEW_AUDIT_BASELINE_ONLY', $(if ($BaselineOnly) { '1' } else { $null }), 'Process')
-    $action = if ($BaselineOnly) { 'aktualisiere zentrale Baseline für' } else { 'starte manuelles Audit für' }
-    Write-Host "[INFO] $action '$Target'." -ForegroundColor Cyan
+    Write-Host "[INFO] Starte manuelles Audit für '$Target'." -ForegroundColor Cyan
     Write-Host "[INFO] Profil: $profilePath" -ForegroundColor DarkGray
     Write-Host "[INFO] Ergebnis: $(Join-Path $repoRoot "audit-reporting/$Target")" -ForegroundColor DarkGray
     Write-Host "[INFO] Log: $logFile" -ForegroundColor DarkGray
@@ -62,7 +56,6 @@ try {
     }
 } finally {
     [Environment]::SetEnvironmentVariable('AINETREVIEW_AUDIT_TARGET', $previousTarget, 'Process')
-    [Environment]::SetEnvironmentVariable('AINETREVIEW_AUDIT_BASELINE_ONLY', $previousBaselineOnly, 'Process')
 }
 
 exit $exitCode

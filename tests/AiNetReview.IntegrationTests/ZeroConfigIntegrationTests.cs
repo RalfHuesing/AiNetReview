@@ -14,7 +14,6 @@ public sealed class ZeroConfigIntegrationTests
 {
     [Theory]
     [InlineData("review", "review")]
-    [InlineData("baseline", "baseline")]
     [InlineData("--cmd", "--cmd")]
     [InlineData(null, "unknown")]
     public void Program_GetCommandCategory_UsesFirstArgument(string? firstArgument, string expected)
@@ -71,6 +70,7 @@ public sealed class ZeroConfigIntegrationTests
     }
 
     [Theory]
+    [InlineData("baseline")]
     [InlineData("--cmd", "baseline")]
     [InlineData("--config", "ainetreview.json")]
     [InlineData("unknown")]
@@ -100,7 +100,6 @@ public sealed class ZeroConfigIntegrationTests
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("AiNetReview", result.Output, StringComparison.Ordinal);
         Assert.Contains("review", result.Output, StringComparison.Ordinal);
-        Assert.Contains("baseline", result.Output, StringComparison.Ordinal);
         Assert.Empty(result.Error);
     }
 
@@ -117,49 +116,20 @@ public sealed class ZeroConfigIntegrationTests
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("AiNetReview", result.Output, StringComparison.Ordinal);
         Assert.Contains("review", result.Output, StringComparison.Ordinal);
-        Assert.Contains("baseline", result.Output, StringComparison.Ordinal);
-        Assert.Empty(result.Error);
-    }
-
-    [Theory]
-    [InlineData("review")]
-    [InlineData("baseline")]
-    public async Task ReviewCommand_SubcommandHelp_DisplaysSubcommandHelp(string subcommand)
-    {
-        await using var services = BuildServices();
-
-        var result = await InvokeAsync([subcommand, "--help"], services);
-
-        Assert.Equal(0, result.ExitCode);
-        Assert.Contains(subcommand, result.Output, StringComparison.Ordinal);
-        Assert.Contains("project-path", result.Output, StringComparison.Ordinal);
         Assert.Empty(result.Error);
     }
 
     [Fact]
-    public async Task BaselineCommand_BootstrapsConfigurationAndWritesBaseline()
+    public async Task ReviewCommand_SubcommandHelp_DisplaysSubcommandHelp()
     {
-        using var tempDirectory = TestTempDirectory.Create("ainet-cli-baseline-");
-        var projectRoot = await CreateProjectAsync(tempDirectory.DirectoryPath);
-        File.Delete(Path.Combine(projectRoot, "ainetreview.json"));
         await using var services = BuildServices();
 
-        var relativeProjectRoot = Path.GetRelativePath(Environment.CurrentDirectory, projectRoot);
-        var result = await InvokeAsync(["baseline", relativeProjectRoot], services);
+        var result = await InvokeAsync(["review", "--help"], services);
 
         Assert.Equal(0, result.ExitCode);
+        Assert.Contains("review", result.Output, StringComparison.Ordinal);
+        Assert.Contains("project-path", result.Output, StringComparison.Ordinal);
         Assert.Empty(result.Error);
-        using var response = JsonDocument.Parse(Assert.Single(result.Output.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)));
-        Assert.Equal("completed", response.RootElement.GetProperty("status").GetString());
-        Assert.True(File.Exists(Path.Combine(projectRoot, "ainetreview.json")));
-        using (var config = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(projectRoot, "ainetreview.json"))))
-        {
-            var analyses = config.RootElement.GetProperty("analyses");
-            Assert.Equal(90, analyses.GetProperty("method-control-flow-outliers").GetProperty("testOptions").GetProperty("percentile").GetInt32());
-            Assert.Equal(131072, analyses.GetProperty("code-size-candidates").GetProperty("testOptions").GetProperty("extremeFileUtf8Bytes").GetInt32());
-            Assert.Equal("external_library", analyses.GetProperty("dead-code-candidates").GetProperty("apiSurface").GetString());
-        }
-        Assert.True(File.Exists(Path.Combine(projectRoot, "audit-reporting", "baseline.json")));
     }
 
     [Fact]
@@ -177,9 +147,8 @@ public sealed class ZeroConfigIntegrationTests
         Assert.Equal(userConfiguration, await File.ReadAllTextAsync(configPath));
 
         var baseline = await InvokeAsync(["baseline", projectRoot], services);
-        Assert.Equal(0, baseline.ExitCode);
-        Assert.Empty(baseline.Error);
-        Assert.Contains("\"status\":\"completed\"", baseline.Output, StringComparison.Ordinal);
+        Assert.Equal(2, baseline.ExitCode);
+        Assert.Contains("INVALID_INPUT", baseline.Error, StringComparison.Ordinal);
         Assert.Equal(userConfiguration, await File.ReadAllTextAsync(configPath));
     }
 

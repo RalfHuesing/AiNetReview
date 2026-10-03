@@ -28,8 +28,6 @@ public static class ServiceRegistration
         services.AddSingleton<SolutionLoader>();
         services.AddSingleton<ReviewRunner>();
         services.AddSingleton<MarkdownReportWriter>();
-        services.AddSingleton<BaselineWriter>();
-        services.AddSingleton<BaselineReader>();
         return services;
     }
 

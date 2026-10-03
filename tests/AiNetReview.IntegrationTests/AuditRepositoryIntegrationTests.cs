@@ -16,7 +16,6 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed partial class AuditRepositoryIntegrationTests
 {
     private const string TargetEnvironmentVariable = "AINETREVIEW_AUDIT_TARGET";
-    private const string BaselineOnlyEnvironmentVariable = "AINETREVIEW_AUDIT_BASELINE_ONLY";
 
     [Fact]
     [Trait("Category", "Audit")]
@@ -64,25 +63,15 @@ public sealed partial class AuditRepositoryIntegrationTests
             analyses,
         });
 
+        var targetConfigPath = Path.Combine(repositoryPath, "ainetreview.json");
+        var targetConfigExisted = File.Exists(targetConfigPath);
+        var targetConfigBytes = targetConfigExisted ? await File.ReadAllBytesAsync(targetConfigPath) : null;
+
         var outputDirectory = Path.Combine(hostRoot, "audit-reporting", targetName);
         await using var services = BuildProductionServices();
         var config = services.GetRequiredService<ReviewConfigValidator>()
             .ValidateForAudit(repositoryPath, standardConfigJson, outputDirectory);
         using var loaded = await services.GetRequiredService<SolutionLoader>().LoadAsync(config);
-        var baselinePath = Path.Combine(outputDirectory, "baseline.json");
-        var targetConfigPath = Path.Combine(repositoryPath, "ainetreview.json");
-        var targetBaselinePath = Path.Combine(repositoryPath, "audit-reporting", "baseline.json");
-        var targetConfigBefore = File.Exists(targetConfigPath) ? await File.ReadAllBytesAsync(targetConfigPath) : null;
-        var targetBaselineBefore = File.Exists(targetBaselinePath) ? await File.ReadAllBytesAsync(targetBaselinePath) : null;
-        await new BaselineWriter().WriteAsync(config, loaded);
-
-        Assert.True(File.Exists(baselinePath));
-        if (Environment.GetEnvironmentVariable(BaselineOnlyEnvironmentVariable) == "1")
-        {
-            AssertFileStateUnchanged(targetConfigPath, targetConfigBefore);
-            AssertFileStateUnchanged(targetBaselinePath, targetBaselineBefore);
-            return;
-        }
 
         var result = await services.GetRequiredService<ReviewRunner>().RunAsync(config, loaded);
         var published = await services.GetRequiredService<AiNetReview.Core.Reporting.MarkdownReportWriter>()
@@ -90,16 +79,20 @@ public sealed partial class AuditRepositoryIntegrationTests
 
         var runDirectory = Path.Combine(outputDirectory, published.RunId);
         Assert.True(File.Exists(Path.Combine(runDirectory, "index.md")));
-        Assert.True(File.Exists(Path.Combine(runDirectory, "audit-map", "changed-files", "index.md")));
-        Assert.True(File.Exists(Path.Combine(runDirectory, "audit-map", "all-findings", "index.md")));
+        Assert.True(File.Exists(Path.Combine(runDirectory, "audit-map", "index.md")));
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
-        var escapedRepositoryPath = repositoryPath.Replace("\\", "\\\\", StringComparison.Ordinal)
-            .Replace("-", "\\-", StringComparison.Ordinal);
-        Assert.Contains($"- Repository: `{escapedRepositoryPath}`", index, StringComparison.Ordinal);
-        Assert.Contains("audit-map/changed-files/index.md", index, StringComparison.Ordinal);
-        Assert.Contains("audit-map/all-findings/index.md", index, StringComparison.Ordinal);
+        var repositoryMetadata = Assert.Single(index.Split('\n').Where(static line => line.StartsWith("Repository:", StringComparison.Ordinal)));
+        Assert.Equal(
+            $"Repository: {MarkdownReportWriter.FormatCodeSpan(repositoryPath)}; solution: {MarkdownReportWriter.FormatCodeSpan(solution)}.",
+            repositoryMetadata);
+        Assert.Contains("audit-map/index.md", index, StringComparison.Ordinal);
         Assert.Equal(Path.Combine(outputDirectory, published.RunId, "index.md"),
             Path.GetFullPath(Path.Combine(repositoryPath, published.IndexPath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.Equal(targetConfigExisted, File.Exists(targetConfigPath));
+        if (targetConfigBytes is not null)
+        {
+            Assert.Equal(targetConfigBytes, await File.ReadAllBytesAsync(targetConfigPath));
+        }
 
         var publishedFiles = Directory.EnumerateFiles(runDirectory, "*", SearchOption.AllDirectories)
             .Select(path => Path.GetRelativePath(runDirectory, path).Replace('\\', '/'))
@@ -110,8 +103,7 @@ public sealed partial class AuditRepositoryIntegrationTests
             path == "index.md"
                 || (path.StartsWith("audit-map/", StringComparison.Ordinal) && path.EndsWith(".md", StringComparison.Ordinal))
                 || (new[] { "production", "tests", "mixed" }.Any(area =>
-                    path.StartsWith(area + "/changed-files/", StringComparison.Ordinal)
-                    || path.StartsWith(area + "/all-findings/", StringComparison.Ordinal))
+                    path.StartsWith(area + "/", StringComparison.Ordinal))
                     && path.EndsWith(".md", StringComparison.Ordinal)),
             $"Unexpected manual audit artifact: '{path}'."));
         Assert.Contains("index.md", publishedFiles, StringComparer.Ordinal);
@@ -193,17 +185,6 @@ public sealed partial class AuditRepositoryIntegrationTests
         var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         return canonicalPath.Equals(canonicalRoot, comparison)
             || canonicalPath.StartsWith(canonicalRoot + Path.DirectorySeparatorChar, comparison);
-    }
-
-    private static void AssertFileStateUnchanged(string path, byte[]? previousContents)
-    {
-        if (previousContents is null)
-        {
-            Assert.False(File.Exists(path), $"The manual audit created a file in the target repository: '{path}'.");
-            return;
-        }
-
-        Assert.Equal(previousContents, File.ReadAllBytes(path));
     }
 
     [GeneratedRegex("^[a-z0-9][a-z0-9-]{0,63}$", RegexOptions.CultureInvariant, 1000)]

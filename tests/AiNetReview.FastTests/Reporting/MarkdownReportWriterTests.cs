@@ -23,7 +23,7 @@ using Microsoft.CodeAnalysis;
 public sealed class MarkdownReportWriterTests
 {
     [Fact]
-    public async Task WriteAsync_PublishesCycleEvidenceAndUsesOnlyCycleSnapshotWideSelection()
+    public async Task WriteAsync_PublishesAllCycleFindingsInTheSingleCompleteAudit()
     {
         using var temp = TestTempDirectory.Create();
         var analysis = new TypeDependencyCycleCandidatesAnalysis();
@@ -44,7 +44,7 @@ public sealed class MarkdownReportWriterTests
                 new FindingEvidence("C.cs", 1, "T:Sample.C", "Declaration of participating production type.", "class C"),
                 new FindingEvidence("A.cs", 1, "T:Sample.A -> Sample/Sample.csproj::T:Sample.B", "MemberUse dependency in project Sample/Sample.csproj.", "class A"),
             ], symbols, symbols);
-        var reviewFinding = new ReviewFinding(analysis.Descriptor.AnalysisId, finding, ["A.cs", "B.cs", "C.cs"], [], [])
+        var reviewFinding = new ReviewFinding(analysis.Descriptor.AnalysisId, finding, ["A.cs", "B.cs", "C.cs"], [])
         {
             Occurrences = symbols.Select(static symbol => new ReviewFindingOccurrence(symbol, ProjectRole.Production)).ToArray(),
             SubjectOccurrences = symbols.Select(static symbol => new ReviewFindingOccurrence(symbol, ProjectRole.Production)).ToArray(),
@@ -53,38 +53,24 @@ public sealed class MarkdownReportWriterTests
         {
             Findings = [reviewFinding],
             ProjectClassifications = [new ProjectClassification(project, ProjectRole.Production, ProjectClassificationReason.NoTestMarker)],
-            HasCSharpSnapshotChanges = false,
         };
 
-        var unchangedReport = await new MarkdownReportWriter().WriteAsync(config, result);
-        var unchangedDirectory = Path.Combine(config.ResolvedOutputDirectory, unchangedReport.RunId);
-        var all = await File.ReadAllTextAsync(Path.Combine(unchangedDirectory, "production", "all-findings", "type-dependency-cycle-candidates.md"));
-        var changedMap = await File.ReadAllTextAsync(Path.Combine(unchangedDirectory, "audit-map", "changed-files", "index.md"));
-        var allMap = await File.ReadAllTextAsync(Path.Combine(unchangedDirectory, "audit-map", "all-findings", "index.md"));
+        var published = await new MarkdownReportWriter().WriteAsync(config, result);
+        var runDirectory = Path.Combine(config.ResolvedOutputDirectory, published.RunId);
+        var all = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "type-dependency-cycle-candidates.md"));
+        var map = await File.ReadAllTextAsync(Path.Combine(runDirectory, "audit-map", "index.md"));
         Assert.Contains("at least three distinct canonical declaration source files", all, StringComparison.Ordinal);
         Assert.Contains("Sample.A", all, StringComparison.Ordinal);
         Assert.Contains("Sample.B", all, StringComparison.Ordinal);
         Assert.Contains("MemberUse dependency", all, StringComparison.Ordinal);
-        Assert.Contains("A.cs", allMap, StringComparison.Ordinal);
-        Assert.Contains("Findings: **0**", changedMap, StringComparison.Ordinal);
-        Assert.Contains("Findings: **1**", allMap, StringComparison.Ordinal);
-
-        var changedReport = await new MarkdownReportWriter().WriteAsync(config, result with { HasCSharpSnapshotChanges = true });
-        var changedDirectory = Path.Combine(config.ResolvedOutputDirectory, changedReport.RunId);
-        var changedCycle = await File.ReadAllTextAsync(Path.Combine(changedDirectory, "production", "changed-files", "type-dependency-cycle-candidates.md"));
-        var selectedMap = await File.ReadAllTextAsync(Path.Combine(changedDirectory, "audit-map", "changed-files", "index.md"));
-        Assert.Contains("Any added, changed, or deleted C# path selects all current findings", changedCycle, StringComparison.Ordinal);
-        Assert.Contains("Findings: **1**", selectedMap, StringComparison.Ordinal);
-        Assert.Contains("A.cs", changedCycle, StringComparison.Ordinal);
-        Assert.Contains("source unchanged; included snapshot-wide", changedCycle, StringComparison.Ordinal);
-
-        var noBaselineReport = await new MarkdownReportWriter().WriteAsync(config, result with { HasCSharpSnapshotChanges = null });
-        var noBaselineDirectory = Path.Combine(config.ResolvedOutputDirectory, noBaselineReport.RunId);
-        Assert.False(Directory.EnumerateFileSystemEntries(noBaselineDirectory, "changed-files", SearchOption.AllDirectories).Any());
+        Assert.Contains("A.cs", map, StringComparison.Ordinal);
+        Assert.Contains("Findings: **1**", map, StringComparison.Ordinal);
+        Assert.False(Directory.EnumerateDirectories(runDirectory, "changed-files", SearchOption.AllDirectories).Any());
+        Assert.False(Directory.EnumerateDirectories(runDirectory, "all-findings", SearchOption.AllDirectories).Any());
     }
 
     [Fact]
-    public async Task WriteAsync_WithoutBaselinePublishesOnlyCompleteAuditAndDoesNotMentionChangedFiles()
+    public async Task WriteAsync_PublishesSingleCompleteAuditAtCanonicalPaths()
     {
         using var temp = TestTempDirectory.Create();
         var analysis = new ReportAnalysis("fixture-analysis", "Fixture analysis", "default");
@@ -96,7 +82,7 @@ public sealed class MarkdownReportWriterTests
 
         var published = await new MarkdownReportWriter().WriteAsync(config, result);
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, published.RunId);
-        Assert.False(Directory.EnumerateFileSystemEntries(runDirectory, "changed-files", SearchOption.AllDirectories).Any());
+        Assert.False(Directory.EnumerateDirectories(runDirectory, "changed-files", SearchOption.AllDirectories).Any());
         foreach (var path in Directory.EnumerateFiles(runDirectory, "*.md", SearchOption.AllDirectories))
         {
             var content = await File.ReadAllTextAsync(path);
@@ -104,14 +90,15 @@ public sealed class MarkdownReportWriterTests
         }
 
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
-        var map = await File.ReadAllTextAsync(Path.Combine(runDirectory, "audit-map", "all-findings", "index.md"));
-        var area = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "index.md"));
-        var report = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "fixture-analysis.md"));
-        Assert.Contains("all three `all-findings` areas", index, StringComparison.Ordinal);
+        var map = await File.ReadAllTextAsync(Path.Combine(runDirectory, "audit-map", "index.md"));
+        var area = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "index.md"));
+        var report = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "fixture-analysis.md"));
+        Assert.Contains("all findings in the three areas", index, StringComparison.Ordinal);
         Assert.DoesNotContain("changed-files", index, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Findings: **1**", map, StringComparison.Ordinal);
         Assert.Contains("fixture-analysis.md", area, StringComparison.Ordinal);
         Assert.Contains("A concise signal", report, StringComparison.Ordinal);
+        Assert.Equal(5, Directory.GetFiles(runDirectory, "index.md", SearchOption.AllDirectories).Length);
     }
 
     [Fact]
@@ -144,7 +131,7 @@ public sealed class MarkdownReportWriterTests
             var occurrences = subjectSymbols.Select((symbol, occurrenceIndex) =>
                 new ReviewFindingOccurrence(symbol, index == 0 && occurrenceIndex == 1 ? ProjectRole.Tests : ProjectRole.Production)).ToArray();
             findings.Add(new ReviewFinding(analysis.Descriptor.AnalysisId, draft,
-                subjectSymbols.Select(static symbol => symbol.SourcePath).ToArray(), [], index < 20 ? [sourcePath] : [])
+                subjectSymbols.Select(static symbol => symbol.SourcePath).ToArray(), [])
             {
                 Occurrences = occurrences,
                 SubjectOccurrences = index == 39 ? [] : occurrences,
@@ -155,29 +142,23 @@ public sealed class MarkdownReportWriterTests
             new ReviewAnalysisResult(findings.Select(static finding => finding.Finding).ToArray()))])
         {
             Findings = findings,
-            HasCSharpSnapshotChanges = true,
         };
 
         var published = await new MarkdownReportWriter().WriteAsync(config, result);
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, published.RunId);
         var auditMapFiles = Directory.GetFiles(Path.Combine(runDirectory, "audit-map"), "*.md", SearchOption.AllDirectories);
-        Assert.Equal(2, auditMapFiles.Length);
+        Assert.Single(auditMapFiles);
 
-        var changedMap = await File.ReadAllTextAsync(Path.Combine(runDirectory, "audit-map", "changed-files", "index.md"));
-        var allMap = await File.ReadAllTextAsync(Path.Combine(runDirectory, "audit-map", "all-findings", "index.md"));
-        Assert.Contains("Findings: **20**", changedMap, StringComparison.Ordinal);
-        Assert.Contains("Findings: **40**", allMap, StringComparison.Ordinal);
-        Assert.Equal(20, Regex.Matches(changedMap, "finding-[a-f0-9]{24}", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)).Count);
+        var allMap = await File.ReadAllTextAsync(Path.Combine(runDirectory, "audit-map", "index.md"));
         Assert.Equal(40, Regex.Matches(allMap, "finding-[a-f0-9]{24}", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)).Count);
-        Assert.Contains("Full-audit reference:", allMap, StringComparison.Ordinal);
         Assert.Contains("src/Area0/Signal0.cs", allMap, StringComparison.Ordinal);
-        Assert.Contains("production/all-findings/fixture-analysis.md", allMap, StringComparison.Ordinal);
+        Assert.Contains("../production/fixture-analysis.md", allMap, StringComparison.Ordinal);
         Assert.DoesNotContain("tests/Shared/OtherOccurrence.cs:17", allMap, StringComparison.Ordinal);
         Assert.DoesNotContain("Original rationale for signal 0", allMap, StringComparison.Ordinal);
         Assert.Contains("finding-d11ec9a27bbc3347f9bd09b3", allMap, StringComparison.Ordinal);
         var mixedRoute = Assert.Single(allMap.Split('\n').Where(line => line.Contains("finding-d11ec9a27bbc3347f9bd09b3", StringComparison.Ordinal)));
-        Assert.Contains("../../mixed/all-findings/fixture-analysis.md", mixedRoute, StringComparison.Ordinal);
-        var detailReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "mixed", "all-findings", "fixture-analysis.md"));
+        Assert.Contains("../mixed/fixture-analysis.md", mixedRoute, StringComparison.Ordinal);
+        var detailReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "mixed", "fixture-analysis.md"));
         Assert.Contains("tests/Shared/OtherOccurrence.cs:17", detailReport, StringComparison.Ordinal);
         Assert.Contains("Tests", detailReport, StringComparison.Ordinal);
         Assert.DoesNotContain("<a id=", detailReport, StringComparison.Ordinal);
@@ -185,26 +166,26 @@ public sealed class MarkdownReportWriterTests
 
         var orderedMapRoot = temp.GetPath("ordered-map");
         var reversedMapRoot = temp.GetPath("reversed-map");
-        await AuditMapReportWriter.WriteAuditMapAsync(orderedMapRoot, "fixed-run", findings, "all-findings", CancellationToken.None, true);
+        await AuditMapReportWriter.WriteAuditMapAsync(orderedMapRoot, "fixed-run", findings, CancellationToken.None);
         var reversedFindings = findings.AsEnumerable().Reverse().Select(finding => finding with
         {
             SubjectOccurrences = finding.SubjectOccurrences.Reverse().ToArray(),
             SourcePaths = finding.SourcePaths.Reverse().ToArray(),
         }).ToArray();
-        await AuditMapReportWriter.WriteAuditMapAsync(reversedMapRoot, "fixed-run", reversedFindings, "all-findings", CancellationToken.None, true);
+        await AuditMapReportWriter.WriteAuditMapAsync(reversedMapRoot, "fixed-run", reversedFindings, CancellationToken.None);
         Assert.Equal(
-            await File.ReadAllTextAsync(Path.Combine(orderedMapRoot, "audit-map", "all-findings", "index.md")),
-            await File.ReadAllTextAsync(Path.Combine(reversedMapRoot, "audit-map", "all-findings", "index.md")));
+            await File.ReadAllTextAsync(Path.Combine(orderedMapRoot, "audit-map", "index.md")),
+            await File.ReadAllTextAsync(Path.Combine(reversedMapRoot, "audit-map", "index.md")));
     }
 
     private static void AssertAuditMapRoutesResolve(string runDirectory, string map)
     {
-        var routePattern = new Regex(@"^- `(?<path>\.\./\.\./[^`]+\.md)`: (?<ids>finding-[a-f0-9]{24}(?:, finding-[a-f0-9]{24})*)$", RegexOptions.CultureInvariant | RegexOptions.Multiline, TimeSpan.FromSeconds(1));
+        var routePattern = new Regex(@"^- `(?<path>\.\./[^`]+\.md)`: (?<ids>finding-[a-f0-9]{24}(?:, finding-[a-f0-9]{24})*)$", RegexOptions.CultureInvariant | RegexOptions.Multiline, TimeSpan.FromSeconds(1));
         var routes = routePattern.Matches(map);
         Assert.NotEmpty(routes);
         foreach (Match route in routes)
         {
-            var reportPath = Path.GetFullPath(Path.Combine(runDirectory, "audit-map", "all-findings",
+            var reportPath = Path.GetFullPath(Path.Combine(runDirectory, "audit-map",
                 route.Groups["path"].Value.Replace('/', Path.DirectorySeparatorChar)));
             Assert.True(File.Exists(reportPath), $"Audit-map route does not resolve: '{route.Groups["path"].Value}'.");
             foreach (var id in route.Groups["ids"].Value.Split(", ", StringSplitOptions.RemoveEmptyEntries))
@@ -250,9 +231,9 @@ public sealed class MarkdownReportWriterTests
 
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
             new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([finding])),
-        ]) { HasCSharpSnapshotChanges = true });
+        ]) { });
         var markdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId,
-            "production", "all-findings", "structural-duplication-candidates.md"));
+            "production", "structural-duplication-candidates.md"));
 
         Assert.Contains("Structural duplicate: 3 occurrences in 2 executable members; 3 statements / 60 tokens; identical after local/parameter normalization.", markdown, StringComparison.Ordinal);
         Assert.Contains("Containment suppression removes a smaller fragment only when every occurrence is contained in an occurrence of a larger qualifying group; a smaller group with any additional occurrence remains reportable.", markdown, StringComparison.Ordinal);
@@ -297,7 +278,7 @@ public sealed class MarkdownReportWriterTests
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
             new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([finding])),
         ]));
-        var markdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "production", "all-findings", "non-ascii-identifiers.md"));
+        var markdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "production", "non-ascii-identifiers.md"));
 
         Assert.Contains("## Findings", markdown, StringComparison.Ordinal);
         Assert.Contains("BestätigungsService", markdown, StringComparison.Ordinal);
@@ -319,13 +300,12 @@ public sealed class MarkdownReportWriterTests
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
             new ReviewAnalysisRunResult(secondAnalysis.Descriptor.AnalysisId, ReviewAnalysisResult.Empty),
             new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, ReviewAnalysisResult.Empty),
-        ]) { HasCSharpSnapshotChanges = true });
+        ]) { });
 
         var indexBytes = await File.ReadAllBytesAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "index.md"));
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
-        Assert.Equal(9, Directory.GetFiles(runDirectory, "*", SearchOption.AllDirectories).Length);
-        Assert.Contains("No findings in this view.", await File.ReadAllTextAsync(Path.Combine(runDirectory, "audit-map", "changed-files", "index.md")), StringComparison.Ordinal);
-        Assert.Contains("No findings in this view.", await File.ReadAllTextAsync(Path.Combine(runDirectory, "audit-map", "all-findings", "index.md")), StringComparison.Ordinal);
+        Assert.Equal(5, Directory.GetFiles(runDirectory, "*", SearchOption.AllDirectories).Length);
+        Assert.Contains("No findings in this audit.", await File.ReadAllTextAsync(Path.Combine(runDirectory, "audit-map", "index.md")), StringComparison.Ordinal);
         Assert.False(indexBytes.AsSpan().StartsWith(Encoding.UTF8.GetPreamble()));
         Assert.DoesNotContain((byte)'\r', indexBytes);
         var index = Encoding.UTF8.GetString(indexBytes);
@@ -348,13 +328,13 @@ public sealed class MarkdownReportWriterTests
         var analysis = new ReportAnalysis("inactive-analysis", "Inactive Review analysis", "unused");
         var config = CreateConfig(temp.DirectoryPath, false, analysis);
 
-        var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([]) { HasCSharpSnapshotChanges = true });
+        var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([]) { });
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
 
         Assert.Contains("No review was performed because all analyses are disabled.", index, StringComparison.Ordinal);
         Assert.DoesNotContain("No findings were found", index, StringComparison.Ordinal);
-        Assert.Equal(9, Directory.GetFiles(runDirectory, "*", SearchOption.AllDirectories).Length);
+        Assert.Equal(5, Directory.GetFiles(runDirectory, "*", SearchOption.AllDirectories).Length);
     }
 
     [Fact]
@@ -373,18 +353,14 @@ public sealed class MarkdownReportWriterTests
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
             new ReviewAnalysisRunResult(withFindings.Descriptor.AnalysisId, new ReviewAnalysisResult([finding, samePathInAnotherProject])),
             new ReviewAnalysisRunResult(withoutFindings.Descriptor.AnalysisId, ReviewAnalysisResult.Empty),
-        ]) { HasCSharpSnapshotChanges = true });
+        ]) { });
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
-        var analysisReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "has-findings.md"));
-        var changedReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "changed-files", "has-findings.md"));
-
-        Assert.Contains("production/changed-files/index.md", index, StringComparison.Ordinal);
-        Assert.Contains("production/all-findings/index.md", index, StringComparison.Ordinal);
+        var analysisReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "has-findings.md"));
+        Assert.Contains("production/index.md", index, StringComparison.Ordinal);
         Assert.DoesNotContain("Empty Review analysis", index, StringComparison.Ordinal);
-        Assert.True(File.Exists(Path.Combine(runDirectory, "production", "all-findings", "index.md")));
-        Assert.True(File.Exists(Path.Combine(runDirectory, "production", "changed-files", "index.md")));
-        Assert.False(File.Exists(Path.Combine(runDirectory, "production", "all-findings", "empty-analysis.md")));
+        Assert.True(File.Exists(Path.Combine(runDirectory, "production", "index.md")));
+        Assert.False(File.Exists(Path.Combine(runDirectory, "production", "empty-analysis.md")));
         Assert.Contains("## Findings", analysisReport, StringComparison.Ordinal);
         Assert.Contains("Total findings: 2", analysisReport, StringComparison.Ordinal);
         Assert.Contains("Total findings: 2 across 2 projects and 2 source files.", analysisReport, StringComparison.Ordinal);
@@ -394,7 +370,7 @@ public sealed class MarkdownReportWriterTests
         Assert.DoesNotContain("| Project | Source file | Findings |", analysisReport, StringComparison.Ordinal);
         Assert.Contains("Sample", analysisReport, StringComparison.Ordinal);
         Assert.Contains("Other", analysisReport, StringComparison.Ordinal);
-        Assert.Contains("finding-", changedReport, StringComparison.Ordinal);
+        Assert.Contains("finding-", analysisReport, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -417,7 +393,7 @@ public sealed class MarkdownReportWriterTests
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
             new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([first, otherProject, sameSubject, second])),
         ]));
-        var markdownPath = Path.Combine(config.ResolvedOutputDirectory, report.RunId, "production", "all-findings", "fixture-analysis.md");
+        var markdownPath = Path.Combine(config.ResolvedOutputDirectory, report.RunId, "production", "fixture-analysis.md");
         var markdownBytes = await File.ReadAllBytesAsync(markdownPath);
         var markdown = Encoding.UTF8.GetString(markdownBytes);
 
@@ -445,7 +421,7 @@ public sealed class MarkdownReportWriterTests
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
             new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([z, a])),
         ]));
-        var markdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "production", "all-findings", "fixture-analysis.md"));
+        var markdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "production", "fixture-analysis.md"));
 
         Assert.Contains("## Findings", markdown, StringComparison.Ordinal);
         Assert.True(markdown.IndexOf("Subject: `A`", StringComparison.Ordinal) < markdown.IndexOf("Subject: `Z`", StringComparison.Ordinal));
@@ -461,7 +437,7 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("false positive", index, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("evidence", index, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("## Audit scope", index, StringComparison.Ordinal);
-        Assert.DoesNotContain("baseline '", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("baseline", index, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("--cmd", index, StringComparison.Ordinal);
     }
 
@@ -482,9 +458,9 @@ public sealed class MarkdownReportWriterTests
 
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
             new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([finding])),
-        ]) { HasCSharpSnapshotChanges = true });
+        ]) { });
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
-        var markdown = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "duplicate-code-candidates.md"));
+        var markdown = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "duplicate-code-candidates.md"));
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
 
         Assert.Contains("Total findings: 1", markdown, StringComparison.Ordinal);
@@ -496,11 +472,8 @@ public sealed class MarkdownReportWriterTests
         Assert.DoesNotContain("](../../../../", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("<a id=", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("| Project | Source file | Findings |", markdown, StringComparison.Ordinal);
-        Assert.Contains("production/changed-files/index.md", index, StringComparison.Ordinal);
-        Assert.Contains("production/all-findings/index.md", index, StringComparison.Ordinal);
-        Assert.Contains("Agent instruction:** Do not inspect", index, StringComparison.Ordinal);
-        Assert.True(File.Exists(Path.Combine(runDirectory, "production", "all-findings", "duplicate-code-candidates.md")));
-        var allFindingsIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "index.md"));
+        Assert.Contains("production/index.md", index, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(runDirectory, "production", "duplicate-code-candidates.md")));
     }
 
     [Fact]
@@ -535,36 +508,36 @@ public sealed class MarkdownReportWriterTests
 
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
             new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([finding])),
-        ]) { HasCSharpSnapshotChanges = true });
+        ]) { });
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
-        var allFindings = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "indirection-drift-candidates.md"));
-        var changedFiles = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "changed-files", "indirection-drift-candidates.md"));
+        var detail = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "indirection-drift-candidates.md"));
+        var areaIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "index.md"));
 
-        Assert.Contains("Full-audit reference", allFindings, StringComparison.Ordinal);
+        Assert.DoesNotContain("Full-audit reference", detail, StringComparison.Ordinal);
+        Assert.Contains("indirection-drift-candidates.md", areaIndex, StringComparison.Ordinal);
         foreach (var path in new[] { "ZApi.cs", "BService.cs", "ARepository.cs" })
         {
-            Assert.Contains(path, allFindings, StringComparison.Ordinal);
-            Assert.Contains(path, changedFiles, StringComparison.Ordinal);
+            Assert.Contains(path, detail, StringComparison.Ordinal);
         }
-        Assert.Contains("Total findings: 1", allFindings, StringComparison.Ordinal);
-        Assert.Contains("ZApi.cs", allFindings, StringComparison.Ordinal);
-        Assert.Contains("- Forwarding path: 2 forwarding edges across 3 types and 3 files", allFindings, StringComparison.Ordinal);
-        Assert.Contains("  - Forwarding path:", allFindings, StringComparison.Ordinal);
-        Assert.Contains("    - `L1` `ZApi.Run`", allFindings, StringComparison.Ordinal);
-        Assert.True(allFindings.IndexOf("L1", StringComparison.Ordinal)
-            < allFindings.IndexOf("BService.cs:1", StringComparison.Ordinal));
-        Assert.True(allFindings.IndexOf("BService.cs:1", StringComparison.Ordinal)
-            < allFindings.IndexOf("ARepository.cs:1", StringComparison.Ordinal));
-        Assert.DoesNotContain("Cluster:", allFindings, StringComparison.Ordinal);
-        Assert.DoesNotContain("#L1", allFindings, StringComparison.Ordinal);
+        Assert.Contains("Total findings: 1", detail, StringComparison.Ordinal);
+        Assert.Contains("ZApi.cs", detail, StringComparison.Ordinal);
+        Assert.Contains("- Forwarding path: 2 forwarding edges across 3 types and 3 files", detail, StringComparison.Ordinal);
+        Assert.Contains("  - Forwarding path:", detail, StringComparison.Ordinal);
+        Assert.Contains("    - `L1` `ZApi.Run`", detail, StringComparison.Ordinal);
+        Assert.True(detail.IndexOf("L1", StringComparison.Ordinal)
+            < detail.IndexOf("BService.cs:1", StringComparison.Ordinal));
+        Assert.True(detail.IndexOf("BService.cs:1", StringComparison.Ordinal)
+            < detail.IndexOf("ARepository.cs:1", StringComparison.Ordinal));
+        Assert.DoesNotContain("Cluster:", detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("#L1", detail, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task WriteAsync_RendersMissingTestEvidenceCategoriesPathsLimitsAndSnapshotSelection()
+    public async Task WriteAsync_RendersCompleteMissingTestEvidenceAndCrossAnalysisContext()
     {
         using var temp = TestTempDirectory.Create();
         var analysis = new MissingTestEvidenceCandidatesAnalysis();
-        var otherAnalysis = new ReportAnalysis("other-analysis", "Other Analysis", "file based selection");
+        var otherAnalysis = new ReportAnalysis("other-analysis", "Other Analysis", "default");
         var config = CreateConfig(temp.DirectoryPath, analysis, otherAnalysis);
         const string testPathMethodId = "M:Sample.Tests.Tests`1.CallsApi~return";
         const string testPathSource = "Sample.Tests/Test`Root{V1}.cs";
@@ -572,8 +545,7 @@ public sealed class MarkdownReportWriterTests
             "no static test path", new Dictionary<string, double>
             {
                 ["decisionCount"] = 3, ["maxDecisionNesting"] = 2, ["attributionUncertain"] = 1,
-            },
-            [new FindingEvidence("Sample/NoPath.cs", 2, "Declaration", "Eligible candidate", "Run")]);
+            }, [new FindingEvidence("Sample/NoPath.cs", 2, "Declaration", "Eligible candidate", "Run")]);
         var indirect = new FindingDraft("Sample/Sample.csproj", "Sample/Indirect.cs", "M:Sample.Indirect.Run", "indirect-test-path-only", 4,
             "indirect test path only", new Dictionary<string, double>
             {
@@ -589,15 +561,15 @@ public sealed class MarkdownReportWriterTests
             [new FindingSymbol("Sample.Tests/Sample.Tests.csproj", testPathSource, testPathMethodId, 3),
                 new FindingSymbol("Sample/Sample.csproj", "Sample/Api.cs", "M:Sample.Api.Run", 8),
                 new FindingSymbol("Sample/Sample.csproj", "Sample/Indirect.cs", "M:Sample.Indirect.Run", 4)]);
-        var otherFinding = Finding("Sample/Other.cs", 1, "M:Sample.Other.Run", "unchanged analysis finding", "Run", "case");
+        var otherFinding = Finding("Sample/Other.cs", 1, "M:Sample.Other.Run", "other analysis finding", "Run", "case");
         var result = new ReviewRunResult([
             new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([noPath, indirect])),
             new ReviewAnalysisRunResult(otherAnalysis.Descriptor.AnalysisId, new ReviewAnalysisResult([otherFinding])),
         ])
         {
             Findings = [
-                new ReviewFinding(analysis.Descriptor.AnalysisId, noPath, ["Sample/NoPath.cs"], [], ["Sample/NoPath.cs"]),
-                new ReviewFinding(analysis.Descriptor.AnalysisId, indirect, ["Sample/Indirect.cs", "Sample/Api.cs", "Sample.Tests/Test`Root{V1}.cs"], [], ["Sample.Tests/Tests.cs"])
+                new ReviewFinding(analysis.Descriptor.AnalysisId, noPath, ["Sample/NoPath.cs"], []),
+                new ReviewFinding(analysis.Descriptor.AnalysisId, indirect, ["Sample/Indirect.cs", "Sample/Api.cs", testPathSource], [])
                 {
                     Occurrences = [
                         new ReviewFindingOccurrence(new FindingSymbol("Sample.Tests/Sample.Tests.csproj", testPathSource, testPathMethodId, 3), ProjectRole.Tests),
@@ -606,173 +578,83 @@ public sealed class MarkdownReportWriterTests
                     ],
                     SubjectOccurrences = [new ReviewFindingOccurrence(new FindingSymbol("Sample/Sample.csproj", "Sample/Indirect.cs", "M:Sample.Indirect.Run", 4), ProjectRole.Production)],
                 },
-                new ReviewFinding(otherAnalysis.Descriptor.AnalysisId, otherFinding, ["Sample/Other.cs"], [], []),
+                new ReviewFinding(otherAnalysis.Descriptor.AnalysisId, otherFinding, ["Sample/Other.cs"], []),
             ],
             ProjectClassifications = [
                 new ProjectClassification("Sample/Sample.csproj", ProjectRole.Production, ProjectClassificationReason.NoTestMarker),
                 new ProjectClassification("Sample.Tests/Sample.Tests.csproj", ProjectRole.Tests, ProjectClassificationReason.ProjectNameSuffix),
             ],
-            HasCSharpSnapshotChanges = false,
         };
 
         var report = await new MarkdownReportWriter().WriteAsync(config, result);
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
-        var allFindings = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "missing-test-evidence-candidates.md"));
-        var changedIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "changed-files", "index.md"));
-        var changedAuditMap = await File.ReadAllTextAsync(Path.Combine(runDirectory, "audit-map", "changed-files", "index.md"));
-        var allAuditMap = await File.ReadAllTextAsync(Path.Combine(runDirectory, "audit-map", "all-findings", "index.md"));
+        var detail = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "missing-test-evidence-candidates.md"));
         var rootIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
+        var areaIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "index.md"));
+        var auditMap = await File.ReadAllTextAsync(Path.Combine(runDirectory, "audit-map", "index.md"));
 
-        var noPathSignal = Assert.Single(allFindings.Split('\n').Where(static line => line.Contains("no static test path", StringComparison.Ordinal)));
-        var indirectSignal = Assert.Single(allFindings.Split('\n').Where(static line => line.Contains("indirect test path only", StringComparison.Ordinal)));
+        var noPathSignal = Assert.Single(detail.Split('\n').Where(static line => line.Contains("no static test path", StringComparison.Ordinal)));
+        var indirectSignal = Assert.Single(detail.Split('\n').Where(static line => line.Contains("indirect test path only", StringComparison.Ordinal)));
         Assert.Contains("attribution uncertain", noPathSignal, StringComparison.Ordinal);
         Assert.DoesNotContain("attribution uncertain", indirectSignal, StringComparison.Ordinal);
-        Assert.Contains("A production function meets the nontrivial gate when `decisionCount >= minDecisionCount OR maxDecisionNesting >= minDecisionNesting`.", allFindings, StringComparison.Ordinal);
-        Assert.Contains("an indirect-path-only function must also meet `decisionCount >= minIndirectDecisionCount OR maxDecisionNesting >= minIndirectDecisionNesting`", allFindings, StringComparison.Ordinal);
-        Assert.Contains("each switch section or switch-expression arm once", allFindings, StringComparison.Ordinal);
-        Assert.Contains("`&&`, `||`, and `??` do not add decisions", allFindings, StringComparison.Ordinal);
-        Assert.Contains("Shortest resolved test path:", allFindings, StringComparison.Ordinal);
-        Assert.Contains("Tests`1.CallsApi", allFindings, StringComparison.Ordinal);
-        Assert.DoesNotContain("~return", allFindings, StringComparison.Ordinal);
-        var shortestPathLine = Assert.Single(allFindings.Split('\n').Where(static line => line.Contains("Shortest resolved test path:", StringComparison.Ordinal)));
-        var testPathPosition = shortestPathLine.IndexOf(testPathSource + ":3", StringComparison.Ordinal);
-        var generatedPosition = shortestPathLine.IndexOf("Sample/Generated/Worker.g.cs:2", StringComparison.Ordinal);
-        var apiPosition = shortestPathLine.IndexOf("Sample/Api.cs:8", StringComparison.Ordinal);
-        var subjectPosition = shortestPathLine.IndexOf("L4", StringComparison.Ordinal);
-        Assert.True(testPathPosition >= 0 && testPathPosition < generatedPosition
-            && generatedPosition < apiPosition && apiPosition < subjectPosition, shortestPathLine);
-        Assert.Contains("tests", shortestPathLine, StringComparison.Ordinal);
-        Assert.Contains("production", shortestPathLine, StringComparison.Ordinal);
-        Assert.Contains("Reflection, dependency injection, external test projects, dynamic dispatch, branch execution, and custom test discovery", allFindings, StringComparison.Ordinal);
-        Assert.Contains("No findings in this view.", changedIndex, StringComparison.Ordinal);
-        Assert.Contains("Findings: **0**", changedAuditMap, StringComparison.Ordinal);
-        Assert.Contains("Findings: **3**", allAuditMap, StringComparison.Ordinal);
-        Assert.Contains("shows every current finding when any C# path was added, changed, or deleted", rootIndex, StringComparison.Ordinal);
-        Assert.True(File.Exists(Path.Combine(runDirectory, "production", "all-findings", "index.md")));
-        Assert.False(File.Exists(Path.Combine(runDirectory, "production", "changed-files", "missing-test-evidence-candidates.md")));
-        Assert.True(File.Exists(Path.Combine(runDirectory, "production", "all-findings", "other-analysis.md")));
-
-        var changedSnapshotReport = await new MarkdownReportWriter().WriteAsync(config, result with { HasCSharpSnapshotChanges = true });
-        var changedSnapshotDirectory = Path.Combine(config.ResolvedOutputDirectory, changedSnapshotReport.RunId);
-        var selected = await File.ReadAllTextAsync(Path.Combine(changedSnapshotDirectory, "production", "changed-files", "missing-test-evidence-candidates.md"));
-        var selectedIndex = await File.ReadAllTextAsync(Path.Combine(changedSnapshotDirectory, "production", "changed-files", "index.md"));
-        var selectedAuditMap = await File.ReadAllTextAsync(Path.Combine(changedSnapshotDirectory, "audit-map", "changed-files", "index.md"));
-        Assert.Contains("Findings: **2**", selectedAuditMap, StringComparison.Ordinal);
-        Assert.Contains("no static test path", selected, StringComparison.Ordinal);
-        Assert.Contains("indirect test path only", selected, StringComparison.Ordinal);
-        Assert.Contains("Changed-files selection is snapshot-wide because changes to test roots or the call graph can alter associations in unchanged production files.", selected, StringComparison.Ordinal);
-        Assert.Contains("Any added, changed, or deleted C# path selects all current findings", selected, StringComparison.Ordinal);
-        Assert.Contains("Sample/NoPath.cs", selected, StringComparison.Ordinal);
-        Assert.Contains("Sample/Indirect.cs", selected, StringComparison.Ordinal);
-        Assert.Contains("source new or changed", selected, StringComparison.Ordinal);
-        Assert.Contains("source unchanged; included snapshot-wide", selected, StringComparison.Ordinal);
-        Assert.DoesNotContain("Other Analysis", selectedIndex, StringComparison.Ordinal);
-
-        var withoutBaselineFindings = result.Findings.Select(static finding => finding with { ChangedSourcePaths = finding.SourcePaths }).ToArray();
-        var withoutBaselineReport = await new MarkdownReportWriter().WriteAsync(config, result with
-        {
-            Findings = withoutBaselineFindings,
-            HasCSharpSnapshotChanges = null,
-        });
-        var withoutBaselineDirectory = Path.Combine(config.ResolvedOutputDirectory, withoutBaselineReport.RunId);
-        var withoutBaseline = await File.ReadAllTextAsync(Path.Combine(withoutBaselineDirectory, "production", "all-findings", "missing-test-evidence-candidates.md"));
-        Assert.Contains("Sample/NoPath.cs", withoutBaseline, StringComparison.Ordinal);
-        Assert.Contains("Sample/Indirect.cs", withoutBaseline, StringComparison.Ordinal);
-        Assert.False(Directory.EnumerateFileSystemEntries(withoutBaselineDirectory, "changed-files", SearchOption.AllDirectories).Any());
-
-        var allUncertainFindings = result.Findings.Select(static reviewFinding =>
-        {
-            var finding = reviewFinding.Finding;
-            var metrics = finding.Metrics.ToDictionary(static pair => pair.Key, static pair => pair.Value);
-            metrics["attributionUncertain"] = 1;
-            return reviewFinding with
-            {
-                Finding = new FindingDraft(finding.ProjectPath, finding.SourcePath, finding.SubjectId, finding.Discriminator,
-                    finding.StartLine, finding.Rationale, metrics, finding.Evidence, finding.RelatedSymbols, finding.SubjectSymbols),
-            };
-        }).ToArray();
-        var allUncertainReport = await new MarkdownReportWriter().WriteAsync(config, result with
-        {
-            Findings = allUncertainFindings,
-        });
-        var allUncertainDirectory = Path.Combine(config.ResolvedOutputDirectory, allUncertainReport.RunId);
-        var allUncertain = await File.ReadAllTextAsync(Path.Combine(allUncertainDirectory, "production", "all-findings", "missing-test-evidence-candidates.md"));
-        Assert.Contains("Attribution uncertain: every finding in this report has uncertain static test attribution.", allUncertain, StringComparison.Ordinal);
-        Assert.DoesNotContain("; attribution uncertain", allUncertain, StringComparison.Ordinal);
+        Assert.Contains("A production function meets the nontrivial gate when `decisionCount >= minDecisionCount OR maxDecisionNesting >= minDecisionNesting`.", detail, StringComparison.Ordinal);
+        Assert.Contains("an indirect-path-only function must also meet `decisionCount >= minIndirectDecisionCount OR maxDecisionNesting >= minIndirectDecisionNesting`", detail, StringComparison.Ordinal);
+        Assert.Contains("Shortest resolved test path:", detail, StringComparison.Ordinal);
+        Assert.Contains("Tests`1.CallsApi", detail, StringComparison.Ordinal);
+        Assert.Contains("Sample/Generated/Worker.g.cs:2", detail, StringComparison.Ordinal);
+        Assert.Contains("Reflection, dependency injection, external test projects, dynamic dispatch, branch execution, and custom test discovery", detail, StringComparison.Ordinal);
+        Assert.Contains("Findings: **3**", auditMap, StringComparison.Ordinal);
+        Assert.Contains("production/index.md", rootIndex, StringComparison.Ordinal);
+        Assert.Contains("other-analysis.md", areaIndex, StringComparison.Ordinal);
+        Assert.Contains("missing-test-evidence-candidates.md", areaIndex, StringComparison.Ordinal);
+        Assert.DoesNotContain("changed-files", rootIndex, StringComparison.OrdinalIgnoreCase);
+        Assert.False(Directory.EnumerateDirectories(runDirectory, "all-findings", SearchOption.AllDirectories).Any());
     }
 
     [Fact]
-    public async Task WriteAsync_SeparatesChangedViewAndLinksRelatedFindingsAcrossAnalyses()
+    public async Task WriteAsync_LinksRelatedFindingsAcrossAnalysesInTheCompleteAudit()
     {
         using var temp = TestTempDirectory.Create();
-        var changedAnalysis = new ReportAnalysis("alpha-analysis", "Alpha", "active");
-        var changedRelatedAnalysis = new ReportAnalysis("beta-analysis", "Beta", "active");
-        var unchangedRelatedAnalysis = new ReportAnalysis("gamma-analysis", "Gamma", "active");
-        var config = CreateConfig(temp.DirectoryPath, changedAnalysis, changedRelatedAnalysis, unchangedRelatedAnalysis);
+        var alpha = new ReportAnalysis("alpha-analysis", "Alpha", "active");
+        var beta = new ReportAnalysis("beta-analysis", "Beta", "active");
+        var gamma = new ReportAnalysis("gamma-analysis", "Gamma", "active");
+        var config = CreateConfig(temp.DirectoryPath, alpha, beta, gamma);
         var symbol = new FindingSymbol("Sample/Sample.csproj", "Sample.cs", "M:Sample.Run", 3);
-        var changedDraft = new FindingDraft("Sample/Sample.csproj", "Sample.cs", "M:Sample.Run", "complexity", 3, "signal",
+        var alphaDraft = new FindingDraft("Sample/Sample.csproj", "Sample.cs", "M:Sample.Run", "complexity", 3, "signal",
             new Dictionary<string, double>(), [new FindingEvidence("Sample.cs", 3, "Source", "detail", "Run")], [symbol]);
-        var unchangedDraft = new FindingDraft("Sample/Sample.csproj", "Other.cs", "M:Sample.Run", "dead-code", 8, "signal",
+        var betaDraft = new FindingDraft("Sample/Sample.csproj", "Other.cs", "M:Sample.Run", "dead-code", 8, "signal",
             new Dictionary<string, double>(), [new FindingEvidence("Other.cs", 8, "Source", "detail", "Run")], [symbol]);
-        var outsideDraft = new FindingDraft("Sample/Sample.csproj", "Outside.cs", "M:Sample.Run", "outside", 11, "signal",
+        var gammaDraft = new FindingDraft("Sample/Sample.csproj", "Outside.cs", "M:Sample.Run", "outside", 11, "signal",
             new Dictionary<string, double>(), [new FindingEvidence("Outside.cs", 11, "Source", "detail", "Run")], [symbol]);
-        var changedFinding = new ReviewFinding("alpha-analysis", changedDraft, ["Sample.cs"],
-            [
-                new ReviewFindingReference("beta-analysis", unchangedDraft.ProjectPath, unchangedDraft.SourcePath, unchangedDraft.SubjectId,
-                    unchangedDraft.Discriminator, "Sample.cs", "M:Sample.Run", 3),
-                new ReviewFindingReference("gamma-analysis", outsideDraft.ProjectPath, outsideDraft.SourcePath, outsideDraft.SubjectId,
-                    outsideDraft.Discriminator, "Sample.cs", "M:Sample.Run", 3),
-            ], ["Sample.cs"]);
-        var changedRelatedFinding = new ReviewFinding("beta-analysis", unchangedDraft, ["Other.cs"], [], ["Sample.cs"]);
-        var outsideFinding = new ReviewFinding("gamma-analysis", outsideDraft, ["Outside.cs"], [], []);
+        var alphaFinding = new ReviewFinding("alpha-analysis", alphaDraft, ["Sample.cs"], [
+            new ReviewFindingReference("beta-analysis", betaDraft.ProjectPath, betaDraft.SourcePath, betaDraft.SubjectId,
+                betaDraft.Discriminator, "Sample.cs", "M:Sample.Run", 3),
+            new ReviewFindingReference("gamma-analysis", gammaDraft.ProjectPath, gammaDraft.SourcePath, gammaDraft.SubjectId,
+                gammaDraft.Discriminator, "Sample.cs", "M:Sample.Run", 3),
+        ]);
+        var betaFinding = new ReviewFinding("beta-analysis", betaDraft, ["Other.cs"], []);
+        var gammaFinding = new ReviewFinding("gamma-analysis", gammaDraft, ["Outside.cs"], []);
         var result = new ReviewRunResult([
-            new ReviewAnalysisRunResult("alpha-analysis", new ReviewAnalysisResult([changedDraft])),
-            new ReviewAnalysisRunResult("beta-analysis", new ReviewAnalysisResult([unchangedDraft])),
-            new ReviewAnalysisRunResult("gamma-analysis", new ReviewAnalysisResult([outsideDraft])),
-        ]) { Findings = [changedFinding, changedRelatedFinding, outsideFinding], HasCSharpSnapshotChanges = true };
+            new ReviewAnalysisRunResult("alpha-analysis", new ReviewAnalysisResult([alphaDraft])),
+            new ReviewAnalysisRunResult("beta-analysis", new ReviewAnalysisResult([betaDraft])),
+            new ReviewAnalysisRunResult("gamma-analysis", new ReviewAnalysisResult([gammaDraft])),
+        ]) { Findings = [alphaFinding, betaFinding, gammaFinding] };
 
         var report = await new MarkdownReportWriter().WriteAsync(config, result);
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
-        var changedIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "changed-files", "index.md"));
-        var completeIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "index.md"));
-        var changedReportPath = Path.Combine(runDirectory, "production", "changed-files", "alpha-analysis.md");
-        var changedReport = await File.ReadAllTextAsync(changedReportPath);
-        var completeReportPath = Path.Combine(runDirectory, "production", "all-findings", "beta-analysis.md");
+        var alphaReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "alpha-analysis.md"));
+        var betaReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "beta-analysis.md"));
+        var gammaReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "gamma-analysis.md"));
+        var auditMap = await File.ReadAllTextAsync(Path.Combine(runDirectory, "audit-map", "index.md"));
 
-        Assert.Contains("alpha-analysis.md", changedIndex, StringComparison.Ordinal);
-        Assert.Contains("beta-analysis.md", changedIndex, StringComparison.Ordinal);
-        Assert.DoesNotContain("Gamma", changedIndex, StringComparison.Ordinal);
-        Assert.Contains("alpha-analysis.md", completeIndex, StringComparison.Ordinal);
-        Assert.Contains("beta-analysis.md", completeIndex, StringComparison.Ordinal);
-        Assert.Contains("gamma-analysis.md", completeIndex, StringComparison.Ordinal);
-        Assert.True(File.Exists(completeReportPath));
-        Assert.Contains("Sample.Run", changedReport, StringComparison.Ordinal);
-        Assert.Contains("beta-analysis.md", changedReport, StringComparison.Ordinal);
-        Assert.Contains("gamma-analysis.md", changedReport, StringComparison.Ordinal);
-        var completeReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "alpha-analysis.md"));
-        Assert.Contains("beta-analysis.md", completeReport, StringComparison.Ordinal);
-        Assert.Contains("gamma-analysis.md", completeReport, StringComparison.Ordinal);
-        Assert.DoesNotContain("all-findings reference", completeReport, StringComparison.Ordinal);
-        var allAuditMap = await File.ReadAllTextAsync(Path.Combine(runDirectory, "audit-map", "all-findings", "index.md"));
-        var betaRoute = Assert.Single(allAuditMap.Split('\n').Where(line => line.Contains("beta-analysis.md", StringComparison.Ordinal)));
-        var gammaRoute = Assert.Single(allAuditMap.Split('\n').Where(line => line.Contains("gamma-analysis.md", StringComparison.Ordinal)));
-        var betaId = Regex.Match(betaRoute, @"finding-[a-f0-9]{24}", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)).Value;
-        var gammaId = Regex.Match(gammaRoute, @"finding-[a-f0-9]{24}", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)).Value;
-        Assert.NotEmpty(betaId);
-        Assert.NotEmpty(gammaId);
-        Assert.Contains(betaId, changedReport, StringComparison.Ordinal);
-        Assert.Contains(gammaId, changedReport, StringComparison.Ordinal);
-        Assert.Contains("beta-analysis.md", changedReport, StringComparison.Ordinal);
-        Assert.Contains("gamma-analysis.md", changedReport, StringComparison.Ordinal);
-        var betaReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "changed-files", "beta-analysis.md"));
-        var gammaReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "gamma-analysis.md"));
-        Assert.Contains(betaId, betaReport, StringComparison.Ordinal);
-        Assert.Contains(gammaId, gammaReport, StringComparison.Ordinal);
-        var completeBeforeEdit = await File.ReadAllTextAsync(completeReportPath);
-        await File.WriteAllTextAsync(changedReportPath, changedReport.Replace("M:Sample.Run", "handled", StringComparison.Ordinal));
-        Assert.Equal(completeBeforeEdit, await File.ReadAllTextAsync(completeReportPath));
-
-        var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
+        Assert.Contains("beta-analysis.md", alphaReport, StringComparison.Ordinal);
+        Assert.Contains("gamma-analysis.md", alphaReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("all-findings reference", alphaReport, StringComparison.Ordinal);
+        Assert.Contains("finding-", betaReport, StringComparison.Ordinal);
+        Assert.Contains("finding-", gammaReport, StringComparison.Ordinal);
+        Assert.Contains("../production/alpha-analysis.md", auditMap, StringComparison.Ordinal);
+        Assert.Contains("../production/beta-analysis.md", auditMap, StringComparison.Ordinal);
+        Assert.Contains("../production/gamma-analysis.md", auditMap, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -791,19 +673,19 @@ public sealed class MarkdownReportWriterTests
             "test-only signal", new Dictionary<string, double>(), [new FindingEvidence(test.SourcePath, 8, "Test", "detail", "Run")], [test]);
         var mixedFinding = new FindingDraft(production.ProjectPath, production.SourcePath, production.SymbolId, "mixed-cluster", 4,
             "cross-role cluster", new Dictionary<string, double>(), [new FindingEvidence(production.SourcePath, 4, "Member", "detail", "Run")], [production, test]);
-        var prodReview = new ReviewFinding(sizeAnalysis.Descriptor.AnalysisId, productionFinding, [production.SourcePath, test.SourcePath], [], [production.SourcePath])
+        var prodReview = new ReviewFinding(sizeAnalysis.Descriptor.AnalysisId, productionFinding, [production.SourcePath, test.SourcePath], [])
         {
             Occurrences = [new ReviewFindingOccurrence(production, ProjectRole.Production)],
             SubjectOccurrences = [new ReviewFindingOccurrence(production, ProjectRole.Production)],
         };
-        var testReview = new ReviewFinding(flowAnalysis.Descriptor.AnalysisId, testFinding, [test.SourcePath], [], [test.SourcePath])
+        var testReview = new ReviewFinding(flowAnalysis.Descriptor.AnalysisId, testFinding, [test.SourcePath], [])
         {
             Occurrences = [new ReviewFindingOccurrence(test, ProjectRole.Tests)],
             SubjectOccurrences = [new ReviewFindingOccurrence(test, ProjectRole.Tests)],
         };
         var mixedReview = new ReviewFinding(duplicateAnalysis.Descriptor.AnalysisId, mixedFinding, [production.SourcePath], [
             new ReviewFindingReference(flowAnalysis.Descriptor.AnalysisId, test.ProjectPath, test.SourcePath, test.SymbolId, "test-case", test.SourcePath, test.SymbolId, test.Line),
-        ], [production.SourcePath])
+        ])
         {
             Occurrences = [new ReviewFindingOccurrence(production, ProjectRole.Production), new ReviewFindingOccurrence(test, ProjectRole.Tests)],
             SubjectOccurrences = [new ReviewFindingOccurrence(production, ProjectRole.Production), new ReviewFindingOccurrence(test, ProjectRole.Tests)],
@@ -823,34 +705,32 @@ public sealed class MarkdownReportWriterTests
                 new ProjectClassification("tests/Empty.Tests.csproj", ProjectRole.Tests, ProjectClassificationReason.ProjectFileNameSuffix),
             ],
             Findings = [prodReview, testReview, mixedReview],
-            HasCSharpSnapshotChanges = true,
         };
 
         var report = await new MarkdownReportWriter().WriteAsync(config, result);
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
         foreach (var area in new[] { "production", "tests", "mixed" })
-        foreach (var view in new[] { "changed-files", "all-findings" })
         {
-            Assert.True(File.Exists(Path.Combine(runDirectory, area, view, "index.md")));
+            Assert.True(File.Exists(Path.Combine(runDirectory, area, "index.md")));
         }
 
-        Assert.True(File.Exists(Path.Combine(runDirectory, "production", "changed-files", "code-size-candidates.md")));
-        Assert.True(File.Exists(Path.Combine(runDirectory, "tests", "changed-files", "flow-analysis.md")));
-        Assert.True(File.Exists(Path.Combine(runDirectory, "mixed", "changed-files", "duplicate-analysis.md")));
-        Assert.False(File.Exists(Path.Combine(runDirectory, "production", "changed-files", "duplicate-analysis.md")));
-        Assert.Contains("| production | 1 | 1 |", index, StringComparison.Ordinal);
-        Assert.Contains("| tests | 1 | 1 |", index, StringComparison.Ordinal);
-        Assert.Contains("| mixed | 1 | 1 |", index, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(runDirectory, "production", "code-size-candidates.md")));
+        Assert.True(File.Exists(Path.Combine(runDirectory, "tests", "flow-analysis.md")));
+        Assert.True(File.Exists(Path.Combine(runDirectory, "mixed", "duplicate-analysis.md")));
+        Assert.False(File.Exists(Path.Combine(runDirectory, "production", "duplicate-analysis.md")));
+        Assert.Contains("| production | 1 |", index, StringComparison.Ordinal);
+        Assert.Contains("| tests | 1 |", index, StringComparison.Ordinal);
+        Assert.Contains("| mixed | 1 |", index, StringComparison.Ordinal);
         Assert.Contains("## Loaded C# projects", index, StringComparison.Ordinal);
         Assert.Contains("ProjectNameSuffix", index, StringComparison.Ordinal);
         Assert.Contains("ProjectFileNameSuffix", index, StringComparison.Ordinal);
         Assert.Contains("tests/Unknown.csproj", index, StringComparison.Ordinal);
         Assert.Contains("Unresolved provider type", index, StringComparison.Ordinal);
-        var productionReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "changed-files", "code-size-candidates.md"));
+        var productionReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "code-size-candidates.md"));
         Assert.Contains("Effective options:", productionReport, StringComparison.Ordinal);
         Assert.DoesNotContain("Finding origin:", productionReport, StringComparison.Ordinal);
-        var mixedReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "mixed", "changed-files", "duplicate-analysis.md"));
+        var mixedReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "mixed", "duplicate-analysis.md"));
         Assert.DoesNotContain("Finding origin:", mixedReport, StringComparison.Ordinal);
         Assert.Contains("L4", mixedReport, StringComparison.Ordinal);
         Assert.Contains("tests/ProductTests.cs:8", mixedReport, StringComparison.Ordinal);

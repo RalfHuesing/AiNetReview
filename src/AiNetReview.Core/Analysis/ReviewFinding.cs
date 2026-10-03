@@ -9,8 +9,7 @@ public sealed record ReviewFinding(
     string AnalysisId,
     FindingDraft Finding,
     IReadOnlyList<string> SourcePaths,
-    IReadOnlyList<ReviewFindingReference> RelatedFindings,
-    IReadOnlyList<string> ChangedSourcePaths)
+    IReadOnlyList<ReviewFindingReference> RelatedFindings)
 {
     /// <summary>Project roles of all related symbols, including context symbols; these roles do not alone determine finding origin.</summary>
     public IReadOnlyList<ReviewFindingOccurrence> Occurrences { get; init; } = Array.Empty<ReviewFindingOccurrence>();
@@ -18,7 +17,6 @@ public sealed record ReviewFinding(
     /// <summary>Project roles of the symbols that determine the finding's report area.</summary>
     public IReadOnlyList<ReviewFindingOccurrence> SubjectOccurrences { get; init; } = Array.Empty<ReviewFindingOccurrence>();
 
-    public bool IsChanged => ChangedSourcePaths.Count > 0;
 }
 
 /// <summary>A represented symbol or occurrence together with its centrally classified project role.</summary>

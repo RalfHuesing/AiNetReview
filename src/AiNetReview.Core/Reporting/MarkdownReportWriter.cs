@@ -71,11 +71,8 @@ public sealed class MarkdownReportWriter
         }
 
         var findings = GetFindings(result);
-        var hasBaseline = result.HasCSharpSnapshotChanges.HasValue;
-        var changedFindings = findings.Where(finding => IsChangedForReport(finding, result)).ToArray();
         ValidateFindingIds(findings);
-        var changedFindingIds = GetFindingIds(changedFindings);
-        var allFindingIds = GetFindingIds(findings);
+        var findingIds = GetFindingIds(findings);
         Directory.CreateDirectory(config.ResolvedOutputDirectory);
 
         while (true)
@@ -95,50 +92,28 @@ public sealed class MarkdownReportWriter
                 foreach (var configuredAnalysis in analyses)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var allFindings = findings.Where(finding => finding.AnalysisId == configuredAnalysis.AnalysisId).ToArray();
-                    var analysisChangedFindings = changedFindings.Where(finding => finding.AnalysisId == configuredAnalysis.AnalysisId).ToArray();
                     foreach (var area in FindingAreas)
                     {
-                        var changedArea = analysisChangedFindings.Where(finding => GetFindingArea(finding) == area).ToArray();
-                        var allArea = allFindings.Where(finding => GetFindingArea(finding) == area).ToArray();
-                        if (hasBaseline)
-                        {
-                            await WriteViewAnalysisAsync(temporaryPath, area, "changed-files", configuredAnalysis, changedArea, changedFindings, findings,
-                                    changedFindingIds, hasBaseline: true, cancellationToken)
-                                .ConfigureAwait(false);
-                        }
-                        await WriteViewAnalysisAsync(temporaryPath, area, "all-findings", configuredAnalysis, allArea, findings, findings,
-                                allFindingIds, hasBaseline, cancellationToken)
+                        var areaFindings = findings.Where(finding => finding.AnalysisId == configuredAnalysis.AnalysisId
+                            && GetFindingArea(finding) == area).ToArray();
+                        await WriteAnalysisAsync(temporaryPath, area, configuredAnalysis, areaFindings, findings,
+                                findingIds, cancellationToken)
                             .ConfigureAwait(false);
                     }
                 }
 
                 foreach (var area in FindingAreas)
                 {
-                    if (hasBaseline)
-                    {
-                        await WriteViewIndexAsync(temporaryPath, area, "changed-files", "Changed files", analyses,
-                                changedFindings.Where(finding => GetFindingArea(finding) == area).ToArray(),
-                                requiresFullAudit: false, cancellationToken)
-                            .ConfigureAwait(false);
-                    }
-                    await WriteViewIndexAsync(temporaryPath, area, "all-findings", "All findings", analyses,
-                            findings.Where(finding => GetFindingArea(finding) == area).ToArray(),
-                            requiresFullAudit: hasBaseline, cancellationToken)
+                    await WriteAreaIndexAsync(temporaryPath, area, analyses,
+                            findings.Where(finding => GetFindingArea(finding) == area).ToArray(), cancellationToken)
                         .ConfigureAwait(false);
                 }
 
-                if (hasBaseline)
-                {
-                    await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, changedFindings,
-                        "changed-files", cancellationToken, true).ConfigureAwait(false);
-                }
-                await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, findings,
-                    "all-findings", cancellationToken, hasBaseline).ConfigureAwait(false);
+                await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, findings, cancellationToken).ConfigureAwait(false);
 
                 cancellationToken.ThrowIfCancellationRequested();
                 var indexPath = Path.Combine(temporaryPath, "index.md");
-                await WriteUtf8Async(indexPath, FormatIndex(runId, config, config.AllAnalyses.OrderBy(static item => item.AnalysisId, StringComparer.Ordinal).ToArray(), result, findings, changedFindings, hasBaseline), cancellationToken)
+                await WriteUtf8Async(indexPath, FormatIndex(runId, config, config.AllAnalyses.OrderBy(static item => item.AnalysisId, StringComparer.Ordinal).ToArray(), result, findings), cancellationToken)
                     .ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (beforePublication is not null)
@@ -233,9 +208,7 @@ public sealed class MarkdownReportWriter
         ReviewConfig config,
         ConfiguredReviewAnalysis[] analyses,
         ReviewRunResult result,
-        IReadOnlyList<ReviewFinding> findings,
-        IReadOnlyList<ReviewFinding> changedFindings,
-        bool hasBaseline)
+        IReadOnlyList<ReviewFinding> findings)
     {
         var builder = new StringBuilder();
         builder.Append("# AiNetReview – ").Append(runId).Append("\n\n")
@@ -243,86 +216,30 @@ public sealed class MarkdownReportWriter
             .Append(FormatCodeSpan(config.SolutionPath)).Append(".\n\n")
             .Append("## Review guidance\n\n")
             .Append("Review each finding in scope against source, callers, contracts, tests, and repository design. Classify with concrete evidence as false positive, acceptable design, needs clarification, or actionable. A signal alone does not require a change; avoid metric-driven refactoring. Findings describe static evidence in the loaded snapshot, not execution, runtime coverage, test quality, or defects.\n\n")
-            .Append("The normal unbounded scope is all three ").Append(hasBaseline ? "changed-files" : "all-findings")
-            .Append(" areas. Name any assigned areas left unreviewed; related findings may be assessed together.\n\n");
+            .Append("A complete audit covers all findings in the three areas below. Name any assigned areas left unreviewed; related findings may be assessed together.\n\n")
+            .Append("## Audit map\n\n")
+            .Append("Audit map: `audit-map/index.md`; findings are grouped by project and representative source file. Each grouped row gives stable finding IDs and a canonical analysis report path relative to this map. Source paths are repository-relative; `Lnn` refers to the file group above. Report each ID's classification, evidence, and unresolved context; name unreviewed findings or source groups explicitly.\n\n");
 
-        builder.Append("## Audit map\n\n");
-        if (hasBaseline)
-        {
-            builder.Append("Audit map: `audit-map/changed-files/index.md`; findings are grouped by project and representative source file. ");
-        }
-        else
-        {
-            builder.Append("Audit map: `audit-map/all-findings/index.md`; findings are grouped by project and representative source file. ");
-        }
-        builder.Append("Each grouped row gives stable finding IDs and a canonical analysis report path relative to this map. Source paths are repository-relative; `Lnn` refers to the file group above. Report each ID's classification, evidence, and unresolved context; name unreviewed findings or source groups explicitly.");
-        if (hasBaseline)
-        {
-            builder.Append(" `audit-map/all-findings/index.md` is reference-only and requires an explicit full-repository audit request.");
-        }
-        builder.Append("\n\n");
-
-        var allCount = findings.Count;
-        if (allCount == 0)
+        if (findings.Count == 0)
         {
             builder.Append(analyses.All(static analysis => !analysis.Enabled)
                 ? "No review was performed because all analyses are disabled.\n\n"
                 : "No findings were found.\n\n");
         }
 
-        if (hasBaseline && analyses.Any(static analysis => analysis.Enabled && analysis.AnalysisId is "missing-test-evidence-candidates" or "type-dependency-cycle-candidates" or "type-dependency-hub-candidates"))
-        {
-            builder.Append("Changed-files selection for `missing-test-evidence-candidates`, `type-dependency-cycle-candidates`, and `type-dependency-hub-candidates` follows the complete C# snapshot: each shows every current finding when any C# path was added, changed, or deleted, and none when the C# snapshot is unchanged. Other analyses keep their file-based selection.\n\n");
-        }
-
-        builder.Append("## Audit scope\n\n");
-        if (hasBaseline)
-        {
-            builder.Append("Counts are per view and are not additive between changed-files and all-findings. Scope or option changes require an explicitly requested full audit.\n\n")
-                .Append("| Area | Changed-file findings | All findings |\n| --- | ---: | ---: |\n");
-        }
-        else
-        {
-            builder.Append("\n")
-                .Append("| Area | All findings |\n| --- | ---: |\n");
-        }
+        builder.Append("## Audit scope\n\n")
+            .Append("| Area | Findings |\n| --- | ---: |\n");
         foreach (var area in FindingAreas)
         {
-            var changed = changedFindings.Count(finding => GetFindingArea(finding) == area);
-            var all = findings.Count(finding => GetFindingArea(finding) == area);
-            builder.Append("| ").Append(area).Append(" | ");
-            if (hasBaseline)
-            {
-                builder.Append(changed.ToString(CultureInfo.InvariantCulture)).Append(" | ");
-            }
-            builder.Append(all.ToString(CultureInfo.InvariantCulture)).Append(" |\n");
+            var count = findings.Count(finding => GetFindingArea(finding) == area);
+            builder.Append("| ").Append(area).Append(" | ").Append(count.ToString(CultureInfo.InvariantCulture)).Append(" |\n");
         }
-
-        if (hasBaseline)
-        {
-            builder.Append("\nA normal unbounded assignment includes all three `changed-files` areas. A limited assignment must identify every remaining area as unreviewed. `all-findings` requires an explicit full-repository audit request.\n\n");
-            foreach (var area in FindingAreas)
-            {
-                builder.Append("- ").Append(FormatCodeSpan(area + "/changed-files/index.md")).Append('\n');
-            }
-            builder.Append("- ").Append(FormatCodeSpan("audit-map/changed-files/index.md")).Append('\n');
-            builder.Append("\n## Complete findings (reference only)\n\n")
-                .Append("> **Agent instruction:** Do not inspect, summarize, or display findings from any `all-findings` area unless the user explicitly requests an audit of the entire repository.\n\n");
-        }
-        else
-        {
-            builder.Append("\nA normal unbounded assignment includes all three `all-findings` areas. A limited assignment must identify every remaining area as unreviewed.\n\n");
-        }
+        builder.Append("\n");
         foreach (var area in FindingAreas)
         {
-            builder.Append("- ").Append(FormatCodeSpan(area + "/all-findings/index.md")).Append('\n');
+            builder.Append("- ").Append(FormatCodeSpan(area + "/index.md")).Append('\n');
         }
-        builder.Append("- ").Append(FormatCodeSpan("audit-map/all-findings/index.md"));
-        if (hasBaseline)
-        {
-            builder.Append(" (reference only)");
-        }
-        builder.Append('\n');
+        builder.Append("- ").Append(FormatCodeSpan("audit-map/index.md")).Append('\n');
 
         builder.Append("\n## Loaded C# projects\n\n| Project | Role | Classification reason |\n| --- | --- | --- |\n");
         foreach (var project in result.ProjectClassifications.OrderBy(static item => item.ProjectPath, StringComparer.Ordinal))
@@ -335,7 +252,6 @@ public sealed class MarkdownReportWriter
         builder.Append("\n## Analyses and effective options\n\n| Analysis | Enabled | Subject scope | Effective options |\n| --- | --- | --- | --- |\n");
         foreach (var analysis in analyses)
         {
-            var enabled = analysis.Enabled;
             var effective = analysis.EffectiveOptions.Values.Count == 0 ? "—" : FormatOptions(analysis.EffectiveOptions);
             var testScope = analysis.AnalysisId switch
             {
@@ -348,7 +264,7 @@ public sealed class MarkdownReportWriter
             {
                 effective += " / tests " + FormatOptions(testOptions);
             }
-            builder.Append("| ").Append(FormatCodeSpan(analysis.AnalysisId)).Append(" | ").Append(enabled ? "yes" : "no").Append(" | ").Append(testScope)
+            builder.Append("| ").Append(FormatCodeSpan(analysis.AnalysisId)).Append(" | ").Append(analysis.Enabled ? "yes" : "no").Append(" | ").Append(testScope)
                 .Append(" | ").Append(effective == "—" ? effective : FormatCodeSpan(effective)).Append(" |\n");
         }
 
@@ -377,29 +293,22 @@ public sealed class MarkdownReportWriter
         return builder.ToString();
     }
 
-    private static async Task WriteViewIndexAsync(
+    private static async Task WriteAreaIndexAsync(
         string runDirectory,
         string area,
-        string viewDirectory,
-        string title,
         ConfiguredReviewAnalysis[] analyses,
         IReadOnlyList<ReviewFinding> findings,
-        bool requiresFullAudit,
         CancellationToken cancellationToken)
     {
         var builder = new StringBuilder();
-        builder.Append("# ").Append(area).Append(" — ").Append(title).Append("\n\n")
-            .Append("This index covers ").Append(area).Append(" findings in this view. Related findings in other areas remain visible in their own index. Root report: `../../index.md`.\n\n");
-        if (requiresFullAudit)
-        {
-            builder.Append("> Full-audit reference: inspect only when the user explicitly requests a full-repository audit. Active review: `../changed-files/index.md`.\n\n");
-        }
+        builder.Append("# ").Append(area).Append(" findings\n\n")
+            .Append("This index covers all current ").Append(area).Append(" findings. Related findings in other areas remain visible in their own index. Root report: `../index.md`.\n\n");
 
         var visible = analyses.Where(analysis => findings.Any(finding => finding.AnalysisId == analysis.AnalysisId))
             .ToArray();
         if (visible.Length == 0)
         {
-            builder.Append("No findings in this view.\n");
+            builder.Append("No findings in this area.\n");
         }
         else
         {
@@ -411,7 +320,7 @@ public sealed class MarkdownReportWriter
             }
         }
 
-        var directory = Path.Combine(runDirectory, area, viewDirectory);
+        var directory = Path.Combine(runDirectory, area);
         Directory.CreateDirectory(directory);
         await WriteUtf8Async(Path.Combine(directory, "index.md"), builder.ToString(), cancellationToken).ConfigureAwait(false);
     }
@@ -426,7 +335,7 @@ public sealed class MarkdownReportWriter
         return result.Analyses.SelectMany(analysis => analysis.Result.Findings.Select(finding =>
         {
             var paths = finding.Evidence.Select(static evidence => evidence.SourcePath).Append(finding.SourcePath).Distinct(StringComparer.Ordinal).ToArray();
-            return new ReviewFinding(analysis.AnalysisId, finding, paths, Array.Empty<ReviewFindingReference>(), paths);
+            return new ReviewFinding(analysis.AnalysisId, finding, paths, Array.Empty<ReviewFindingReference>());
         })).ToArray();
     }
 
@@ -457,21 +366,13 @@ public sealed class MarkdownReportWriter
         return roles.Contains(ProjectRole.Tests) ? "tests" : "production";
     }
 
-    private static bool IsChangedForReport(ReviewFinding finding, ReviewRunResult result) =>
-        finding.AnalysisId is "missing-test-evidence-candidates" or "type-dependency-cycle-candidates" or "type-dependency-hub-candidates"
-            ? result.HasCSharpSnapshotChanges != false
-            : finding.IsChanged;
-
-    private static async Task WriteViewAnalysisAsync(
+    private static async Task WriteAnalysisAsync(
         string runDirectory,
         string area,
-        string viewDirectory,
         ConfiguredReviewAnalysis configuredAnalysis,
         IReadOnlyList<ReviewFinding> findings,
-        IReadOnlyList<ReviewFinding> visibleViewFindings,
         IReadOnlyList<ReviewFinding> allFindings,
         IReadOnlyDictionary<string, string> findingIds,
-        bool hasBaseline,
         CancellationToken cancellationToken)
     {
         if (findings.Count == 0)
@@ -479,30 +380,24 @@ public sealed class MarkdownReportWriter
             return;
         }
 
-        var reportDirectory = Path.Combine(runDirectory, area, viewDirectory);
+        var reportDirectory = Path.Combine(runDirectory, area);
         Directory.CreateDirectory(reportDirectory);
         var analysisPath = Path.Combine(reportDirectory, configuredAnalysis.AnalysisId + ".md");
-        await WriteUtf8Async(analysisPath, FormatAnalysisReport(configuredAnalysis, analysisPath, viewDirectory, findings, visibleViewFindings, allFindings, findingIds, hasBaseline), cancellationToken)
+        await WriteUtf8Async(analysisPath, FormatAnalysisReport(configuredAnalysis, analysisPath, findings, allFindings, findingIds), cancellationToken)
             .ConfigureAwait(false);
     }
 
     private static string FormatAnalysisReport(
         ConfiguredReviewAnalysis configuredAnalysis,
         string reportPath,
-        string viewDirectory,
         IReadOnlyList<ReviewFinding> findings,
-        IReadOnlyList<ReviewFinding> visibleViewFindings,
         IReadOnlyList<ReviewFinding> allFindings,
-        IReadOnlyDictionary<string, string> findingIds,
-        bool hasBaseline)
+        IReadOnlyDictionary<string, string> findingIds)
     {
         var descriptor = configuredAnalysis.Analysis.Descriptor;
         var builder = new StringBuilder();
         builder.Append("# ").Append(EscapeLinkText(descriptor.Title)).Append("\n\n")
-            .Append(EscapeInline(descriptor.Purpose)).Append("\n\n")
-            .Append(viewDirectory == "all-findings" && hasBaseline
-                ? "Full-audit reference; inspect only when the user explicitly requests a full-repository audit.\n\n"
-                : string.Empty);
+            .Append(EscapeInline(descriptor.Purpose)).Append("\n\n");
         var effectiveOptions = FormatEffectiveOptions(configuredAnalysis);
         if (effectiveOptions.Length > 0)
         {
@@ -553,28 +448,16 @@ public sealed class MarkdownReportWriter
         {
             builder.Append("\nSelection: A production function meets the nontrivial gate when `decisionCount >= minDecisionCount OR maxDecisionNesting >= minDecisionNesting`. A direct resolved static test path suppresses a finding. A function with no resolved static test path is reported at the nontrivial gate; an indirect-path-only function must also meet `decisionCount >= minIndirectDecisionCount OR maxDecisionNesting >= minIndirectDecisionNesting`.\n\n")
                 .Append("This is static test-path evidence from the loaded snapshot, not runtime coverage. The `attribution uncertain` marker means the static test association may be incomplete; it can result from reachable unresolved bindings, method groups, or virtual/interface dispatch, and may propagate to downstream methods over known calls. A reachable global uncertainty input can mark every function, so the marker alone neither means a test is missing nor that the marked function itself has an unresolved binding. It does not assess test assertion quality. Reflection, dependency injection, external test projects, dynamic dispatch, branch execution, and custom test discovery can hide associations.\n");
-            if (viewDirectory == "changed-files")
-            {
-                builder.Append("\nChanged-files selection is snapshot-wide because changes to test roots or the call graph can alter associations in unchanged production files. Any added, changed, or deleted C# path selects all current findings; an unchanged C# snapshot selects none. The source status in each file heading describes only that representative file relative to the baseline; an unchanged status does not mean unaffected.\n");
-            }
         }
 
         if (configuredAnalysis.AnalysisId == "type-dependency-cycle-candidates")
         {
             builder.Append("\nSelection: A finding represents one maximal strongly connected component in the production type graph. It must contain at least three distinct types and at least three distinct canonical declaration source files; both floors are inclusive. Every internal directed edge and retained source witness is listed, along with every participating type declaration and one genuine deterministic cycle as an example. Counts use distinct type pairs and canonical declaration paths. Test, generated, metadata, dynamic, and implicit compiler-created types are outside the graph. This is a static dependency signal, not proof of runtime recursion or an architectural violation.\n");
-            if (viewDirectory == "changed-files")
-            {
-                builder.Append("\nChanged-files selection is snapshot-wide because a C# change or deletion can alter components and edge counts in unchanged declarations. Any added, changed, or deleted C# path selects all current findings; an unchanged C# snapshot selects none. The source status in each file heading describes only that representative file relative to the baseline.\n");
-            }
         }
 
         if (configuredAnalysis.AnalysisId == "type-dependency-hub-candidates")
         {
             builder.Append("\nSelection: A production type is reported when its distinct direct production consumer count meets `minFanIn` **and** its distinct direct production dependency count meets `minFanOut`; both inclusive thresholds default to 10 and are configured independently. Neighbor file counts use distinct canonical declaration paths, while project counts retain project-specific types. Every direct production neighbor and retained edge witness is listed. Direct test consumers are separate context and do not affect production counts or finding origin. Generated, metadata, dynamic, and implicit compiler-created types are excluded. This static neighborhood does not prove responsibility concentration or runtime behavior.\n");
-            if (viewDirectory == "changed-files")
-            {
-                builder.Append("\nChanged-files selection is snapshot-wide because a C# change or deletion can alter neighbor counts in unchanged declarations. Any added, changed, or deleted C# path selects all current findings; an unchanged C# snapshot selects none. The source status in each file heading describes only that representative file relative to the baseline.\n");
-            }
         }
 
         var groups = findings
@@ -620,11 +503,6 @@ public sealed class MarkdownReportWriter
             {
                 builder.Append("#### File: ").Append(FormatCodeSpan(group.SourcePath)).Append(" (")
                     .Append(group.Findings.Length.ToString(CultureInfo.InvariantCulture)).Append(" findings");
-                if (viewDirectory == "changed-files" && configuredAnalysis.AnalysisId is "missing-test-evidence-candidates" or "type-dependency-cycle-candidates" or "type-dependency-hub-candidates")
-                {
-                    builder.Append("; ").Append(GetMissingTestSourceStatus(group.Findings, group.SourcePath));
-                }
-
                 builder.Append(")\n\n");
                 foreach (var reviewFinding in group.Findings)
                 {
@@ -790,10 +668,10 @@ public sealed class MarkdownReportWriter
 
                     AppendUnrepresentedEvidence(builder, reviewFinding, group.SourcePath);
 
-                    var related = FormatRelated(reviewFinding, reportPath, viewDirectory, visibleViewFindings, allFindings);
+                    var related = FormatRelated(reviewFinding, reportPath, allFindings);
                     if (!string.IsNullOrEmpty(related))
                     {
-                        // Analysis IDs are validated lowercase slugs; preserve their exact identifiers and the all-findings suffix.
+                        // Analysis IDs are validated lowercase slugs.
                         builder.Append("  - Related: ").Append(related).Append('\n');
                     }
                 }
@@ -803,13 +681,6 @@ public sealed class MarkdownReportWriter
         }
 
         return builder.ToString();
-    }
-
-    private static string GetMissingTestSourceStatus(IReadOnlyList<ReviewFinding> findings, string sourcePath)
-    {
-        var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-        var sourceChanged = findings.Any(finding => finding.ChangedSourcePaths.Contains(sourcePath, pathComparer));
-        return sourceChanged ? "source new or changed" : "source unchanged; included snapshot-wide";
     }
 
     private static void AppendUnrepresentedEvidence(StringBuilder builder, ReviewFinding finding, string representativePath)
@@ -960,8 +831,6 @@ public sealed class MarkdownReportWriter
     private static string FormatRelated(
         ReviewFinding finding,
         string reportPath,
-        string currentView,
-        IReadOnlyList<ReviewFinding> visibleFindings,
         IReadOnlyList<ReviewFinding> allFindings)
     {
         if (finding.RelatedFindings.Count == 0)
@@ -976,21 +845,17 @@ public sealed class MarkdownReportWriter
                 && candidate.Finding.SourcePath == reference.SourcePath
                 && candidate.Finding.SubjectId == reference.SubjectId
                 && candidate.Finding.Discriminator == reference.Discriminator);
-            if (target is null) return (Path: string.Empty, Suffix: string.Empty, Id: reference.AnalysisId + " (target unavailable in this run)");
+            if (target is null) return (Path: string.Empty, Id: reference.AnalysisId + " (target unavailable in this run)");
 
-            var inCurrentView = visibleFindings.Any(candidate => FindingKey(candidate) == FindingKey(target));
             var targetArea = GetFindingArea(target);
-            var targetView = inCurrentView ? currentView : "all-findings";
-            var targetPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(reportPath)!, "..", "..", targetArea, targetView, EncodePathSegment(reference.AnalysisId) + ".md"));
+            var targetPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(reportPath)!, "..", targetArea, EncodePathSegment(reference.AnalysisId) + ".md"));
             var relativePath = Path.GetRelativePath(Path.GetDirectoryName(reportPath)!, targetPath).Replace('\\', '/');
-            var suffix = inCurrentView ? string.Empty : "; all-findings reference";
-            return (Path: relativePath, Suffix: suffix, Id: GetFindingId(target));
+            return (Path: relativePath, Id: GetFindingId(target));
         }).Distinct().ToArray();
         var groupedItems = relatedItems.Where(static item => item.Path.Length > 0)
-            .GroupBy(static item => (item.Path, item.Suffix))
-            .OrderBy(static group => group.Key.Path, StringComparer.Ordinal)
-            .ThenBy(static group => group.Key.Suffix, StringComparer.Ordinal)
-            .Select(group => FormatCodeSpan(group.Key.Path) + ": " + string.Join(", ", group.Select(static item => item.Id).Order(StringComparer.Ordinal)) + group.Key.Suffix)
+            .GroupBy(static item => item.Path, StringComparer.Ordinal)
+            .OrderBy(static group => group.Key, StringComparer.Ordinal)
+            .Select(group => FormatCodeSpan(group.Key) + ": " + string.Join(", ", group.Select(static item => item.Id).Order(StringComparer.Ordinal)))
             .Concat(relatedItems.Where(static item => item.Path.Length == 0).Select(static item => item.Id).Order(StringComparer.Ordinal));
         return string.Join("; ", groupedItems);
     }

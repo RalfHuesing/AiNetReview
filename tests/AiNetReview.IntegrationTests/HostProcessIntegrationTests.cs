@@ -4,7 +4,6 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
 using AiNetReview.Bootstrap;
@@ -50,31 +49,12 @@ public sealed class HostProcessIntegrationTests
     }
 
     [Fact]
-    public async Task ProcessInvocation_BaselineBootstrapsTheTargetProjectsDefaultConfiguration()
-    {
-        using var host = IsolatedHost.Create();
-        var projectRoot = await CreateProjectAsync(host.HostDirectory, "namespace Sample; public sealed class SampleType { }");
-
-        using var process = host.Start(projectRoot, "baseline");
-        var (stdout, stderr) = await ReadProcessOutputAsync(process);
-
-        Assert.Equal(0, process.ExitCode);
-        Assert.Empty(stderr);
-        using var response = JsonDocument.Parse(Assert.Single(stdout.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)));
-        Assert.Equal("completed", response.RootElement.GetProperty("status").GetString());
-        Assert.Equal(1, response.RootElement.GetProperty("files").GetInt32());
-        Assert.True(File.Exists(Path.Combine(projectRoot, "ainetreview.json")));
-        Assert.True(File.Exists(Path.Combine(projectRoot, "audit-reporting", "baseline.json")));
-        Assert.Empty(Directory.GetDirectories(Path.Combine(projectRoot, "audit-reporting")));
-    }
-
-    [Fact]
     public async Task ProcessInvocation_RejectsLegacyCommandLineOptions()
     {
         using var host = IsolatedHost.Create();
         var workingDirectory = host.CreateWorkingDirectory();
 
-        foreach (var args in new[] { new[] { "--cmd", "baseline" }, new[] { "baseline", "--config", "ainetreview.json" } })
+        foreach (var args in new[] { new[] { "baseline" }, new[] { "--cmd", "review" }, new[] { "review", "--config", "ainetreview.json" } })
         {
             using var process = host.Start(workingDirectory, args);
             var (stdout, stderr) = await ReadProcessOutputAsync(process);
@@ -87,24 +67,14 @@ public sealed class HostProcessIntegrationTests
     }
 
     [Fact]
-    public async Task ProcessInvocation_ChangedSourcePublishesBothViewsAndBaselineCommandRemainsUsable()
+    public async Task ProcessInvocation_IgnoresMalformedLegacyBaselineAndPublishesCompleteAudit()
     {
         using var host = IsolatedHost.Create();
         var projectRoot = await CreateProjectAsync(host.HostDirectory, "namespace Sample; public sealed class SampleType { }", "target project");
         var configPath = await CreateConfigAsync(projectRoot);
 
-        using (var baselineProcess = host.Start(projectRoot, "baseline", Path.GetDirectoryName(configPath)!))
-        {
-            var (baselineOutput, baselineError) = await ReadProcessOutputAsync(baselineProcess);
-            Assert.Equal(0, baselineProcess.ExitCode);
-            Assert.Empty(baselineError);
-            Assert.Contains("completed", baselineOutput, StringComparison.Ordinal);
-        }
-
-        var baselinePath = Path.Combine(projectRoot, "reports", "baseline.json");
-        Assert.True(File.Exists(baselinePath));
-        var loadedBaseline = await new BaselineReader().ReadAsync(Path.Combine(projectRoot, "reports"));
-        Assert.NotEmpty(loadedBaseline!);
+        Directory.CreateDirectory(Path.Combine(projectRoot, "reports"));
+        await File.WriteAllTextAsync(Path.Combine(projectRoot, "reports", "baseline.json"), "not valid baseline JSON");
 
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample", "Class1.cs"),
             "namespace Sample; public sealed class SampleType { public int Run(int value) { "
@@ -119,27 +89,13 @@ public sealed class HostProcessIntegrationTests
         var runId = response.RootElement.GetProperty("runId").GetString()!;
         var runDirectory = Path.Combine(projectRoot, "reports", runId);
         var rootIndex = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
-        var changedAuditMap = Path.Combine(runDirectory, "audit-map", "changed-files", "index.md");
-        var allAuditMap = Path.Combine(runDirectory, "audit-map", "all-findings", "index.md");
-        Assert.True(File.Exists(changedAuditMap));
-        Assert.True(File.Exists(allAuditMap));
-        Assert.Contains("audit-map/changed-files/index.md", rootIndex, StringComparison.Ordinal);
-        Assert.Contains("audit-map/all-findings/index.md", rootIndex, StringComparison.Ordinal);
-        Assert.Contains("Findings:", await File.ReadAllTextAsync(changedAuditMap), StringComparison.Ordinal);
-        var changedView = Path.Combine(runDirectory, "production", "changed-files");
-        var allView = Path.Combine(runDirectory, "production", "all-findings");
-
-        Assert.DoesNotContain(" baseline '", rootIndex, StringComparison.Ordinal);
-        using var repeatedBaselineProcess = host.Start(projectRoot, "baseline", Path.GetDirectoryName(configPath)!);
-        var (repeatedBaselineOutput, repeatedBaselineError) = await ReadProcessOutputAsync(repeatedBaselineProcess);
-        Assert.Equal(0, repeatedBaselineProcess.ExitCode);
-        Assert.Empty(repeatedBaselineError);
-        Assert.Contains("completed", repeatedBaselineOutput, StringComparison.Ordinal);
+        var auditMap = Path.Combine(runDirectory, "audit-map", "index.md");
+        Assert.True(File.Exists(auditMap));
+        Assert.Contains("audit-map/index.md", rootIndex, StringComparison.Ordinal);
+        Assert.Contains("Findings:", await File.ReadAllTextAsync(auditMap), StringComparison.Ordinal);
         Assert.Contains("## Audit scope", rootIndex, StringComparison.Ordinal);
-        Assert.Contains("production/changed-files/index.md", rootIndex, StringComparison.Ordinal);
-        Assert.Contains("production/all-findings/index.md", rootIndex, StringComparison.Ordinal);
-        Assert.Contains("Run", await File.ReadAllTextAsync(Path.Combine(changedView, "method-control-flow-outliers.md")), StringComparison.Ordinal);
-        Assert.Contains("Run", await File.ReadAllTextAsync(Path.Combine(allView, "method-control-flow-outliers.md")), StringComparison.Ordinal);
+        Assert.Contains("production/index.md", rootIndex, StringComparison.Ordinal);
+        Assert.Contains("Run", await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "method-control-flow-outliers.md")), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -198,18 +154,8 @@ public sealed class HostProcessIntegrationTests
         var repositoryPath = repositoryLine["Repository: `".Length..repositoryLine.IndexOf("`; solution:", StringComparison.Ordinal)].Replace("\\\\", "\\", StringComparison.Ordinal);
         Assert.True(Path.IsPathFullyQualified(repositoryPath));
         Assert.Contains("solution: `AiNetReview.slnx`", repositoryLine, StringComparison.Ordinal);
-        var hasBaseline = File.Exists(Path.Combine(outputDirectory, "baseline.json"));
-        if (hasBaseline)
-        {
-            Assert.Contains("production/changed-files/index.md", indexReport, StringComparison.Ordinal);
-        }
-        else
-        {
-            Assert.DoesNotContain("changed-files", indexReport, StringComparison.OrdinalIgnoreCase);
-        }
-        Assert.Contains("production/all-findings/index.md", indexReport, StringComparison.Ordinal);
-        Assert.DoesNotContain(" baseline '", indexReport, StringComparison.Ordinal);
-        var analysisReportPath = Path.Combine(outputDirectory, runId!, "production", "all-findings", "method-control-flow-outliers.md");
+        Assert.Contains("production/index.md", indexReport, StringComparison.Ordinal);
+        var analysisReportPath = Path.Combine(outputDirectory, runId!, "production",  "method-control-flow-outliers.md");
         if (detectedCount > 0)
         {
             Assert.True(File.Exists(analysisReportPath));
@@ -227,8 +173,7 @@ public sealed class HostProcessIntegrationTests
             Assert.False(File.Exists(analysisReportPath));
         }
 
-        Assert.Equal(hasBaseline, File.Exists(Path.Combine(outputDirectory, runId!, "production", "changed-files", "index.md")));
-        Assert.True(File.Exists(Path.Combine(outputDirectory, runId!, "production", "all-findings", "index.md")));
+        Assert.True(File.Exists(Path.Combine(outputDirectory, runId!, "production",  "index.md")));
 
         var resultingRuns = Directory.GetDirectories(outputDirectory).Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
         Assert.Contains(runId, resultingRuns);
@@ -285,7 +230,6 @@ public sealed class HostProcessIntegrationTests
 
         Assert.Equal(0, process.ExitCode);
         Assert.Contains("review", stdout, StringComparison.Ordinal);
-        Assert.Contains("baseline", stdout, StringComparison.Ordinal);
         Assert.True(string.IsNullOrWhiteSpace(stderr), "Stderr should be empty when help is displayed.");
     }
 
@@ -298,7 +242,6 @@ public sealed class HostProcessIntegrationTests
 
         Assert.Equal(0, process.ExitCode);
         Assert.Contains("review", stdout, StringComparison.Ordinal);
-        Assert.Contains("baseline", stdout, StringComparison.Ordinal);
         Assert.True(string.IsNullOrWhiteSpace(stderr), "Stderr should be empty when help is displayed.");
     }
 
@@ -325,8 +268,7 @@ public sealed class HostProcessIntegrationTests
         Assert.True(File.Exists(Path.Combine(projectRoot, indexPath!.Replace('/', Path.DirectorySeparatorChar))));
         Assert.Equal(0, response.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
         Assert.Contains("No findings were found.", await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "index.md")), StringComparison.Ordinal);
-        Assert.False(Directory.Exists(Path.Combine(projectRoot, "reports", runId!, "production", "changed-files")));
-        Assert.True(File.Exists(Path.Combine(projectRoot, "reports", runId!, "production", "all-findings", "index.md")));
+        Assert.True(File.Exists(Path.Combine(projectRoot, "reports", runId!, "production",  "index.md")));
 
         var logPath = Assert.Single(Directory.GetFiles(Path.Combine(host.HostDirectory, "logs"), "ainetreview-*.log"));
         var logContents = await File.ReadAllTextAsync(logPath);
@@ -336,95 +278,6 @@ public sealed class HostProcessIntegrationTests
         var completion = Assert.Single(logEvents.Where(static line => line.Contains("Review completed", StringComparison.Ordinal)));
         Assert.Contains("\"RunId\":\"" + runId + "\"", completion, StringComparison.Ordinal);
         Assert.False(Directory.Exists(Path.Combine(workingDirectory, "logs")));
-    }
-
-    [Fact]
-    public async Task ProcessInvocation_BaselineWorksWithoutAuditAndReplacesTheCompleteSourceSet()
-    {
-        using var host = IsolatedHost.Create();
-        var projectRoot = await CreateProjectAsync(host.HostDirectory, "namespace Sample; public sealed class SampleType { }");
-        var projectDirectory = Path.Combine(projectRoot, "Sample");
-        var additionalSource = Path.Combine(projectDirectory, "Additional.cs");
-        var markup = Path.Combine(projectDirectory, "View.xaml");
-        await File.WriteAllTextAsync(additionalSource, "namespace Sample; public sealed class AdditionalType { }");
-        await File.WriteAllTextAsync(markup, "<Page />");
-        var configPath = await CreateConfigAsync(projectRoot);
-        await File.WriteAllTextAsync(configPath,
-            "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"method-control-flow-outliers\":{},\"dead-code-candidates\":{}}}");
-        var workingDirectory = host.CreateWorkingDirectory();
-
-        using var firstProcess = host.Start(workingDirectory, "baseline", Path.GetDirectoryName(configPath)!);
-        var (firstStdout, firstStderr) = await ReadProcessOutputAsync(firstProcess);
-
-        Assert.Equal(0, firstProcess.ExitCode);
-        Assert.Empty(firstStderr);
-        using var firstResponse = JsonDocument.Parse(Assert.Single(firstStdout.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)));
-        Assert.Equal("completed", firstResponse.RootElement.GetProperty("status").GetString());
-        Assert.Equal(3, firstResponse.RootElement.GetProperty("files").GetInt32());
-        var outputDirectory = Path.Combine(projectRoot, "reports");
-        var baselinePath = Path.Combine(outputDirectory, "baseline.json");
-        Assert.True(File.Exists(baselinePath));
-        Assert.Empty(Directory.GetDirectories(outputDirectory));
-
-        using var firstBaseline = JsonDocument.Parse(await File.ReadAllTextAsync(baselinePath));
-        var firstFiles = firstBaseline.RootElement.GetProperty("files").EnumerateArray()
-            .ToDictionary(file => file.GetProperty("path").GetString()!, file => file.GetProperty("sha256").GetString()!, StringComparer.Ordinal);
-        Assert.Equal(3, firstFiles.Count);
-        Assert.Equal(Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(additionalSource))).ToLowerInvariant(), firstFiles["Sample/Additional.cs"]);
-        Assert.Equal(Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(markup))).ToLowerInvariant(), firstFiles["Sample/View.xaml"]);
-
-        await File.WriteAllTextAsync(additionalSource, "namespace Sample; public sealed class AdditionalType { public int Value => 2; } ");
-        File.Delete(markup);
-        using var secondProcess = host.Start(workingDirectory, "baseline", Path.GetDirectoryName(configPath)!);
-        var (secondStdout, secondStderr) = await ReadProcessOutputAsync(secondProcess);
-
-        Assert.Equal(0, secondProcess.ExitCode);
-        Assert.Empty(secondStderr);
-        using var secondResponse = JsonDocument.Parse(Assert.Single(secondStdout.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)));
-        Assert.Equal(2, secondResponse.RootElement.GetProperty("files").GetInt32());
-        using var secondBaseline = JsonDocument.Parse(await File.ReadAllTextAsync(baselinePath));
-        var secondFiles = secondBaseline.RootElement.GetProperty("files").EnumerateArray()
-            .ToDictionary(file => file.GetProperty("path").GetString()!, file => file.GetProperty("sha256").GetString()!, StringComparer.Ordinal);
-        Assert.Equal(2, secondFiles.Count);
-        Assert.DoesNotContain("Sample/View.xaml", secondFiles.Keys);
-        Assert.NotEqual(firstFiles["Sample/Additional.cs"], secondFiles["Sample/Additional.cs"]);
-
-        var previousContents = "previous baseline contents";
-        await File.WriteAllTextAsync(baselinePath, previousContents);
-        var preservedBaseline = await File.ReadAllBytesAsync(baselinePath);
-        var services = new ServiceCollection();
-        services.AddAiNetReviewServices();
-        services.AddAiNetReviewAnalyses();
-        services.AddLogging();
-        await using (var provider = services.BuildServiceProvider())
-        {
-            var validator = provider.GetRequiredService<AiNetReview.Core.Configuration.ReviewConfigValidator>();
-            var config = validator.Load(configPath);
-            using var loaded = await provider.GetRequiredService<AiNetReview.Core.Analysis.SolutionLoader>().LoadAsync(config);
-            Assert.Equal(secondFiles["Sample/Additional.cs"], loaded.SourceFiles.Single(file => file.Path == "Sample/Additional.cs").Sha256);
-            Assert.Equal(secondFiles["Sample/Class1.cs"], loaded.SourceFiles.Single(file => file.Path == "Sample/Class1.cs").Sha256);
-            var centralOutput = Path.Combine(host.HostDirectory, "central-audit", "target");
-            var centralConfig = validator.ValidateForAudit(projectRoot, await File.ReadAllTextAsync(configPath), centralOutput);
-            using var centralLoaded = await provider.GetRequiredService<AiNetReview.Core.Analysis.SolutionLoader>().LoadAsync(centralConfig);
-            await provider.GetRequiredService<BaselineWriter>().WriteAsync(centralConfig, centralLoaded);
-            Assert.True(File.Exists(Path.Combine(centralOutput, "baseline.json")));
-            Assert.Equal(previousContents, await File.ReadAllTextAsync(baselinePath));
-
-            var writer = new BaselineWriter(_ => ValueTask.FromException(new IOException("fixture publication failure")));
-            await Assert.ThrowsAsync<IOException>(() => writer.WriteAsync(config, loaded));
-        }
-
-        Assert.Equal(previousContents, await File.ReadAllTextAsync(baselinePath));
-        Assert.Empty(Directory.GetFiles(outputDirectory, ".baseline-*.tmp"));
-
-        await File.WriteAllTextAsync(Path.Combine(projectDirectory, "Class1.cs"), "namespace Sample; public sealed class Broken { public void Compile( { }");
-        using var failedProcess = host.Start(workingDirectory, "baseline", Path.GetDirectoryName(configPath)!);
-        var (failedStdout, failedStderr) = await ReadProcessOutputAsync(failedProcess);
-
-        Assert.Equal(3, failedProcess.ExitCode);
-        Assert.Empty(failedStdout);
-        Assert.Contains("ANALYSIS_FAILED", failedStderr, StringComparison.Ordinal);
-        Assert.Equal(preservedBaseline, await File.ReadAllBytesAsync(baselinePath));
     }
 
     [Fact]

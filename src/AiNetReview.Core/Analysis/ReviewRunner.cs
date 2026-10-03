@@ -18,8 +18,7 @@ public sealed class ReviewRunner
     public async Task<ReviewRunResult> RunAsync(
         ReviewConfig config,
         LoadedSolution loadedSolution,
-        CancellationToken cancellationToken = default,
-        IReadOnlyDictionary<string, string>? baselineFiles = null)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(loadedSolution);
@@ -88,36 +87,12 @@ public sealed class ReviewRunner
             }));
         }
 
-        var reviewedFindings = ReviewFindingBuilder.Build(results, loadedSolution.SourceFiles, baselineFiles, projectClassifications);
-        bool? hasCSharpSnapshotChanges = baselineFiles is null ? null : HasCSharpSnapshotChanges(loadedSolution.SourceFiles, baselineFiles);
+        var reviewedFindings = ReviewFindingBuilder.Build(results, projectClassifications);
         return new ReviewRunResult(Array.AsReadOnly(results.ToArray()))
         {
             Findings = reviewedFindings,
             ProjectClassifications = Array.AsReadOnly(projectClassifications),
-            HasCSharpSnapshotChanges = hasCSharpSnapshotChanges,
         };
-    }
-
-    private static bool HasCSharpSnapshotChanges(
-        IReadOnlyList<SourceFileSnapshot> sourceFiles,
-        IReadOnlyDictionary<string, string> baselineFiles)
-    {
-        var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-        var currentCSharpFiles = sourceFiles
-            .Where(static file => Path.GetExtension(file.Path).Equals(".cs", StringComparison.OrdinalIgnoreCase))
-            .ToDictionary(static file => file.Path, static file => file.Sha256, pathComparer);
-
-        foreach (var current in currentCSharpFiles)
-        {
-            if (!baselineFiles.TryGetValue(current.Key, out var baselineHash)
-                || !string.Equals(current.Value, baselineHash, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return baselineFiles.Any(file => Path.GetExtension(file.Key).Equals(".cs", StringComparison.OrdinalIgnoreCase)
-            && !currentCSharpFiles.ContainsKey(file.Key));
     }
 
     private static StringComparer PathComparer => OperatingSystem.IsWindows()
@@ -139,8 +114,5 @@ public sealed record ReviewRunResult(IReadOnlyList<ReviewAnalysisRunResult> Anal
 
     /// <summary>Classification of every loaded C# project, including projects without findings.</summary>
     public IReadOnlyList<ProjectClassification> ProjectClassifications { get; init; } = Array.Empty<ProjectClassification>();
-
-    /// <summary>Null means no baseline; otherwise indicates whether any C# snapshot path was added, changed, or deleted.</summary>
-    public bool? HasCSharpSnapshotChanges { get; init; }
 
 }

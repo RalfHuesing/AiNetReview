@@ -493,23 +493,6 @@ public sealed class CodeSizeCandidatesAnalysisTests
         Assert.DoesNotContain(findings, static finding => finding.SubjectId.Contains("IValue", StringComparison.Ordinal));
         Assert.DoesNotContain(findings, static finding => finding.Evidence.Any(static evidence => evidence.SourcePath == "Example/Ledger.g.cs"));
 
-        var loadedPaths = new[] { "Example/A.cs", "Example/B.cs", "Example/Ledger.g.cs" }
-            .Select(path => new SourceFileSnapshot(path, path.EndsWith("B.cs", StringComparison.Ordinal) ? "changed" : "same"))
-            .ToArray();
-        var baseline = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["Example/A.cs"] = "same",
-            ["Example/B.cs"] = "old",
-            ["Example/Ledger.g.cs"] = "same",
-        };
-        var reviewed = ReviewFindingBuilder.Build(
-            [new ReviewAnalysisRunResult("code-size-candidates", result)], loadedPaths, baseline,
-            findings.SelectMany(static finding => finding.RelatedSymbols)
-                .Select(static symbol => symbol.ProjectPath)
-                .Distinct(StringComparer.Ordinal)
-                .Select(static projectPath => new ProjectClassification(projectPath, ProjectRole.Production, ProjectClassificationReason.NoTestMarker))
-                .ToArray());
-        Assert.Equal(new[] { "Example/B.cs" }, Assert.Single(reviewed.Where(item => item.Finding.SubjectId == ledger.SubjectId)).ChangedSourcePaths);
         var validatedTypes = await new CurrentFindingValidator().ValidateAndSortAsync(
             "code-size-candidates", fixture.Context, findings);
         Assert.Equal(findings.Length, validatedTypes.Count);

@@ -17,7 +17,7 @@ AiNetReview helps audit C# code after the usual build, tests, and static analysi
 | `type-dependency-cycle-candidates` | Maximal groups of at least three production types across at least three declaration files with mutual direct static dependencies; reports every internal edge witness and one example cycle. |
 | `type-dependency-hub-candidates` | Production types with at least 10 distinct direct production consumers and at least 10 distinct direct production dependencies; both thresholds are independently configurable, and test consumers are listed separately. |
 
-The reports are prompts for an audit, not defect claims. See [Current findings](docs/review/findings.md) for the analyses' scope and limitations.
+Each run is a complete audit of the loaded solution by every enabled configured analysis. Reports disclose disabled analyses, project roles, broad exclusions, and analysis-specific uncertainty; static analysis cannot establish behavior outside the documented scope. Reports are prompts for investigation, not defect claims. See [Current findings](docs/review/findings.md) for the analyses' scope and limitations.
 
 ## Run a review
 
@@ -30,11 +30,11 @@ GitHub [releases](https://github.com/RalfHuesing/AiNetReview/releases) provide W
    .\AiNetReview.exe review C:\path\to\project
    ```
 
-3. Open the `index.md` named by the command's JSON response. It gives shared audit guidance and routes to `production/`, `tests/`, and `mixed/`. Without a baseline, each area has an `all-findings/` view and `audit-map/all-findings/index.md` is the normal entry point for an unbounded audit. With a baseline, each area additionally has a `changed-files/` view and `audit-map/changed-files/index.md` groups findings by project and source file, listing each canonical report path once with its stable IDs; the complete view requires an explicitly requested full audit. Detailed reports carry concise evidence and repository-root-relative source locations. `missing-test-evidence-candidates`, `type-dependency-cycle-candidates`, and `type-dependency-hub-candidates` use snapshot-wide C# selection: with a baseline, any added, changed, or deleted C# path selects every current finding from that analysis, and an unchanged C# snapshot selects none. Each run gets its own report directory, so earlier reports remain available. See [Current findings](docs/review/findings.md) for the map contract.
+3. Open the `index.md` named by the command's JSON response. It provides shared audit guidance and routes to `production/`, `tests/`, `mixed/`, and `audit-map/index.md`. Each area has an `index.md` and direct `production/<analysis>.md`, `tests/<analysis>.md`, or `mixed/<analysis>.md` reports for analyses with findings. The audit map groups findings by project and representative source file, listing each canonical report path once with its stable IDs. Detailed reports carry concise evidence and repository-root-relative source locations. Each run gets its own report directory, so earlier reports remain available. See [Current findings](docs/review/findings.md) for the map contract.
 
 The command requires a loadable C# solution without compiler errors. A completed review exits with code `0` even when it reports findings. See the [configuration reference](docs/configuration/file-format.md) and [CLI contract](docs/interfaces/cli.md) for options and failure codes.
 
-To save the current source snapshot as a comparison point without running review analyses, call `AiNetReview.exe baseline C:\path\to\project`. This writes or replaces `baseline.json` in the configured output directory. The project path is optional; when omitted, the current working directory is used. Both commands create a default `ainetreview.json` in the project root when it is missing and a solution file is found there.
+The command creates a default `ainetreview.json` in the project root when it is missing and a solution file is found there.
 
 ## Development and releases
 

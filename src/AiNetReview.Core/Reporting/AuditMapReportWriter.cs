@@ -11,40 +11,29 @@ using System.Threading.Tasks;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Findings;
 
-/// <summary>Writes a compact routing index for one selected finding view.</summary>
+/// <summary>Writes a compact routing index for all findings in one complete audit.</summary>
 internal static class AuditMapReportWriter
 {
     internal static async Task WriteAuditMapAsync(
         string runDirectory,
         string runId,
         IReadOnlyList<ReviewFinding> findings,
-        string viewName,
-        CancellationToken cancellationToken,
-        bool hasBaseline)
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(findings);
-        if (viewName is not ("changed-files" or "all-findings"))
-        {
-            throw new ArgumentOutOfRangeException(nameof(viewName), viewName, "Audit map view must be changed-files or all-findings.");
-        }
-
         cancellationToken.ThrowIfCancellationRequested();
-        var directory = Path.Combine(runDirectory, "audit-map", viewName);
+        var directory = Path.Combine(runDirectory, "audit-map");
         Directory.CreateDirectory(directory);
         var indexPath = Path.Combine(directory, "index.md");
         var builder = new StringBuilder()
-            .Append("# Audit map — ").Append(viewName).Append("\n\n")
+            .Append("# Audit map\n\n")
             .Append("Run: ").Append(MarkdownReportWriter.FormatCodeSpan(runId)).Append(". Grouped by representative project and source file.\n\n")
-            .Append(viewName == "all-findings" && hasBaseline
-                ? "> Full-audit reference: inspect only when the user explicitly requests a full-repository audit.\n\n"
-                : viewName == "changed-files"
-                    ? "Selected changed-file findings. Missing-test-evidence, type-cycle, and dependency-hub findings use snapshot-wide selection.\n\n"
-                    : "All current findings.\n\n")
+            .Append("All current findings from the configured analyses.\n\n")
             .Append("Findings: **").Append(findings.Count.ToString(CultureInfo.InvariantCulture)).Append("**. IDs route to canonical analysis details.\n\n");
 
         if (findings.Count == 0)
         {
-            builder.Append("No findings in this view.\n");
+            builder.Append("No findings in this audit.\n");
         }
         else
         {
@@ -71,7 +60,7 @@ internal static class AuditMapReportWriter
                     var area = MarkdownReportWriter.GetFindingArea(finding);
                     return new
                     {
-                        Path = "../../" + area + "/" + viewName + "/"
+                        Path = "../" + area + "/"
                             + MarkdownReportWriter.EncodePathSegment(finding.AnalysisId) + ".md",
                         Id = MarkdownReportWriter.GetFindingId(finding),
                     };

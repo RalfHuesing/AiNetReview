@@ -88,7 +88,7 @@ public sealed class ReviewRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_IndirectionPathUsesEverySourceForBaselineSelectionAndExactSymbolLinks()
+    public async Task RunAsync_IndirectionPathIncludesEverySourceAndLinksExactSymbols()
     {
         using var temp = TestTempDirectory.Create();
         var root = await CreateForwardingProjectAsync(temp);
@@ -110,11 +110,8 @@ public sealed class ReviewRunnerTests
         var config = CreateConfig(root, analyses);
         using var loaded = await new SolutionLoader().LoadAsync(config);
         var runner = new ReviewRunner();
-        var baseline = loaded.SourceFiles.ToDictionary(static file => file.Path, static file => file.Sha256, StringComparer.Ordinal);
-
-        var complete = await runner.RunAsync(config, loaded, baselineFiles: baseline);
+        var complete = await runner.RunAsync(config, loaded);
         var finding = Assert.Single(complete.Findings.Where(static item => item.AnalysisId == "indirection-drift-candidates"));
-        Assert.Empty(finding.ChangedSourcePaths);
         Assert.Equal(
             new[] { "Sample/Api.cs", "Sample/Service.cs", "Sample/Endpoint.cs" },
             Assert.Single(complete.Analyses.Where(static item => item.AnalysisId == "indirection-drift-candidates")).Result.Findings.Single().Evidence.Select(static item => item.SourcePath));
@@ -123,16 +120,6 @@ public sealed class ReviewRunnerTests
         Assert.Equal("M:Sample.Endpoint.Run", exactRelation.SymbolId);
         Assert.DoesNotContain(finding.RelatedFindings, static related => related.AnalysisId == "co-located-symbol-analysis");
 
-        foreach (var sourcePath in new[] { "Sample/Api.cs", "Sample/Service.cs", "Sample/Endpoint.cs" })
-        {
-            var changedBaseline = new Dictionary<string, string>(baseline, StringComparer.Ordinal)
-            {
-                [sourcePath] = new string('0', 64),
-            };
-            var selectedRun = await runner.RunAsync(config, loaded, baselineFiles: changedBaseline);
-            var selectedPath = Assert.Single(selectedRun.Findings.Where(static item => item.AnalysisId == "indirection-drift-candidates"));
-            Assert.Equal(new[] { sourcePath }, selectedPath.ChangedSourcePaths);
-        }
     }
 
     [Fact]
@@ -247,7 +234,7 @@ public sealed class ReviewRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_UsesCompleteSnapshotForFileSelectionAndCrossAnalysisSymbolLinks()
+    public async Task RunAsync_ReturnsCompleteFindingsAndCrossAnalysisSymbolLinks()
     {
         using var temp = TestTempDirectory.Create();
         var root = await CreateProjectAsync(temp, includeSecondProject: true);
@@ -276,19 +263,10 @@ public sealed class ReviewRunnerTests
         ]);
         using var loaded = await new SolutionLoader().LoadAsync(config);
         var runner = new ReviewRunner();
-        var unchangedBaseline = loaded.SourceFiles.ToDictionary(static file => file.Path, static file => file.Sha256, StringComparer.Ordinal);
-        var completeRun = await runner.RunAsync(config, loaded, baselineFiles: unchangedBaseline);
-        var withoutBaseline = await runner.RunAsync(config, loaded);
+        var completeRun = await runner.RunAsync(config, loaded);
 
         Assert.Equal(4, completeRun.DetectedCount);
         Assert.Equal(4, completeRun.Findings.Count);
-        Assert.False(completeRun.HasCSharpSnapshotChanges);
-        Assert.All(completeRun.Findings, static finding => Assert.Empty(finding.ChangedSourcePaths));
-        Assert.Equal(completeRun.Analyses.SelectMany(static analysis => analysis.Result.Findings).Select(static finding => finding.SubjectId),
-            withoutBaseline.Analyses.SelectMany(static analysis => analysis.Result.Findings).Select(static finding => finding.SubjectId));
-        Assert.All(withoutBaseline.Findings, static finding => Assert.NotEmpty(finding.ChangedSourcePaths));
-        Assert.Null(withoutBaseline.HasCSharpSnapshotChanges);
-
         var alphaReview = Assert.Single(completeRun.Findings.Where(static item => item.AnalysisId == "alpha-analysis"));
         Assert.Equal(new[] { "beta-analysis", "cluster-analysis" }, alphaReview.RelatedFindings.Select(static item => item.AnalysisId));
         var clusterReference = Assert.Single(alphaReview.RelatedFindings.Where(static item => item.AnalysisId == "cluster-analysis"));
@@ -301,19 +279,6 @@ public sealed class ReviewRunnerTests
         Assert.Equal(new[] { "Other/Other.cs", "Sample/FixtureCases.cs" }, clusterReview.SourcePaths);
         Assert.Equal(new[] { "alpha-analysis", "beta-analysis" }, clusterReview.RelatedFindings.Select(static item => item.AnalysisId));
 
-        var otherPath = Assert.Single(loaded.SourceFiles.Where(static file => file.Path == "Other/Other.cs")).Path;
-        unchangedBaseline[otherPath] = new string('0', 64);
-        var changedRun = await runner.RunAsync(config, loaded, baselineFiles: unchangedBaseline);
-        var selected = changedRun.Findings.Where(static item => item.IsChanged).ToArray();
-        Assert.Equal(new[] { "cluster-analysis" }, selected.Select(static item => item.AnalysisId));
-        Assert.Equal(new[] { "Other/Other.cs" }, Assert.Single(selected).ChangedSourcePaths);
-        Assert.Equal(4, changedRun.DetectedCount);
-
-        var samplePath = Assert.Single(loaded.SourceFiles.Where(static file => file.Path == "Sample/FixtureCases.cs")).Path;
-        unchangedBaseline[otherPath] = loaded.SourceFiles.Single(static file => file.Path == "Other/Other.cs").Sha256;
-        unchangedBaseline[samplePath] = new string('0', 64);
-        var sameFileChangedRun = await runner.RunAsync(config, loaded, baselineFiles: unchangedBaseline);
-        Assert.Equal(4, sameFileChangedRun.Findings.Count(static item => item.IsChanged));
     }
 
     [Fact]
@@ -370,7 +335,7 @@ public sealed class ReviewRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_SelectsCompleteDuplicateFindingsWhenOnlyTestOccurrenceChanges()
+    public async Task RunAsync_ReturnsCrossProjectDuplicateFindingsWithEveryOccurrence()
     {
         using var temp = TestTempDirectory.Create();
         var root = await CreateProjectAsync(temp, includeTestProject: true);
@@ -392,15 +357,8 @@ public sealed class ReviewRunnerTests
         Assert.All(complete.Findings, static item => Assert.Equal(
             new[] { ProjectRole.Production, ProjectRole.Tests }, item.Occurrences.Select(static occurrence => occurrence.Role).Order()));
 
-        var baseline = loaded.SourceFiles.ToDictionary(static file => file.Path, static file => file.Sha256, StringComparer.Ordinal);
-        baseline["tests/Example/Scenarios.cs"] = new string('0', 64);
-        var changed = await runner.RunAsync(config, loaded, baselineFiles: baseline);
-
-        Assert.Equal(complete.Findings.Select(static item => item.AnalysisId).Order(StringComparer.Ordinal),
-            changed.Findings.Where(static item => item.IsChanged).Select(static item => item.AnalysisId).Order(StringComparer.Ordinal));
-        Assert.All(changed.Findings.Where(static item => item.IsChanged), static item =>
+        Assert.All(complete.Findings, static item =>
         {
-            Assert.Equal(new[] { "tests/Example/Scenarios.cs" }, item.ChangedSourcePaths);
             Assert.Equal(new[] { "Sample/FixtureCases.cs", "tests/Example/Scenarios.cs" }.Order(StringComparer.Ordinal),
                 item.Occurrences.Select(static occurrence => occurrence.Symbol.SourcePath).Order(StringComparer.Ordinal));
         });

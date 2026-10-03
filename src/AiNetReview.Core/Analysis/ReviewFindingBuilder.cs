@@ -9,24 +9,11 @@ internal static class ReviewFindingBuilder
 {
     internal static IReadOnlyList<ReviewFinding> Build(
         IReadOnlyList<ReviewAnalysisRunResult> analyses,
-        IReadOnlyList<SourceFileSnapshot> sourceFiles,
-        IReadOnlyDictionary<string, string>? baselineFiles,
         IReadOnlyList<ProjectClassification> projectClassifications)
     {
         var projectRoles = projectClassifications.ToDictionary(static project => project.ProjectPath, static project => project.Role,
             OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-        var changedPaths = new HashSet<string>(pathComparer);
-        foreach (var sourceFile in sourceFiles)
-        {
-            if (baselineFiles is null
-                || !baselineFiles.TryGetValue(sourceFile.Path, out var baselineHash)
-                || !string.Equals(sourceFile.Sha256, baselineHash, StringComparison.OrdinalIgnoreCase))
-            {
-                changedPaths.Add(sourceFile.Path);
-            }
-        }
-
         var entries = analyses
             .SelectMany(analysis => analysis.Result.Findings.Select(finding => new FindingEntry(analysis.AnalysisId, finding)))
             .ToArray();
@@ -82,13 +69,11 @@ internal static class ReviewFindingBuilder
                 .ThenBy(static reference => reference.SymbolId, StringComparer.Ordinal)
                 .ThenBy(static reference => reference.SymbolLine)
                 .ToArray();
-            var changedFindingPaths = sourcePaths.Where(changedPaths.Contains).ToArray();
             result.Add(new ReviewFinding(
                 entry.AnalysisId,
                 entry.Finding,
                 Array.AsReadOnly(sourcePaths),
-                Array.AsReadOnly(related),
-                Array.AsReadOnly(changedFindingPaths))
+                Array.AsReadOnly(related))
             {
                 Occurrences = Array.AsReadOnly(entry.Finding.RelatedSymbols
                     .Select(symbol => new ReviewFindingOccurrence(symbol, projectRoles[symbol.ProjectPath]))
