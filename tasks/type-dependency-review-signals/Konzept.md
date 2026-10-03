@@ -148,3 +148,9 @@ Label this selection policy explicitly. It is conservative and may select unaffe
 ## Planning result
 
 Exactly two analyses are selected. The solution-wide scope, current-snapshot-only operation, production selection with separate test context, graph definition, starting thresholds, reporting, and verification boundaries are specified above. This concept remains `status: draft`; review and approval belong to [workflow step 2](../../.agents/agent-workflow/02-konzept-pruefung-und-freigabe.md), which the user starts separately.
+
+## Review decision (draft only)
+
+The first independent read-only review identified one blocking ambiguity in the unresolved-binding paragraph: the propagation boundary of "affected finding context" is undefined. An unknown dependency originating outside a selected type/component can affect incoming counts or component membership, so source-local annotation alone must not imply complete graph coverage. No other actionable findings were reported. Verification against `SolutionLoader` confirmed that ordinary compilation errors already fail loading; the remaining decision concerns an unexpectedly unavailable binding needed for the graph, not intentionally excluded dynamic or external dependencies.
+
+Pending user decision: either fail the analysis, and therefore the audit run under the existing runner contract, with a source-local explanation when a required static binding cannot be obtained; or continue with known edges and an explicit graph-wide incompleteness notice, without selective uncertainty propagation. The first variant is recommended for KISS because it avoids a partial-result completeness protocol. Neither variant is approved yet. Keep `status: draft` until this behavior is decided, the measurement/reporting/verification clauses are reconciled, and the release criteria of workflow step 2 are met.
