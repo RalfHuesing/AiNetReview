@@ -73,6 +73,7 @@ public sealed class MarkdownReportWriter
         }
 
         var findings = GetFindings(result);
+        var hasBaseline = result.HasCSharpSnapshotChanges.HasValue;
         var changedFindings = findings.Where(finding => IsChangedForReport(finding, result)).ToArray();
         ValidateFindingIds(findings);
         var changedFindingIds = GetFindingIds(changedFindings);
@@ -102,35 +103,44 @@ public sealed class MarkdownReportWriter
                     {
                         var changedArea = analysisChangedFindings.Where(finding => GetFindingArea(finding) == area).ToArray();
                         var allArea = allFindings.Where(finding => GetFindingArea(finding) == area).ToArray();
-                        await WriteViewAnalysisAsync(temporaryPath, config.ProjectRoot, area, "changed-files", configuredAnalysis, changedArea, changedFindings, findings,
-                                changedFindingIds, cancellationToken)
-                            .ConfigureAwait(false);
+                        if (hasBaseline)
+                        {
+                            await WriteViewAnalysisAsync(temporaryPath, config.ProjectRoot, area, "changed-files", configuredAnalysis, changedArea, changedFindings, findings,
+                                    changedFindingIds, true, cancellationToken)
+                                .ConfigureAwait(false);
+                        }
                         await WriteViewAnalysisAsync(temporaryPath, config.ProjectRoot, area, "all-findings", configuredAnalysis, allArea, findings, findings,
-                                allFindingIds, cancellationToken)
+                                allFindingIds, hasBaseline, cancellationToken)
                             .ConfigureAwait(false);
                     }
                 }
 
                 foreach (var area in FindingAreas)
                 {
-                    await WriteViewIndexAsync(temporaryPath, area, "changed-files", "Changed files", analyses,
-                            changedFindings.Where(finding => GetFindingArea(finding) == area).ToArray(),
-                            changedOnly: true, cancellationToken)
-                        .ConfigureAwait(false);
+                    if (hasBaseline)
+                    {
+                        await WriteViewIndexAsync(temporaryPath, area, "changed-files", "Changed files", analyses,
+                                changedFindings.Where(finding => GetFindingArea(finding) == area).ToArray(),
+                                requiresFullAudit: false, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
                     await WriteViewIndexAsync(temporaryPath, area, "all-findings", "All findings", analyses,
                             findings.Where(finding => GetFindingArea(finding) == area).ToArray(),
-                            changedOnly: false, cancellationToken)
+                            requiresFullAudit: hasBaseline, cancellationToken)
                         .ConfigureAwait(false);
                 }
 
-                await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, config.ProjectRoot, changedFindings,
-                    "changed-files", cancellationToken).ConfigureAwait(false);
+                if (hasBaseline)
+                {
+                    await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, config.ProjectRoot, changedFindings,
+                        "changed-files", cancellationToken, true).ConfigureAwait(false);
+                }
                 await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, config.ProjectRoot, findings,
-                    "all-findings", cancellationToken).ConfigureAwait(false);
+                    "all-findings", cancellationToken, hasBaseline).ConfigureAwait(false);
 
                 cancellationToken.ThrowIfCancellationRequested();
                 var indexPath = Path.Combine(temporaryPath, "index.md");
-                await WriteUtf8Async(indexPath, FormatIndex(runId, config, config.AllAnalyses.OrderBy(static item => item.AnalysisId, StringComparer.Ordinal).ToArray(), result, findings, changedFindings, configurationPath, baselineCommandContext), cancellationToken)
+                await WriteUtf8Async(indexPath, FormatIndex(runId, config, config.AllAnalyses.OrderBy(static item => item.AnalysisId, StringComparer.Ordinal).ToArray(), result, findings, changedFindings, configurationPath, baselineCommandContext, hasBaseline), cancellationToken)
                     .ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (beforePublication is not null)
@@ -228,7 +238,8 @@ public sealed class MarkdownReportWriter
         IReadOnlyList<ReviewFinding> findings,
         IReadOnlyList<ReviewFinding> changedFindings,
         string? configurationPath,
-        BaselineCommandContext? baselineCommandContext)
+        BaselineCommandContext? baselineCommandContext,
+        bool hasBaseline)
     {
         var builder = new StringBuilder();
         builder.Append("# AiNetReview – ").Append(runId).Append("\n\n")
@@ -236,11 +247,28 @@ public sealed class MarkdownReportWriter
             .Append("- Repository: `").Append(EscapeInline(Path.GetFullPath(config.ProjectRoot))).Append("`\n")
             .Append("- Solution: `").Append(EscapeInline(config.SolutionPath)).Append("`\n\n")
             .Append("## Review guidance\n\n")
-            .Append("Findings are potential review signals that may point to deeper or cross-cutting problems. First read the target repository's applicable instructions and relevant design documents. Investigate every finding in the commissioned working set using relevant source code, callers, contracts, and tests, in the context of application goals, architecture, and responsibilities. Related findings may be evaluated together. Do not dismiss a signal solely because it is heuristic or its attribution is uncertain. Justify each classification with concrete evidence: false positive, acceptable design, needs clarification, or actionable. An accurate signal can describe an acceptable design; distinguish that from a false positive. A signal alone does not require a change; changes must follow from this assessment. Avoid metric-driven refactoring and symptom workarounds; make a local change when the broader context supports it. Explain consequential changes and tradeoffs to the user. The goal is to support understandable, reliable agentic development and help prevent drift, not to claim that the analysis proves drift. A normal unbounded audit covers production, tests, and mixed findings in all three changed-files areas. A user-limited assignment must name the remaining areas as unreviewed. Findings are measurements on non-generated C# candidates in the loaded snapshot; they do not prove runner discovery, execution, runtime coverage, test quality, or defects. The missing-test-evidence analysis still targets production functions; the other seven maintenance analyses include both project roles. Dead-code `apiSurface` applies equally to production and test libraries. Scope or option changes do not make source files changed; a complete reevaluation after such a change needs an explicitly requested full-repository audit. Do not inspect or report findings from any `all-findings/` area unless the user explicitly requests a full repository audit.\n\n")
+            .Append("Findings are potential review signals that may point to deeper or cross-cutting problems. First read the target repository's applicable instructions and relevant design documents. Investigate every finding in the commissioned working set using relevant source code, callers, contracts, and tests, in the context of application goals, architecture, and responsibilities. Related findings may be evaluated together. Do not dismiss a signal solely because it is heuristic or its attribution is uncertain. Justify each classification with concrete evidence: false positive, acceptable design, needs clarification, or actionable. An accurate signal can describe an acceptable design; distinguish that from a false positive. A signal alone does not require a change; changes must follow from this assessment. Avoid metric-driven refactoring and symptom workarounds; make a local change when the broader context supports it. Explain consequential changes and tradeoffs to the user. The goal is to support understandable, reliable agentic development and help prevent drift, not to claim that the analysis proves drift. A normal unbounded audit covers production, tests, and mixed findings in all three ")
+            .Append(hasBaseline ? "changed-files" : "all-findings")
+            .Append(" areas. A user-limited assignment must name the remaining areas as unreviewed. Findings are measurements on non-generated C# candidates in the loaded snapshot; they do not prove runner discovery, execution, runtime coverage, test quality, or defects. The missing-test-evidence analysis still targets production functions; the other seven maintenance analyses include both project roles. Dead-code `apiSurface` applies equally to production and test libraries.")
+            .Append(hasBaseline ? " Scope or option changes do not make source files changed; a complete reevaluation after such a change needs an explicitly requested full-repository audit. Do not inspect or report findings from any `all-findings/` area unless the user explicitly requests a full repository audit." : "")
+            .Append("\n\n")
             .Append("For test findings, examine the behavior under test, assertion strength, whether expected results are independent of production logic, isolation, failure localization, and the role of setup, fixtures, hooks, data providers, fakes, mocks, builders, and helpers. Distinguish executable code from declarative test data and string fixtures. For mixed findings, assess production behavior and tests together, especially whether expectations independently verify the implementation. Do not mechanically split tests, merge scenarios, remove infrastructure, or refactor solely to lower a metric; change code only when contextual evidence supports it.\n\n");
 
-        builder.Append("## Audit map\n\n")
-            .Append("The [changed-files audit map](audit-map/changed-files/index.md) lists every selected finding once, grouped by project and representative source file. Use each finding's direct link to inspect its original signal and evidence, then examine the relevant implementation, callers, contracts, and tests. For each finding, report its ID, classification (false positive, acceptable design, needs clarification, or actionable), concrete evidence, and unresolved context. Name unreviewed findings or source-file groups explicitly; a partial map review is not a complete audit. The [all-findings map](audit-map/all-findings/index.md) is reference-only and requires an explicitly requested full-repository audit.\n\n");
+        builder.Append("## Audit map\n\n");
+        if (hasBaseline)
+        {
+            builder.Append("The [changed-files audit map](audit-map/changed-files/index.md) lists every selected finding once, grouped by project and representative source file. ");
+        }
+        else
+        {
+            builder.Append("The [all-findings audit map](audit-map/all-findings/index.md) lists every current finding once, grouped by project and representative source file. ");
+        }
+        builder.Append("Use each finding's direct link to inspect its original signal and evidence, then examine the relevant implementation, callers, contracts, and tests. For each finding, report its ID, classification (false positive, acceptable design, needs clarification, or actionable), concrete evidence, and unresolved context. Name unreviewed findings or source-file groups explicitly; a partial map review is not a complete audit.");
+        if (hasBaseline)
+        {
+            builder.Append(" The [all-findings map](audit-map/all-findings/index.md) is reference-only and requires an explicitly requested full-repository audit.");
+        }
+        builder.Append("\n\n");
 
         var changedCount = changedFindings.Count;
         var allCount = findings.Count;
@@ -251,41 +279,64 @@ public sealed class MarkdownReportWriter
                 : "No findings were found.\n\n");
         }
 
-        if (analyses.Any(static analysis => analysis.Enabled && analysis.AnalysisId == "missing-test-evidence-candidates"))
+        if (hasBaseline && analyses.Any(static analysis => analysis.Enabled && analysis.AnalysisId == "missing-test-evidence-candidates"))
         {
-            builder.Append("Changed-files selection for `missing-test-evidence-candidates` follows the complete C# snapshot: without a baseline it shows every current finding; with a baseline it shows every current finding when any C# path was added, changed, or deleted, and none when the C# snapshot is unchanged. Other analyses keep their file-based selection.\n\n");
+            builder.Append("Changed-files selection for `missing-test-evidence-candidates` follows the complete C# snapshot: it shows every current finding when any C# path was added, changed, or deleted, and none when the C# snapshot is unchanged. Other analyses keep their file-based selection.\n\n");
         }
 
-        builder.Append("## Audit scope\n\n")
-            .Append("Counts are per view and are not additive between changed-files and all-findings. The global project/source-file counts below use the unique representative project/file pairs; area counts can overlap those pairs.\n\n")
-            .Append("| Area | Changed-file findings | All findings |\n| --- | ---: | ---: |\n");
+        builder.Append("## Audit scope\n\n");
+        if (hasBaseline)
+        {
+            builder.Append("Counts are per view and are not additive between changed-files and all-findings. The global project/source-file counts below use the unique representative project/file pairs; area counts can overlap those pairs.\n\n")
+                .Append("| Area | Changed-file findings | All findings |\n| --- | ---: | ---: |\n");
+        }
+        else
+        {
+            builder.Append("The global project/source-file count uses unique representative project/file pairs; area counts can overlap those pairs.\n\n")
+                .Append("| Area | All findings |\n| --- | ---: |\n");
+        }
         foreach (var area in FindingAreas)
         {
             var changed = changedFindings.Count(finding => GetFindingArea(finding) == area);
             var all = findings.Count(finding => GetFindingArea(finding) == area);
-            builder.Append("| ").Append(area).Append(" | ").Append(changed.ToString(CultureInfo.InvariantCulture))
-                .Append(" | ").Append(all.ToString(CultureInfo.InvariantCulture)).Append(" |\n");
+            builder.Append("| ").Append(area).Append(" | ");
+            if (hasBaseline)
+            {
+                builder.Append(changed.ToString(CultureInfo.InvariantCulture)).Append(" | ");
+            }
+            builder.Append(all.ToString(CultureInfo.InvariantCulture)).Append(" |\n");
         }
 
-        builder.Append("\nA normal unbounded assignment includes all three `changed-files` areas. A limited assignment must identify every remaining area as unreviewed. `all-findings` requires an explicit full-repository audit request.\n\n");
-        foreach (var area in FindingAreas)
+        if (hasBaseline)
         {
-            builder.Append("- [").Append(area).Append(" changed-files (")
-                .Append(changedFindings.Count(finding => GetFindingArea(finding) == area).ToString(CultureInfo.InvariantCulture))
-                .Append(")](").Append(area).Append("/changed-files/index.md)\n");
+            builder.Append("\nA normal unbounded assignment includes all three `changed-files` areas. A limited assignment must identify every remaining area as unreviewed. `all-findings` requires an explicit full-repository audit request.\n\n");
+            foreach (var area in FindingAreas)
+            {
+                builder.Append("- [").Append(area).Append(" changed-files (")
+                    .Append(changedFindings.Count(finding => GetFindingArea(finding) == area).ToString(CultureInfo.InvariantCulture))
+                    .Append(")](").Append(area).Append("/changed-files/index.md)\n");
+            }
+            builder.Append("- [Audit map: changed-files](audit-map/changed-files/index.md)\n");
+            builder.Append("\n## Complete findings (reference only)\n\n")
+                .Append("> **Agent instruction:** Do not inspect, summarize, or display findings from any `all-findings` area unless the user explicitly requests an audit of the entire repository.\n\n");
         }
-        builder.Append("- [Audit map: changed-files](audit-map/changed-files/index.md)\n");
-
-        builder.Append("\n## Complete findings (reference only)\n\n")
-            .Append("> **Agent instruction:** Do not inspect, summarize, or display findings from any `all-findings` area unless the user explicitly requests an audit of the entire repository.\n\n")
-            .Append(allCount.ToString(CultureInfo.InvariantCulture)).Append(" findings across all areas.\n\n");
+        else
+        {
+            builder.Append("\nA normal unbounded assignment includes all three `all-findings` areas. A limited assignment must identify every remaining area as unreviewed.\n\n");
+        }
+        builder.Append(allCount.ToString(CultureInfo.InvariantCulture)).Append(" findings across all areas.\n\n");
         foreach (var area in FindingAreas)
         {
             builder.Append("- [").Append(area).Append(" all-findings (")
                 .Append(findings.Count(finding => GetFindingArea(finding) == area).ToString(CultureInfo.InvariantCulture))
                 .Append(")](").Append(area).Append("/all-findings/index.md)\n");
         }
-        builder.Append("- [Audit map: all-findings](audit-map/all-findings/index.md) (reference only)\n");
+        builder.Append("- [Audit map: all-findings](audit-map/all-findings/index.md)");
+        if (hasBaseline)
+        {
+            builder.Append(" (reference only)");
+        }
+        builder.Append('\n');
 
         builder.Append("\n## Loaded C# projects\n\n| Project | Classified role | Classification reason |\n| --- | --- | --- |\n");
         foreach (var project in result.ProjectClassifications.OrderBy(static item => item.ProjectPath, StringComparer.Ordinal))
@@ -338,10 +389,14 @@ public sealed class MarkdownReportWriter
             builder.Append('\n');
         }
 
-        builder.Append("## Global totals\n\n")
-            .Append("Changed-files: ").Append(changedCount.ToString(CultureInfo.InvariantCulture)).Append(" findings across ")
-            .Append(changedFindings.Select(static finding => (finding.Finding.ProjectPath, finding.Finding.SourcePath)).Distinct().Count()
-                .ToString(CultureInfo.InvariantCulture)).Append(" unique representative project/file pairs; all-findings: ")
+        builder.Append("## Global totals\n\n");
+        if (hasBaseline)
+        {
+            builder.Append("Changed-files: ").Append(changedCount.ToString(CultureInfo.InvariantCulture)).Append(" findings across ")
+                .Append(changedFindings.Select(static finding => (finding.Finding.ProjectPath, finding.Finding.SourcePath)).Distinct().Count()
+                    .ToString(CultureInfo.InvariantCulture)).Append(" unique representative project/file pairs; ");
+        }
+        builder.Append(hasBaseline ? "all-findings: " : "All-findings: ")
             .Append(allCount.ToString(CultureInfo.InvariantCulture)).Append(" findings; all-findings contain ")
             .Append(findings.Select(static finding => (finding.Finding.ProjectPath, finding.Finding.SourcePath)).Distinct().Count()
                 .ToString(CultureInfo.InvariantCulture))
@@ -376,13 +431,13 @@ public sealed class MarkdownReportWriter
         string title,
         ConfiguredReviewAnalysis[] analyses,
         IReadOnlyList<ReviewFinding> findings,
-        bool changedOnly,
+        bool requiresFullAudit,
         CancellationToken cancellationToken)
     {
         var builder = new StringBuilder();
         builder.Append("# ").Append(area).Append(" — ").Append(title).Append("\n\n")
             .Append("This index covers ").Append(area).Append(" findings in this view. Related findings in other areas remain visible in their own index. See the [shared audit guidance](../../index.md#review-guidance).\n\n");
-        if (!changedOnly)
+        if (requiresFullAudit)
         {
             builder.Append("> **Notice for AI agents:** This area contains current findings for reference. Do not review or report them unless the user explicitly requested a full repository audit. Use [`changed-files/`](../changed-files/index.md) for active review.\n\n");
         }
@@ -465,6 +520,7 @@ public sealed class MarkdownReportWriter
         IReadOnlyList<ReviewFinding> visibleViewFindings,
         IReadOnlyList<ReviewFinding> allFindings,
         IReadOnlyDictionary<string, string> findingIds,
+        bool hasBaseline,
         CancellationToken cancellationToken)
     {
         if (findings.Count == 0)
@@ -475,7 +531,7 @@ public sealed class MarkdownReportWriter
         var reportDirectory = Path.Combine(runDirectory, area, viewDirectory);
         Directory.CreateDirectory(reportDirectory);
         var analysisPath = Path.Combine(reportDirectory, configuredAnalysis.AnalysisId + ".md");
-        await WriteUtf8Async(analysisPath, FormatAnalysisReport(configuredAnalysis, projectRoot, analysisPath, area, viewDirectory, findings, visibleViewFindings, allFindings, findingIds), cancellationToken)
+        await WriteUtf8Async(analysisPath, FormatAnalysisReport(configuredAnalysis, projectRoot, analysisPath, area, viewDirectory, findings, visibleViewFindings, allFindings, findingIds, hasBaseline), cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -488,13 +544,14 @@ public sealed class MarkdownReportWriter
         IReadOnlyList<ReviewFinding> findings,
         IReadOnlyList<ReviewFinding> visibleViewFindings,
         IReadOnlyList<ReviewFinding> allFindings,
-        IReadOnlyDictionary<string, string> findingIds)
+        IReadOnlyDictionary<string, string> findingIds,
+        bool hasBaseline)
     {
         var descriptor = configuredAnalysis.Analysis.Descriptor;
         var builder = new StringBuilder();
         builder.Append("# ").Append(EscapeLinkText(descriptor.Title)).Append("\n\n")
             .Append(EscapeInline(descriptor.Purpose)).Append("\n\n")
-            .Append(viewDirectory == "all-findings"
+            .Append(viewDirectory == "all-findings" && hasBaseline
                 ? "Review policy: In the commissioned scope, investigate every finding and justify its classification; a signal alone does not require a change. This area is reference-only; inspect or report it only when the user explicitly requests a full repository audit. See the [root index's Review guidance](../../index.md#review-guidance).\n\n"
                 : "Review policy: In the commissioned scope, investigate every finding and justify its classification; a signal alone does not require a change. A normal unbounded audit includes all three areas; see the [root index's Review guidance](../../index.md#review-guidance).\n\n")
             .Append(FormatEffectiveOptions(configuredAnalysis)).Append("\n\n")
@@ -548,7 +605,7 @@ public sealed class MarkdownReportWriter
                 .Append("This is static test-path evidence from the loaded snapshot, not runtime coverage. The `attribution uncertain` marker means the static test association may be incomplete; it can result from reachable unresolved bindings, method groups, or virtual/interface dispatch, and may propagate to downstream methods over known calls. A reachable global uncertainty input can mark every function, so the marker alone neither means a test is missing nor that the marked function itself has an unresolved binding. It does not assess test assertion quality. Reflection, dependency injection, external test projects, dynamic dispatch, branch execution, and custom test discovery can hide associations.\n");
             if (viewDirectory == "changed-files")
             {
-                builder.Append("\nChanged-files selection is snapshot-wide because changes to test roots or the call graph can alter associations in unchanged production files. Without a baseline, every current source file is treated as new. With a baseline, any added, changed, or deleted C# path selects all current findings; an unchanged C# snapshot selects none. The source status in each file heading describes only that representative file relative to the baseline; an unchanged status does not mean unaffected.\n");
+                builder.Append("\nChanged-files selection is snapshot-wide because changes to test roots or the call graph can alter associations in unchanged production files. Any added, changed, or deleted C# path selects all current findings; an unchanged C# snapshot selects none. The source status in each file heading describes only that representative file relative to the baseline; an unchanged status does not mean unaffected.\n");
             }
         }
 

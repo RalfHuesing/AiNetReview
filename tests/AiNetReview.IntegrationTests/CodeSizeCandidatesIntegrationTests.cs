@@ -234,10 +234,11 @@ public sealed class CodeSizeCandidatesIntegrationTests
 
         Assert.Equal(0, result.ExitCode);
         var runId = GetRunId(result.Output);
+        var runDirectory = Path.Combine(projectRoot, "reports", runId);
+        Assert.False(Directory.EnumerateFileSystemEntries(runDirectory, "changed-files", SearchOption.AllDirectories).Any());
         foreach (var area in new[] { "production", "tests", "mixed" })
-        foreach (var view in new[] { "all-findings", "changed-files" })
         {
-            var viewDirectory = Path.Combine(projectRoot, "reports", runId, area, view);
+            var viewDirectory = Path.Combine(runDirectory, area, "all-findings");
             Assert.False(File.Exists(Path.Combine(viewDirectory, "code-size-candidates.md")));
             Assert.DoesNotContain(Directory.GetFiles(viewDirectory), static path => Path.GetFileName(path) == "code-size-candidates.md");
         }

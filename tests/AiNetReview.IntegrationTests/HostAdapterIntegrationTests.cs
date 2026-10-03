@@ -46,9 +46,7 @@ public sealed class HostAdapterIntegrationTests
         Assert.Equal(1, first.Detected);
         var runDirectory = Path.Combine(projectRoot, "reports", first.RunId);
         var allReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "indirection-drift-candidates.md"));
-        var changedReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "changed-files", "indirection-drift-candidates.md"));
-        AssertViewPolicies(allReport, changedReport);
-        Assert.Equal(NormalizeForChangedView(allReport), changedReport);
+        Assert.False(Directory.Exists(Path.Combine(runDirectory, "production", "changed-files")));
         Assert.Contains("Forwarding path: 2 forwarding edges across 3 types and 3 files", allReport, StringComparison.Ordinal);
         Assert.True(allReport.IndexOf("[Sample/ZApi.cs](../../../../Sample/ZApi.cs):", StringComparison.Ordinal)
             < allReport.IndexOf("[Sample/BService.cs](../../../../Sample/BService.cs):", StringComparison.Ordinal));
@@ -371,7 +369,6 @@ public sealed class HostAdapterIntegrationTests
         Assert.Equal(2, firstResponse.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
         var firstRunDirectory = Path.Combine(projectRoot, "reports", firstRunId);
         var allReport = await File.ReadAllTextAsync(Path.Combine(firstRunDirectory, "production", "all-findings", "missing-test-evidence-candidates.md"));
-        var changedReport = await File.ReadAllTextAsync(Path.Combine(firstRunDirectory, "production", "changed-files", "missing-test-evidence-candidates.md"));
         var index = await File.ReadAllTextAsync(Path.Combine(firstRunDirectory, "index.md"));
         Assert.Contains("no static test path", allReport, StringComparison.Ordinal);
         Assert.Contains("indirect test path only", allReport, StringComparison.Ordinal);
@@ -379,11 +376,9 @@ public sealed class HostAdapterIntegrationTests
         Assert.Contains("Shortest resolved test path:", allReport, StringComparison.Ordinal);
         Assert.Contains("attribution uncertain` marker means the static test association may be incomplete", allReport, StringComparison.Ordinal);
         Assert.Contains("It does not assess test assertion quality.", allReport, StringComparison.Ordinal);
-        Assert.Contains("Changed-files selection is snapshot-wide because changes to test roots or the call graph can alter associations in unchanged production files. Without a baseline, every current source file is treated as new. With a baseline, any added, changed, or deleted C# path selects all current findings; an unchanged C# snapshot selects none. The source status in each file heading describes only that representative file relative to the baseline; an unchanged status does not mean unaffected.", changedReport, StringComparison.Ordinal);
-        Assert.Contains("source new or changed", changedReport, StringComparison.Ordinal);
-        AssertViewPolicies(allReport, changedReport);
-        Assert.Equal(allReport, NormalizeNoBaselineChangedView(changedReport));
-        Assert.Contains("any C# path was added, changed, or deleted", index, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(Path.Combine(firstRunDirectory, "production", "changed-files")));
+        Assert.DoesNotContain("changed-files", index, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("reference-only", allReport, StringComparison.Ordinal);
 
         var baseline = await InvokeProductionCommandAsync(["baseline", projectRoot]);
         Assert.Equal(0, baseline.ExitCode);
@@ -511,6 +506,11 @@ public sealed class HostAdapterIntegrationTests
         using var firstResponse = JsonDocument.Parse(first.Output);
         var firstRunDirectory = Path.Combine(projectRoot, "reports", firstResponse.RootElement.GetProperty("runId").GetString()!);
         var rootIndex = await File.ReadAllTextAsync(Path.Combine(firstRunDirectory, "index.md"));
+        Assert.False(Directory.EnumerateFileSystemEntries(firstRunDirectory, "changed-files", SearchOption.AllDirectories).Any());
+        foreach (var markdownPath in Directory.EnumerateFiles(firstRunDirectory, "*.md", SearchOption.AllDirectories))
+        {
+            Assert.DoesNotContain("changed-files", await File.ReadAllTextAsync(markdownPath), StringComparison.OrdinalIgnoreCase);
+        }
         foreach (var analysisId in new[]
         {
             "code-size-candidates", "dead-code-candidates", "duplicate-code-candidates", "indirection-drift-candidates",
@@ -522,11 +522,8 @@ public sealed class HostAdapterIntegrationTests
 
         foreach (var area in new[] { "production", "tests", "mixed" })
         {
-            var changedReports = Directory.GetFiles(Path.Combine(firstRunDirectory, area, "changed-files"), "*.md")
-                .Select(Path.GetFileName).Where(static name => name != "index.md").Order(StringComparer.Ordinal).ToArray();
-            var completeReports = Directory.GetFiles(Path.Combine(firstRunDirectory, area, "all-findings"), "*.md")
-                .Select(Path.GetFileName).Where(static name => name != "index.md").Order(StringComparer.Ordinal).ToArray();
-            Assert.Equal(completeReports, changedReports);
+            Assert.False(Directory.Exists(Path.Combine(firstRunDirectory, area, "changed-files")));
+            Assert.True(File.Exists(Path.Combine(firstRunDirectory, area, "all-findings", "index.md")));
         }
 
         var mixedAll = Path.Combine(firstRunDirectory, "mixed", "all-findings", "duplicate-code-candidates.md");
@@ -537,8 +534,6 @@ public sealed class HostAdapterIntegrationTests
         Assert.Contains("CasesB.cs", mixedAllReport, StringComparison.Ordinal);
         var testFinding = Path.Combine(firstRunDirectory, "tests", "all-findings", "non-ascii-identifiers.md");
         Assert.True(File.Exists(testFinding));
-        Assert.True(File.Exists(Path.Combine(firstRunDirectory, "tests", "changed-files", "non-ascii-identifiers.md")));
-        Assert.True(File.Exists(Path.Combine(firstRunDirectory, "mixed", "changed-files", "duplicate-code-candidates.md")));
 
         await File.WriteAllTextAsync(configPath,
             fullConfig.Replace("\"non-ascii-identifiers\":{}", "\"non-ascii-identifiers\":{\"enabled\":false}", StringComparison.Ordinal));
@@ -611,7 +606,7 @@ public sealed class HostAdapterIntegrationTests
         var thirdIndex = await File.ReadAllTextAsync(Path.Combine(thirdRunDirectory, "index.md"));
         Assert.Contains("No findings were found.", thirdIndex, StringComparison.Ordinal);
         Assert.Equal(new[] { "index.md" }, Directory.GetFiles(Path.Combine(thirdRunDirectory, "production", "all-findings"), "*.md").Select(Path.GetFileName));
-        Assert.Equal(new[] { "index.md" }, Directory.GetFiles(Path.Combine(thirdRunDirectory, "production", "changed-files"), "*.md").Select(Path.GetFileName));
+        Assert.False(Directory.Exists(Path.Combine(thirdRunDirectory, "production", "changed-files")));
 
         Assert.True(File.Exists(Path.Combine(projectRoot, "reports", first.RunId, "index.md")));
         Assert.True(File.Exists(Path.Combine(projectRoot, "reports", second.RunId, "index.md")));
@@ -950,37 +945,6 @@ public sealed class HostAdapterIntegrationTests
 
     private static Task<string> ReadDuplicateCodeReportAsync(string projectRoot, string runId) =>
         File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId, "production", "all-findings", "duplicate-code-candidates.md"));
-
-    private static void AssertViewPolicies(string allFindingsReport, string changedFilesReport)
-    {
-        Assert.Contains(
-            "This area is reference-only; inspect or report it only when the user explicitly requests a full repository audit.",
-            allFindingsReport,
-            StringComparison.Ordinal);
-        Assert.Contains("A normal unbounded audit includes all three areas;", changedFilesReport, StringComparison.Ordinal);
-    }
-
-    private static string NormalizeForChangedView(string report) => report.Replace(
-        "This area is reference-only; inspect or report it only when the user explicitly requests a full repository audit. See the [root index's Review guidance](../../index.md#review-guidance).",
-        "A normal unbounded audit includes all three areas; see the [root index's Review guidance](../../index.md#review-guidance).",
-        StringComparison.Ordinal);
-
-    private static string NormalizeNoBaselineChangedView(string report)
-    {
-        var normalized = report.Replace(
-                "A normal unbounded audit includes all three areas; see the [root index's Review guidance](../../index.md#review-guidance).",
-                "This area is reference-only; inspect or report it only when the user explicitly requests a full repository audit. See the [root index's Review guidance](../../index.md#review-guidance).",
-                StringComparison.Ordinal)
-            .Replace("; source new or changed)", ")", StringComparison.Ordinal);
-        var paragraphStart = normalized.IndexOf("\n\nChanged-files selection is snapshot-wide", StringComparison.Ordinal);
-        if (paragraphStart < 0)
-        {
-            return normalized;
-        }
-
-        var nextSection = normalized.IndexOf("\n\n## Summary", paragraphStart, StringComparison.Ordinal);
-        return nextSection < 0 ? normalized : normalized.Remove(paragraphStart, nextSection - paragraphStart);
-    }
 
     private static void AssertMarkdownLinksResolve(string runDirectory)
     {

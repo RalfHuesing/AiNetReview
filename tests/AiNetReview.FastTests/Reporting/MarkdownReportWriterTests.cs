@@ -22,6 +22,37 @@ using Microsoft.CodeAnalysis;
 public sealed class MarkdownReportWriterTests
 {
     [Fact]
+    public async Task WriteAsync_WithoutBaselinePublishesOnlyCompleteAuditAndDoesNotMentionChangedFiles()
+    {
+        using var temp = TestTempDirectory.Create();
+        var analysis = new ReportAnalysis("fixture-analysis", "Fixture analysis", "default");
+        var config = CreateConfig(temp.DirectoryPath, analysis);
+        var finding = Finding("Sample.cs", 2, "C:Sample", "A concise signal", "class Sample", "type-candidate");
+        var result = new ReviewRunResult([
+            new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([finding])),
+        ]);
+
+        var published = await new MarkdownReportWriter().WriteAsync(config, result);
+        var runDirectory = Path.Combine(config.ResolvedOutputDirectory, published.RunId);
+        Assert.False(Directory.EnumerateFileSystemEntries(runDirectory, "changed-files", SearchOption.AllDirectories).Any());
+        foreach (var path in Directory.EnumerateFiles(runDirectory, "*.md", SearchOption.AllDirectories))
+        {
+            var content = await File.ReadAllTextAsync(path);
+            Assert.DoesNotContain("changed-files", content, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
+        var map = await File.ReadAllTextAsync(Path.Combine(runDirectory, "audit-map", "all-findings", "index.md"));
+        var area = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "index.md"));
+        var report = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "fixture-analysis.md"));
+        Assert.Contains("A normal unbounded audit covers production, tests, and mixed findings", index, StringComparison.Ordinal);
+        Assert.DoesNotContain("explicitly requests a full", index, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Full-audit scope", map, StringComparison.Ordinal);
+        Assert.DoesNotContain("explicitly requested", area, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("explicitly requests", report, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task WriteAsync_PublishesOnlyTwoCompactAuditMapsWithCompleteUniqueFindingsAndResolvableLinks()
     {
         using var temp = TestTempDirectory.Create();
@@ -87,13 +118,13 @@ public sealed class MarkdownReportWriterTests
 
         var orderedMapRoot = temp.GetPath("ordered-map");
         var reversedMapRoot = temp.GetPath("reversed-map");
-        await AuditMapReportWriter.WriteAuditMapAsync(orderedMapRoot, "fixed-run", temp.DirectoryPath, findings, "all-findings", CancellationToken.None);
+        await AuditMapReportWriter.WriteAuditMapAsync(orderedMapRoot, "fixed-run", temp.DirectoryPath, findings, "all-findings", CancellationToken.None, true);
         var reversedFindings = findings.AsEnumerable().Reverse().Select(finding => finding with
         {
             SubjectOccurrences = finding.SubjectOccurrences.Reverse().ToArray(),
             SourcePaths = finding.SourcePaths.Reverse().ToArray(),
         }).ToArray();
-        await AuditMapReportWriter.WriteAuditMapAsync(reversedMapRoot, "fixed-run", temp.DirectoryPath, reversedFindings, "all-findings", CancellationToken.None);
+        await AuditMapReportWriter.WriteAuditMapAsync(reversedMapRoot, "fixed-run", temp.DirectoryPath, reversedFindings, "all-findings", CancellationToken.None, true);
         Assert.Equal(
             await File.ReadAllTextAsync(Path.Combine(orderedMapRoot, "audit-map", "all-findings", "index.md")),
             await File.ReadAllTextAsync(Path.Combine(reversedMapRoot, "audit-map", "all-findings", "index.md")));
@@ -163,7 +194,7 @@ public sealed class MarkdownReportWriterTests
 
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
             new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([finding])),
-        ]));
+        ]) { HasCSharpSnapshotChanges = true });
         var markdown = await File.ReadAllTextAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId,
             "production", "all-findings", "structural-duplication-candidates.md"));
 
@@ -222,7 +253,7 @@ public sealed class MarkdownReportWriterTests
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
             new ReviewAnalysisRunResult(secondAnalysis.Descriptor.AnalysisId, ReviewAnalysisResult.Empty),
             new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, ReviewAnalysisResult.Empty),
-        ]));
+        ]) { HasCSharpSnapshotChanges = true });
 
         var indexBytes = await File.ReadAllBytesAsync(Path.Combine(config.ResolvedOutputDirectory, report.RunId, "index.md"));
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
@@ -252,7 +283,7 @@ public sealed class MarkdownReportWriterTests
         var analysis = new ReportAnalysis("inactive-analysis", "Inactive Review analysis", "unused");
         var config = CreateConfig(temp.DirectoryPath, false, analysis);
 
-        var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([]));
+        var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([]) { HasCSharpSnapshotChanges = true });
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
 
@@ -277,7 +308,7 @@ public sealed class MarkdownReportWriterTests
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
             new ReviewAnalysisRunResult(withFindings.Descriptor.AnalysisId, new ReviewAnalysisResult([finding, samePathInAnotherProject])),
             new ReviewAnalysisRunResult(withoutFindings.Descriptor.AnalysisId, ReviewAnalysisResult.Empty),
-        ]));
+        ]) { HasCSharpSnapshotChanges = true });
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
         var analysisReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "has-findings.md"));
@@ -396,7 +427,7 @@ public sealed class MarkdownReportWriterTests
 
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
             new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([finding])),
-        ]));
+        ]) { HasCSharpSnapshotChanges = true });
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
         var markdown = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "duplicate-code-candidates.md"));
         var index = await File.ReadAllTextAsync(Path.Combine(runDirectory, "index.md"));
@@ -447,7 +478,7 @@ public sealed class MarkdownReportWriterTests
 
         var report = await new MarkdownReportWriter().WriteAsync(config, new ReviewRunResult([
             new ReviewAnalysisRunResult(analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([finding])),
-        ]));
+        ]) { HasCSharpSnapshotChanges = true });
         var runDirectory = Path.Combine(config.ResolvedOutputDirectory, report.RunId);
         var allFindings = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "indirection-drift-candidates.md"));
         var changedFiles = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "changed-files", "indirection-drift-candidates.md"));
@@ -567,7 +598,7 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("no static test path", selected, StringComparison.Ordinal);
         Assert.Contains("indirect test path only", selected, StringComparison.Ordinal);
         Assert.Contains("Changed-files selection is snapshot-wide because changes to test roots or the call graph can alter associations in unchanged production files.", selected, StringComparison.Ordinal);
-        Assert.Contains("Without a baseline, every current source file is treated as new.", selected, StringComparison.Ordinal);
+        Assert.Contains("Any added, changed, or deleted C# path selects all current findings", selected, StringComparison.Ordinal);
         Assert.Contains("#### File: Sample/NoPath.cs (1 findings; source new or changed)", selected, StringComparison.Ordinal);
         Assert.Contains("#### File: Sample/Indirect.cs (1 findings; source unchanged; included snapshot-wide)", selected, StringComparison.Ordinal);
         Assert.DoesNotContain("Other Analysis", selectedIndex, StringComparison.Ordinal);
@@ -579,9 +610,10 @@ public sealed class MarkdownReportWriterTests
             HasCSharpSnapshotChanges = null,
         });
         var withoutBaselineDirectory = Path.Combine(config.ResolvedOutputDirectory, withoutBaselineReport.RunId);
-        var withoutBaseline = await File.ReadAllTextAsync(Path.Combine(withoutBaselineDirectory, "production", "changed-files", "missing-test-evidence-candidates.md"));
-        Assert.Contains("#### File: Sample/NoPath.cs (1 findings; source new or changed)", withoutBaseline, StringComparison.Ordinal);
-        Assert.Contains("#### File: Sample/Indirect.cs (1 findings; source new or changed)", withoutBaseline, StringComparison.Ordinal);
+        var withoutBaseline = await File.ReadAllTextAsync(Path.Combine(withoutBaselineDirectory, "production", "all-findings", "missing-test-evidence-candidates.md"));
+        Assert.Contains("#### File: Sample/NoPath.cs (1 findings)", withoutBaseline, StringComparison.Ordinal);
+        Assert.Contains("#### File: Sample/Indirect.cs (1 findings)", withoutBaseline, StringComparison.Ordinal);
+        Assert.False(Directory.EnumerateFileSystemEntries(withoutBaselineDirectory, "changed-files", SearchOption.AllDirectories).Any());
     }
 
     [Fact]
@@ -631,7 +663,7 @@ public sealed class MarkdownReportWriterTests
             new ReviewAnalysisRunResult("alpha-analysis", new ReviewAnalysisResult([changedDraft])),
             new ReviewAnalysisRunResult("beta-analysis", new ReviewAnalysisResult([unchangedDraft])),
             new ReviewAnalysisRunResult("gamma-analysis", new ReviewAnalysisResult([outsideDraft])),
-        ]) { Findings = [changedFinding, changedRelatedFinding, outsideFinding] };
+        ]) { Findings = [changedFinding, changedRelatedFinding, outsideFinding], HasCSharpSnapshotChanges = true };
 
         var report = await new MarkdownReportWriter().WriteAsync(config, result,
             configurationPath: Path.Combine(temp.DirectoryPath, "target project", "ainetreview.json"));
@@ -713,6 +745,7 @@ public sealed class MarkdownReportWriterTests
                 new ProjectClassification("tests/Empty.Tests.csproj", ProjectRole.Tests, ProjectClassificationReason.ProjectFileNameSuffix),
             ],
             Findings = [prodReview, testReview, mixedReview],
+            HasCSharpSnapshotChanges = true,
         };
 
         var report = await new MarkdownReportWriter().WriteAsync(config, result);
