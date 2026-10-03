@@ -11,7 +11,7 @@ Only F-001, F-003, and the configuration-aware executable selection in F-004 are
 - [x] F-001: restore cross-compilation static test edges and verify the self-review regression.
 - [x] F-003: clean up interrupted configuration bootstrap and verify retry/preservation.
 - [x] F-004 (4.1 only): select the current Debug/Release host artifact and verify Release execution.
-- [ ] Final verification and independent GPT-6.1-Sol/medium audit; Luna fix rounds if required.
+- [x] Final verification and independent GPT-6.1-Sol/medium audit; Luna fix rounds if required.
 
 Implementation baseline: `4f7a0a741aba4b3416852fdaa3507657d37e2366`; working tree clean before changes. Implementation agents: GPT-6-Luna/high. The orchestrator owns this checklist and task-slice commits.
 
@@ -22,6 +22,8 @@ F-004 (4.1) verification: the audit's clean Release-only run records the old mis
 F-001 verification: the real MSBuildWorkspace regression failed on the missing FastTests-to-Core edge before the fix, then passed with overload, partial/generic, metadata-only, and ambiguous-identity counterchecks. All 49 targeted MissingTestEvidence FastTests passed. Full Debug gates passed (371 FastTests, 112 regular IntegrationTests); Debug and Release builds had zero warnings/errors, and all 14 Release host process tests passed.
 
 Fresh complete self-reviews: `audit-reporting/20261003T220448Z-e64809b1/` (Debug) and `audit-reporting/20261003T220513Z-fceaa537/` (Release). Both publish all report areas and maps. The false `finding-cda6805d589b65b5091d41ed` is absent. Against the original audit, missing-test findings decrease from 171 to 98; 50 retained subjects change from no-path to indirect-path signals, explaining their new IDs. Three new/changed helper subjects in the edited graph builder qualify for static no-path signals. Other production analysis finding IDs are unchanged; test structural-duplication counts are unchanged, with two IDs changing after test edits. This comparison is a regression check, not adjudication of every remaining candidate.
+
+Final independent audit (2026-10-04): GPT-6.1-Sol/medium found no actionable defects in the selected scope; no Luna fix round was necessary. The auditor independently reran 49 MissingTestEvidence FastTests and both new integration regressions successfully, and checked gate evidence and scoped contracts. See `selected-fixes-audit.md` for completeness and remaining verification limits. All selected work is complete; the original broader recommendations below remain outside this implementation unless separately authorized.
 
 ---
 
