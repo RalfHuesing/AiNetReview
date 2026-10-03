@@ -19,6 +19,6 @@ This repository contains product specifications, an implemented command-line hos
 - [Dependencies and NuGet packages](.agents/rules/06-dependencies.mdc)
 - [Code quality](.agents/rules/07-code-quality.mdc)
 - [Production review analysis configuration](.agents/rules/08-production-review-analysis-configuration.mdc)
-- [AiNetCodeNavigator MCP navigation](.agents/rules/09-ainetcodenavigator-mcp-navigation.mdc)
+- [C# navigation](.agents/rules/09-ainetcodenavigator-mcp-navigation.mdc)
 
 Read the relevant specification and rules before changing files. Ask when a decision is missing or sources conflict.
