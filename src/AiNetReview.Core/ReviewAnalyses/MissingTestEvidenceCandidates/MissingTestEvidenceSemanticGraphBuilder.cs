@@ -2,6 +2,7 @@ namespace AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -290,6 +291,51 @@ internal static class MissingTestEvidenceSemanticGraphBuilder
         DocumentationCommentId.CreateDeclarationId(Normalize(method))
         ?? Normalize(method).ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
+    private static SourceMethodIdentity? GetSourceMethodIdentity(IMethodSymbol method)
+    {
+        method = Normalize(method);
+        if (method.ContainingAssembly is not { } assembly
+            || DocumentationCommentId.CreateDeclarationId(method) is not { } declarationId
+            || method.DeclaringSyntaxReferences.Length == 0)
+        {
+            return null;
+        }
+
+        var locations = new List<string>(method.DeclaringSyntaxReferences.Length);
+        foreach (var syntaxReference in method.DeclaringSyntaxReferences)
+        {
+            var path = syntaxReference.SyntaxTree.FilePath;
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            try
+            {
+                path = Path.GetFullPath(path);
+            }
+            catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
+            {
+                return null;
+            }
+
+            if (OperatingSystem.IsWindows())
+            {
+                path = path.ToUpperInvariant();
+            }
+
+            locations.Add($"{path.Length}:{path}:{syntaxReference.Span.Start}:{syntaxReference.Span.Length}");
+        }
+
+        locations.Sort(StringComparer.Ordinal);
+        return new SourceMethodIdentity(assembly.Identity, declarationId, string.Join("|", locations));
+    }
+
+    private readonly record struct SourceMethodIdentity(
+        AssemblyIdentity AssemblyIdentity,
+        string DeclarationId,
+        string SourceLocations);
+
     private sealed record GraphFunction(
         SyntaxNode Declaration,
         SyntaxNode Body,
@@ -301,12 +347,37 @@ internal static class MissingTestEvidenceSemanticGraphBuilder
         IReadOnlyDictionary<IMethodSymbol, MissingTestEvidenceGraphNode> nodes,
         CancellationToken cancellationToken)
     {
+        private readonly IReadOnlyDictionary<SourceMethodIdentity, MissingTestEvidenceGraphNode> sourceNodes =
+            CreateUniqueSourceNodeIndex(nodes);
         private readonly HashSet<MissingTestEvidenceGraphEdge> edges = [];
         private readonly HashSet<MissingTestEvidenceUncertaintyInput> uncertaintyInputs = [];
 
         public IReadOnlyCollection<MissingTestEvidenceGraphEdge> Edges => edges;
 
         public IReadOnlyCollection<MissingTestEvidenceUncertaintyInput> UncertaintyInputs => uncertaintyInputs;
+
+        private static IReadOnlyDictionary<SourceMethodIdentity, MissingTestEvidenceGraphNode> CreateUniqueSourceNodeIndex(
+            IReadOnlyDictionary<IMethodSymbol, MissingTestEvidenceGraphNode> nodes)
+        {
+            var identifiedNodes = nodes.Values
+                .Select(node => (Node: node, Identity: GetSourceMethodIdentity(node.Method)))
+                .Where(static pair => pair.Identity is not null)
+                .ToArray();
+            var grouped = identifiedNodes
+                .GroupBy(static pair => pair.Identity!.Value)
+                .Where(static group => group.Skip(1).Any());
+            var ambiguous = grouped.Select(static group => group.Key).ToHashSet();
+            var index = new Dictionary<SourceMethodIdentity, MissingTestEvidenceGraphNode>();
+            foreach (var (node, candidateIdentity) in identifiedNodes)
+            {
+                if (candidateIdentity is { } key && !ambiguous.Contains(key))
+                {
+                    index.Add(key, node);
+                }
+            }
+
+            return index;
+        }
 
         public void Collect(GraphFunction function)
         {
@@ -338,7 +409,12 @@ internal static class MissingTestEvidenceSemanticGraphBuilder
             SyntaxNode syntax)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (target is null || !nodes.TryGetValue(Normalize(target), out var targetNode))
+            if (target is null)
+            {
+                return;
+            }
+
+            if (!TryGetNode(target, out var targetNode))
             {
                 return;
             }
@@ -360,14 +436,37 @@ internal static class MissingTestEvidenceSemanticGraphBuilder
             bool isGlobal = false)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var normalizedAffectedMethod = affectedMethod is null
+                ? null
+                : TryGetNode(affectedMethod, out var affectedNode)
+                    ? affectedNode.Method
+                    : Normalize(affectedMethod);
             uncertaintyInputs.Add(new MissingTestEvidenceUncertaintyInput(
                 source.Method,
                 kind,
-                affectedMethod is null ? null : Normalize(affectedMethod),
+                normalizedAffectedMethod,
                 isGlobal,
                 source.ProjectId,
                 syntax.SyntaxTree.FilePath,
                 syntax.Span));
+        }
+
+        private bool TryGetNode(IMethodSymbol method, out MissingTestEvidenceGraphNode node)
+        {
+            var normalized = Normalize(method);
+            if (nodes.TryGetValue(normalized, out node!))
+            {
+                return true;
+            }
+
+            if (GetSourceMethodIdentity(normalized) is { } identity
+                && sourceNodes.TryGetValue(identity, out node!))
+            {
+                return true;
+            }
+
+            node = null!;
+            return false;
         }
 
         private static bool IsPotentialDispatch(IMethodSymbol method) =>

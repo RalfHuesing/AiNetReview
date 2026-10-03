@@ -73,6 +73,68 @@ public sealed class MissingTestEvidenceSemanticGraphBuilderTests
         Assert.Equal(expectedPath, paths[target.Method].Path.Select(static node => node.Method.Name));
     }
 
+    [Fact]
+    public async Task BuildAsync_UsesProjectSymbolWhenAnotherProjectDuplicatesItsSourceIdentity()
+    {
+#pragma warning disable CA2000 // This test owns the workspace for the duration of the graph build.
+        using var workspace = new AdhocWorkspace();
+#pragma warning restore CA2000
+        var source = "namespace Example; public static class SharedTarget { public static void Run() { if (true) { } } }";
+        var sourcePath = Path.Combine(Path.GetTempPath(), "AiNetReview-MissingTestEvidenceAmbiguous", "Shared.cs");
+        var references = FastTestReferences.CreatePlatformReferences().ToArray();
+        var firstProductionId = ProjectId.CreateNewId();
+        var duplicateProductionId = ProjectId.CreateNewId();
+        var testId = ProjectId.CreateNewId();
+
+        workspace.AddProject(ProjectInfo.Create(
+            firstProductionId,
+            VersionStamp.Create(),
+            "Example.Core",
+            "Example.Core",
+            LanguageNames.CSharp,
+            filePath: Path.Combine(Path.GetDirectoryName(sourcePath)!, "Example.Core.csproj"),
+            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+            metadataReferences: references));
+        AddDocument(workspace, firstProductionId, "Shared.cs", source, sourcePath);
+        workspace.AddProject(ProjectInfo.Create(
+            duplicateProductionId,
+            VersionStamp.Create(),
+            "Example.Core",
+            "Example.Core",
+            LanguageNames.CSharp,
+            filePath: Path.Combine(Path.GetDirectoryName(sourcePath)!, "Example.Core.Duplicate.csproj"),
+            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+            metadataReferences: references));
+        AddDocument(workspace, duplicateProductionId, "Shared.cs", source, sourcePath);
+        workspace.AddProject(ProjectInfo.Create(
+            testId,
+            VersionStamp.Create(),
+            "Example.Tests",
+            "Example.Tests",
+            LanguageNames.CSharp,
+            filePath: Path.Combine(Path.GetDirectoryName(sourcePath)!, "Example.Tests.csproj"),
+            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+            metadataReferences: references.Append(TestFrameworkReference.Reference),
+            projectReferences: [new ProjectReference(firstProductionId)]));
+        AddDocument(workspace, testId, "Tests.cs", "using Xunit; public sealed class Tests { [Fact] public void Root() => Example.SharedTarget.Run(); }",
+            Path.Combine(Path.GetDirectoryName(sourcePath)!, "Tests.cs"));
+        await AssertNoCompilerErrorsAsync(workspace.CurrentSolution);
+
+        var graph = await MissingTestEvidenceSemanticGraphBuilder.BuildAsync(workspace.CurrentSolution, CancellationToken.None);
+        var targetNodes = graph.Nodes.Where(static node => node.Method.Name == "Run" && node.Method.ContainingType.Name == "SharedTarget").ToArray();
+        Assert.Equal(2, targetNodes.Length);
+        Assert.Equal(1, targetNodes.Select(static node => node.Method.ContainingAssembly.Identity).Distinct().Count());
+        Assert.Equal(1, targetNodes.Select(static node => DocumentationCommentId.CreateDeclarationId(node.Method)).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(1, targetNodes.Select(static node => node.FilePath).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        var root = Assert.Single(graph.Roots);
+        var referencedTarget = Assert.Single(targetNodes, node => node.ProjectId == firstProductionId);
+        var duplicateTarget = Assert.Single(targetNodes, node => node.ProjectId == duplicateProductionId);
+        Assert.Contains(graph.Edges, edge => SymbolEqualityComparer.Default.Equals(edge.From, root.Method)
+            && SymbolEqualityComparer.Default.Equals(edge.To, referencedTarget.Method));
+        Assert.DoesNotContain(graph.Edges, edge => SymbolEqualityComparer.Default.Equals(edge.From, root.Method)
+            && SymbolEqualityComparer.Default.Equals(edge.To, duplicateTarget.Method));
+    }
+
     [Theory]
     [InlineData("public Worker Entry() => Target()!;", "_ = worker.Entry();", "Entry", nameof(MissingTestEvidenceGraphEdgeKind.Invocation))]
     [InlineData("public Worker Entry() { return Target()!; }", "_ = worker.Entry();", "Entry", nameof(MissingTestEvidenceGraphEdgeKind.Invocation))]

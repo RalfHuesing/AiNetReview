@@ -8,7 +8,7 @@ Die Punkte sind strikt nach Priorität und empfohlener Umsetzungsreihenfolge geg
 
 Only F-001, F-003, and the configuration-aware executable selection in F-004 are authorized for this implementation. F-002, release pipeline changes (4.2), release-script alignment (4.3), and P3 follow-ups remain outside this scope. Existing unchecked items below retain their original broader audit recommendations.
 
-- [ ] F-001: restore cross-compilation static test edges and verify the self-review regression.
+- [x] F-001: restore cross-compilation static test edges and verify the self-review regression.
 - [x] F-003: clean up interrupted configuration bootstrap and verify retry/preservation.
 - [x] F-004 (4.1 only): select the current Debug/Release host artifact and verify Release execution.
 - [ ] Final verification and independent GPT-6.1-Sol/medium audit; Luna fix rounds if required.
@@ -18,6 +18,10 @@ Implementation baseline: `4f7a0a741aba4b3416852fdaa3507657d37e2366`; working tre
 F-003 verification: the new cancellation regression failed against the original direct write (final file remained). After the fix, 19 ZeroConfig tests and a focused 20-test bootstrap/cancellation selection passed. Same-directory temporary publication preserves existing configuration and permits a successful retry; cleanup is restricted to the owned temporary file. Broad gates and the final audit follow after all selected fixes.
 
 F-004 (4.1) verification: the audit's clean Release-only run records the old missing-Debug failure. With the fix, the focused repository process test passed in Release (1/1). Executable selection uses the test assembly's build configuration without a fallback to other outputs. Release pipeline changes remain outside the selected scope.
+
+F-001 verification: the real MSBuildWorkspace regression failed on the missing FastTests-to-Core edge before the fix, then passed with overload, partial/generic, metadata-only, and ambiguous-identity counterchecks. All 49 targeted MissingTestEvidence FastTests passed. Full Debug gates passed (371 FastTests, 112 regular IntegrationTests); Debug and Release builds had zero warnings/errors, and all 14 Release host process tests passed.
+
+Fresh complete self-reviews: `audit-reporting/20261003T220448Z-e64809b1/` (Debug) and `audit-reporting/20261003T220513Z-fceaa537/` (Release). Both publish all report areas and maps. The false `finding-cda6805d589b65b5091d41ed` is absent. Against the original audit, missing-test findings decrease from 171 to 98; 50 retained subjects change from no-path to indirect-path signals, explaining their new IDs. Three new/changed helper subjects in the edited graph builder qualify for static no-path signals. Other production analysis finding IDs are unchanged; test structural-duplication counts are unchanged, with two IDs changing after test edits. This comparison is a regression check, not adjudication of every remaining candidate.
 
 ---
 
