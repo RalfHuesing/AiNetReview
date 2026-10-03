@@ -69,6 +69,22 @@ public sealed class TypeDependencyHubCandidatesAnalysisTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ReportsIntentionalCheckoutCompositionFacadeAtApprovedCountsForReview()
+    {
+        using var fixture = CreateCheckoutFacadeFixture();
+        var analysis = new TypeDependencyHubCandidatesAnalysis();
+
+        var finding = Assert.Single((await analysis.ExecuteAsync(
+            fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None)).Findings);
+
+        Assert.Equal(10, finding.Metrics["fanIn"]);
+        Assert.Equal(10, finding.Metrics["fanOut"]);
+        Assert.Contains(finding.SubjectSymbols, static symbol => symbol.SymbolId.Contains("CheckoutCompositionRoot", StringComparison.Ordinal));
+        Assert.Equal(10, finding.Evidence.Count(static item => item.Detail.StartsWith("Production consumer;", StringComparison.Ordinal)));
+        Assert.Equal(10, finding.Evidence.Count(static item => item.Detail.StartsWith("Production dependency;", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public void Descriptor_DeclaresEnabledDefaultsWithoutTestOptions()
     {
         var descriptor = new TypeDependencyHubCandidatesAnalysis().Descriptor;
@@ -177,6 +193,44 @@ public sealed class TypeDependencyHubCandidatesAnalysisTests
             workspace.Dispose();
             Directory.Delete(root, recursive: true);
             throw new InvalidOperationException("Could not initialize Roslyn test workspace.");
+        }
+
+        return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root), root);
+    }
+
+    private static AnalysisFixture CreateCheckoutFacadeFixture()
+    {
+        var workspace = new AdhocWorkspace();
+        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-TypeDependencyHub-Checkout", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var projectId = ProjectId.CreateNewId();
+        workspace.AddProject(ProjectInfo.Create(projectId, VersionStamp.Create(), "Checkout", "Checkout", LanguageNames.CSharp,
+            filePath: Path.Combine(root, "Checkout.csproj"), compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+            parseOptions: new CSharpParseOptions(LanguageVersion.Preview), metadataReferences: FastTestReferences.CreatePlatformReferences()));
+
+        var dependencies = new[]
+        {
+            "CartRepository", "PriceCatalog", "DiscountPolicy", "TaxCalculator", "PaymentGateway",
+            "InventoryService", "OrderWriter", "ReceiptPublisher", "FraudScreen", "CustomerDirectory",
+        };
+        AddDocument(workspace, projectId, root, "CheckoutCompositionRoot.cs",
+            "namespace Sample; public sealed class CheckoutCompositionRoot { "
+            + string.Join(" ", dependencies.Select((name, index) => $"public {name}? Dependency{index};")) + " }");
+        foreach (var index in Enumerable.Range(0, 10))
+        {
+            AddDocument(workspace, projectId, root, $"CheckoutEndpoint{index}.cs",
+                $"namespace Sample; public sealed class CheckoutEndpoint{index} {{ public CheckoutCompositionRoot? Root; }}");
+        }
+        foreach (var dependency in dependencies)
+        {
+            AddDocument(workspace, projectId, root, dependency + ".cs", $"namespace Sample; public sealed class {dependency} {{ }}");
+        }
+
+        if (!workspace.TryApplyChanges(workspace.CurrentSolution))
+        {
+            workspace.Dispose();
+            Directory.Delete(root, recursive: true);
+            throw new InvalidOperationException("Could not initialize checkout composition-root fixture.");
         }
 
         return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root), root);

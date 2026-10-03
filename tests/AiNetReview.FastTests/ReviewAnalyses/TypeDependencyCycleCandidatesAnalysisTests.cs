@@ -69,6 +69,25 @@ public sealed class TypeDependencyCycleCandidatesAnalysisTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ReportsIntentionalCallbackProtocolCycleForHumanReview()
+    {
+        using var fixture = CreateFixture(
+            ("RequestHandler.cs", "namespace Sample; public interface IRequestHandler { Response Handle(Request request); }"),
+            ("Request.cs", "namespace Sample; public sealed class Request { public ICallback? Callback { get; init; } }"),
+            ("Callback.cs", "namespace Sample; public interface ICallback { IRequestHandler? Handler { get; } void Completed(Response response); }"),
+            ("Response.cs", "namespace Sample; public sealed class Response { public Request? OriginalRequest { get; init; } }"));
+        var analysis = new TypeDependencyCycleCandidatesAnalysis();
+
+        var finding = Assert.Single((await analysis.ExecuteAsync(
+            fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None)).Findings);
+
+        Assert.Equal(4, finding.Metrics["typeCount"]);
+        Assert.Equal(4, finding.Metrics["declarationFileCount"]);
+        Assert.Contains(finding.SubjectSymbols, static symbol => symbol.SymbolId.Contains("IRequestHandler", StringComparison.Ordinal));
+        Assert.Contains(finding.SubjectSymbols, static symbol => symbol.SymbolId.Contains("ICallback", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Descriptor_IsEnabledByDefaultAndUsesOnlyStandardEnablement()
     {
         var descriptor = new TypeDependencyCycleCandidatesAnalysis().Descriptor;

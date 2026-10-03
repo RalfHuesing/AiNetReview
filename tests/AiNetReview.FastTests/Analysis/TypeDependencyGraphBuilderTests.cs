@@ -126,6 +126,54 @@ public sealed class TypeDependencyGraphBuilderTests
     }
 
     [Fact]
+    public async Task BuildAsync_UsesEligiblePartOfMixedGeneratedPartialTypeAsProductionAndTestTarget()
+    {
+        using var fixture = CreateMixedGeneratedPartialFixture();
+        var graph = await TypeDependencyGraphBuilder.BuildAsync(fixture.Context, CancellationToken.None);
+        var consumer = Node(graph, "T:App.Consumer", "Example.Core");
+        var partial = Node(graph, "T:App.PartialTarget", "Example.Core");
+        var tests = Node(graph, "T:Example.Tests.TargetTests", "Example.Tests");
+
+        Assert.Equal(new[] { "Eligible.cs" }, partial.Declarations.Select(static declaration => declaration.SourcePath));
+        Assert.Contains(graph.ProductionEdges, edge => edge.From == consumer && edge.To == partial);
+        Assert.Contains(graph.TestContextEdges, edge => edge.From == tests && edge.To == partial);
+        Assert.DoesNotContain(graph.Nodes, node => node.Symbol.Name == "FullyGeneratedTarget");
+    }
+
+    [Fact]
+    public async Task BuildAsync_ExcludesGeneratedMemberSignaturesInitializersAndBodiesButKeepsEligibleMembers()
+    {
+        using var fixture = CreateGeneratedMemberFixture();
+        var graph = await TypeDependencyGraphBuilder.BuildAsync(fixture.Context, CancellationToken.None);
+        var owner = Node(graph, "T:App.Owner", "Example.Core");
+        var excluded = new[] { "GeneratedPropertyTarget", "GeneratedFieldTarget", "GeneratedMethodTarget", "GeneratedEventTarget" };
+
+        foreach (var name in excluded)
+        {
+            var target = Node(graph, "T:App." + name, "Example.Core");
+            Assert.DoesNotContain(graph.ProductionEdges, edge => edge.From == owner && edge.To == target);
+        }
+
+        var eligible = Node(graph, "T:App.EligibleTarget", "Example.Core");
+        Assert.Contains(graph.ProductionEdges, edge => edge.From == owner && edge.To == eligible);
+    }
+
+    [Fact]
+    public async Task BuildAsync_MapsSameAssemblyIdentitySourceTypesToTheActualAliasedProjectOwner()
+    {
+        using var fixture = CreateDuplicateAssemblyIdentityFixture();
+        var graph = await TypeDependencyGraphBuilder.BuildAsync(fixture.Context, CancellationToken.None);
+        var consumer = Node(graph, "T:App.Consumer", "Example.Consumer");
+        var firstTarget = Node(graph, "T:App.Target", "Example.First");
+        var secondTarget = Node(graph, "T:App.Target", "Example.Second");
+
+        Assert.Single(graph.ProductionEdges.Where(edge => edge.From == consumer));
+        Assert.Contains(graph.ProductionEdges, edge => edge.From == consumer && edge.To == secondTarget);
+        Assert.DoesNotContain(graph.ProductionEdges, edge => edge.From == consumer && edge.To == firstTarget);
+        Assert.NotEqual(firstTarget.ProjectId, secondTarget.ProjectId);
+    }
+
+    [Fact]
     public async Task BuildAsync_FailsAtRequiredUnresolvedTypeWithProjectSourceAndPosition()
     {
         using var fixture = CreateBrokenFixture();
@@ -318,6 +366,84 @@ public sealed class TypeDependencyGraphBuilderTests
         return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
     }
 
+    private static Fixture CreateMixedGeneratedPartialFixture()
+    {
+        var workspace = new AdhocWorkspace();
+        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-TypeDependencyGraph", Guid.NewGuid().ToString("N"));
+        var production = ProjectId.CreateNewId();
+        var test = ProjectId.CreateNewId();
+        var refs = FastTestReferences.CreatePlatformReferences().ToArray();
+        AddProject(workspace, production, "Example.Core", root, refs);
+        AddProject(workspace, test, "Example.Tests", root, refs);
+        Assert.True(workspace.TryApplyChanges(workspace.CurrentSolution.AddProjectReference(test, new ProjectReference(production))));
+        AddDocument(workspace, production, "Eligible.cs", "namespace App; public partial class PartialTarget { } public class Consumer { public PartialTarget? Value; }", Path.Combine(root, "Eligible.cs"));
+        AddDocument(workspace, production, "PartialTarget.g.cs", "namespace App; public partial class PartialTarget { }", Path.Combine(root, "PartialTarget.g.cs"));
+        AddDocument(workspace, production, "FullyGenerated.g.cs", "namespace App; public class FullyGeneratedTarget { }", Path.Combine(root, "FullyGenerated.g.cs"));
+        AddDocument(workspace, test, "Tests.cs", "namespace Example.Tests; public class TargetTests { public App.PartialTarget? Value; }", Path.Combine(root, "Tests.cs"));
+        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+    }
+
+    private static Fixture CreateGeneratedMemberFixture()
+    {
+        var workspace = new AdhocWorkspace();
+        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-TypeDependencyGraph", Guid.NewGuid().ToString("N"));
+        var project = ProjectId.CreateNewId();
+        AddProject(workspace, project, "Example.Core", root, FastTestReferences.CreatePlatformReferences());
+        AddDocument(workspace, project, "Members.cs", """
+            using System;
+            using System.CodeDom.Compiler;
+            using System.Runtime.CompilerServices;
+            namespace App;
+            public class Owner
+            {
+                [GeneratedCode("generator", "1")] public GeneratedPropertyTarget GeneratedProperty { get; set; } = new();
+                [CompilerGenerated] public GeneratedFieldTarget GeneratedField = new();
+                [GeneratedCode("generator", "1")] public GeneratedMethodTarget GeneratedMethod(GeneratedMethodTarget value)
+                {
+                    _ = new GeneratedMethodTarget();
+                    GeneratedMethodTarget Local() => new();
+                    Func<GeneratedMethodTarget> callback = () => new GeneratedMethodTarget();
+                    _ = Local();
+                    return callback();
+                }
+                [GeneratedCode("generator", "1")] public event EventHandler<GeneratedEventTarget>? GeneratedEvent;
+                public void LocalFunctionOwner()
+                {
+                    [GeneratedCode("generator", "1")] GeneratedMethodTarget LocalGenerated() => new();
+                    _ = LocalGenerated();
+                }
+                public EligibleTarget EligibleMethod() => new();
+            }
+            public class GeneratedPropertyTarget { }
+            public class GeneratedFieldTarget { }
+            public class GeneratedMethodTarget { }
+            public class GeneratedEventTarget : EventArgs { }
+            public class EligibleTarget { }
+            """, Path.Combine(root, "Members.cs"));
+        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+    }
+
+    private static Fixture CreateDuplicateAssemblyIdentityFixture()
+    {
+        var workspace = new AdhocWorkspace();
+        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-TypeDependencyGraph", Guid.NewGuid().ToString("N"));
+        var first = ProjectId.CreateNewId();
+        var second = ProjectId.CreateNewId();
+        var consumer = ProjectId.CreateNewId();
+        var refs = FastTestReferences.CreatePlatformReferences().ToArray();
+        AddProject(workspace, first, "Example.First", root, refs, assemblyName: "Shared.Core");
+        AddProject(workspace, second, "Example.Second", root, refs, assemblyName: "Shared.Core");
+        AddProject(workspace, consumer, "Example.Consumer", root, refs);
+        var solution = workspace.CurrentSolution
+            .AddProjectReference(consumer, new ProjectReference(first, ["First"]))
+            .AddProjectReference(consumer, new ProjectReference(second, ["Second"]));
+        Assert.True(workspace.TryApplyChanges(solution));
+        AddDocument(workspace, first, "First.cs", "namespace App; public class Target { }", Path.Combine(root, "First.cs"));
+        AddDocument(workspace, second, "Second.cs", "namespace App; public class Target { }", Path.Combine(root, "Second.cs"));
+        AddDocument(workspace, consumer, "Consumer.cs", "extern alias Second; namespace App; public class Consumer { public Second::App.Target? Value; }", Path.Combine(root, "Consumer.cs"));
+        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+    }
+
     private static Fixture CreateBrokenFixture()
     {
         var workspace = new AdhocWorkspace();
@@ -369,12 +495,12 @@ public sealed class TypeDependencyGraphBuilderTests
     }
 
     private static void AddProject(AdhocWorkspace workspace, ProjectId projectId, string name, string root, IEnumerable<MetadataReference> references,
-        OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary) =>
+        OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary, string? assemblyName = null) =>
         workspace.AddProject(ProjectInfo.Create(
             projectId,
             VersionStamp.Create(),
             name,
-            name,
+            assemblyName ?? name,
             LanguageNames.CSharp,
             filePath: Path.Combine(root, name + ".csproj"),
             compilationOptions: new CSharpCompilationOptions(outputKind, allowUnsafe: true),

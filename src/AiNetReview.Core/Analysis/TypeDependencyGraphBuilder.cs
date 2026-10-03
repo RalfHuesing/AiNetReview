@@ -23,7 +23,7 @@ internal static class TypeDependencyGraphBuilder
             throw new AnalysisFailedException("Type dependencies could not be enumerated because the solution has no C# projects.");
         }
 
-        var assemblyProjects = new Dictionary<string, List<ProjectId>>(StringComparer.Ordinal);
+        var sourceTreeProjects = new Dictionary<SyntaxTree, HashSet<ProjectId>>();
         var declarations = new List<TypeDeclaration>();
         var excludedGeneratedTypes = new HashSet<TypeIdentity>();
 
@@ -58,14 +58,6 @@ internal static class TypeDependencyGraphBuilder
 
             var isTestProject = ReviewSourceClassifier.IsTestProject(project);
             var state = new ProjectState(project, isTestProject);
-            var assemblyKey = GetAssemblyKey(compilation.Assembly.Identity);
-            if (!assemblyProjects.TryGetValue(assemblyKey, out var assemblyOwners))
-            {
-                assemblyOwners = [];
-                assemblyProjects.Add(assemblyKey, assemblyOwners);
-            }
-
-            assemblyOwners.Add(project.Id);
             var generatedIds = generatedDocuments.Select(static document => document.Id).ToHashSet();
             foreach (var document in project.Documents.Concat(generatedDocuments)
                          .Where(IsCSharpDocument)
@@ -128,6 +120,13 @@ internal static class TypeDependencyGraphBuilder
                         sourcePath);
                     declarations.Add(declaration);
                 }
+
+                if (!sourceTreeProjects.TryGetValue(root.SyntaxTree, out var treeProjects))
+                {
+                    treeProjects = [];
+                    sourceTreeProjects.Add(root.SyntaxTree, treeProjects);
+                }
+                treeProjects.Add(project.Id);
             }
         }
 
@@ -151,7 +150,7 @@ internal static class TypeDependencyGraphBuilder
                 declaration.Project.Project.Name));
         }
 
-        var collector = new EdgeCollector(context, assemblyProjects, nodes, excludedGeneratedTypes, cancellationToken);
+        var collector = new EdgeCollector(context, sourceTreeProjects, nodes, excludedGeneratedTypes, cancellationToken);
         foreach (var declaration in declarations.OrderBy(DeclarationOrder))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -204,8 +203,6 @@ internal static class TypeDependencyGraphBuilder
     private static AnalysisFailedException DocumentFailure(Project project, Document document, int position, string reason) =>
         new($"Type dependency analysis failed in project '{project.Name}', source '{document.FilePath ?? document.Name}', position {position}: {reason}.");
 
-    private static string GetAssemblyKey(AssemblyIdentity identity) => identity.GetDisplayName();
-
     private sealed class ProjectState(Project project, bool isTestProject)
     {
         public Project Project { get; } = project;
@@ -222,7 +219,7 @@ internal static class TypeDependencyGraphBuilder
 
     private sealed class EdgeCollector(
         ReviewContext context,
-        IReadOnlyDictionary<string, List<ProjectId>> assemblyProjects,
+        IReadOnlyDictionary<SyntaxTree, HashSet<ProjectId>> sourceTreeProjects,
         IReadOnlyDictionary<TypeIdentity, TypeDependencyNode> nodes,
         IReadOnlySet<TypeIdentity> excludedGeneratedTypes,
         CancellationToken cancellationToken)
@@ -237,6 +234,11 @@ internal static class TypeDependencyGraphBuilder
                      .OfType<TypeSyntax>())
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (IsInGeneratedMember(typeSyntax, declaration, cancellationToken))
+                {
+                    continue;
+                }
+
                 if (IsExcludedSyntax(typeSyntax, declaration.Syntax))
                 {
                     continue;
@@ -288,6 +290,11 @@ internal static class TypeDependencyGraphBuilder
             foreach (var body in GetOperationRoots(declaration.Syntax))
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (IsInGeneratedMember(body, declaration, cancellationToken))
+                {
+                    continue;
+                }
+
                 var operation = declaration.SemanticModel.GetOperation(body, cancellationToken);
                 if (operation is null)
                 {
@@ -304,6 +311,54 @@ internal static class TypeDependencyGraphBuilder
 
                 new DependencyOperationWalker(this, source, declaration, cancellationToken).Visit(operation);
             }
+        }
+
+        private static bool IsInGeneratedMember(SyntaxNode syntax, TypeDeclaration declaration, CancellationToken cancellationToken)
+        {
+            for (var current = syntax; current is not null && !ReferenceEquals(current, declaration.Syntax); current = current.Parent)
+            {
+                if (current is FieldDeclarationSyntax or EventFieldDeclarationSyntax)
+                {
+                    var variables = current switch
+                    {
+                        FieldDeclarationSyntax field => field.Declaration.Variables,
+                        EventFieldDeclarationSyntax eventField => eventField.Declaration.Variables,
+                        _ => default,
+                    };
+                    foreach (var variable in variables)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var variableSymbol = declaration.SemanticModel.GetDeclaredSymbol(variable, cancellationToken);
+                        if (variableSymbol is not null && ReviewSourceClassifier.IsGeneratedSymbol(variableSymbol))
+                        {
+                            return true;
+                        }
+                    }
+
+                    continue;
+                }
+
+                if (current is VariableDeclaratorSyntax fieldVariable
+                    && fieldVariable.Parent?.Parent is FieldDeclarationSyntax or EventFieldDeclarationSyntax)
+                {
+                    var variableSymbol = declaration.SemanticModel.GetDeclaredSymbol(fieldVariable, cancellationToken);
+                    if (variableSymbol is not null && ReviewSourceClassifier.IsGeneratedSymbol(variableSymbol))
+                    {
+                        return true;
+                    }
+                }
+                else if (current is BaseMethodDeclarationSyntax or PropertyDeclarationSyntax or IndexerDeclarationSyntax
+                    or EventDeclarationSyntax or AccessorDeclarationSyntax or LocalFunctionStatementSyntax)
+                {
+                    var symbol = declaration.SemanticModel.GetDeclaredSymbol(current, cancellationToken);
+                    if (symbol is not null && ReviewSourceClassifier.IsGeneratedSymbol(symbol))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         public IReadOnlyList<TypeDependencyEdge> ToEdges() => edges
@@ -535,34 +590,40 @@ internal static class TypeDependencyGraphBuilder
                 return;
             }
 
-            var assemblyKey = GetAssemblyKey(targetAssembly.Identity);
-            if (!assemblyProjects.TryGetValue(assemblyKey, out var ownerProjects))
-            {
-                if (ReviewSourceClassifier.IsGeneratedSymbol(target))
-                {
-                    return;
-                }
-                throw Failure(sourceProject.Project, syntax, $"source type '{target.ToDisplayString()}' has no loaded declaring project");
-            }
-
-            var targetIdentity = ownerProjects
+            var ownerIdentities = target.DeclaringSyntaxReferences
+                .Select(static reference => reference.SyntaxTree)
+                .Where(sourceTreeProjects.ContainsKey)
+                .SelectMany(tree => sourceTreeProjects[tree])
                 .Select(projectId => TypeIdentity.Create(projectId, target))
-                .FirstOrDefault(identity => nodes.ContainsKey(identity) || excludedGeneratedTypes.Contains(identity));
-            if (targetIdentity is null)
+                .Where(identity => nodes.ContainsKey(identity) || excludedGeneratedTypes.Contains(identity))
+                .Distinct()
+                .ToArray();
+            if (ownerIdentities.Length == 0)
             {
                 if (ReviewSourceClassifier.IsGeneratedSymbol(target))
                 {
                     return;
                 }
-                throw Failure(sourceProject.Project, syntax, $"eligible source type '{target.ToDisplayString()}' could not be mapped to a graph node");
+                throw Failure(sourceProject.Project, syntax,
+                    $"eligible source type '{target.ToDisplayString()}' could not be mapped to a loaded declaring project and graph node");
             }
 
-            if (excludedGeneratedTypes.Contains(targetIdentity))
+            if (ownerIdentities.Length > 1)
             {
-                return;
+                throw Failure(sourceProject.Project, syntax,
+                    $"source type '{target.ToDisplayString()}' has ambiguous loaded declaring projects");
             }
 
-            var targetNode = nodes[targetIdentity];
+            var targetIdentity = ownerIdentities[0];
+            if (!nodes.TryGetValue(targetIdentity, out var targetNode))
+            {
+                if (excludedGeneratedTypes.Contains(targetIdentity))
+                {
+                    return;
+                }
+                throw Failure(sourceProject.Project, syntax,
+                    $"eligible source type '{target.ToDisplayString()}' could not be mapped to a graph node");
+            }
             if (source.IsTestProject)
             {
                 if (targetNode.IsTestProject)
@@ -637,7 +698,8 @@ internal static class TypeDependencyGraphBuilder
             public override void Visit(IOperation? operation)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (operation is null || operation.Kind == OperationKind.NameOf)
+                if (operation is null || operation.Kind == OperationKind.NameOf
+                    || IsInGeneratedMember(operation.Syntax, declaration, cancellationToken))
                 {
                     return;
                 }
