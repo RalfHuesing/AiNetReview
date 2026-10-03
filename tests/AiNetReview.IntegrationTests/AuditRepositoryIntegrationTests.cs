@@ -68,8 +68,6 @@ public sealed partial class AuditRepositoryIntegrationTests
         await using var services = BuildProductionServices();
         var config = services.GetRequiredService<ReviewConfigValidator>()
             .ValidateForAudit(repositoryPath, standardConfigJson, outputDirectory);
-        var auditScriptPath = Path.Combine(hostRoot, "scripts", "test-audit.ps1");
-        Assert.True(File.Exists(auditScriptPath), $"The manual audit script was not found at '{auditScriptPath}'.");
         using var loaded = await services.GetRequiredService<SolutionLoader>().LoadAsync(config);
         var baselinePath = Path.Combine(outputDirectory, "baseline.json");
         var targetConfigPath = Path.Combine(repositoryPath, "ainetreview.json");
@@ -87,9 +85,8 @@ public sealed partial class AuditRepositoryIntegrationTests
         }
 
         var result = await services.GetRequiredService<ReviewRunner>().RunAsync(config, loaded);
-        var baselineCommandContext = new BaselineCommandContext(auditScriptPath, targetName);
         var published = await services.GetRequiredService<AiNetReview.Core.Reporting.MarkdownReportWriter>()
-            .WriteAsync(config, result, baselineCommandContext: baselineCommandContext);
+            .WriteAsync(config, result);
 
         var runDirectory = Path.Combine(outputDirectory, published.RunId);
         Assert.True(File.Exists(Path.Combine(runDirectory, "index.md")));
@@ -101,8 +98,6 @@ public sealed partial class AuditRepositoryIntegrationTests
         Assert.Contains($"- Repository: `{escapedRepositoryPath}`", index, StringComparison.Ordinal);
         Assert.Contains("audit-map/changed-files/index.md", index, StringComparison.Ordinal);
         Assert.Contains("audit-map/all-findings/index.md", index, StringComparison.Ordinal);
-        Assert.Contains($"& '{auditScriptPath}' -Target '{targetName}' -BaselineOnly", index, StringComparison.Ordinal);
-        AssertMarkdownLinksResolve(runDirectory, repositoryPath);
         Assert.Equal(Path.Combine(outputDirectory, published.RunId, "index.md"),
             Path.GetFullPath(Path.Combine(repositoryPath, published.IndexPath.Replace('/', Path.DirectorySeparatorChar))));
 
@@ -211,28 +206,7 @@ public sealed partial class AuditRepositoryIntegrationTests
         Assert.Equal(previousContents, File.ReadAllBytes(path));
     }
 
-    private static void AssertMarkdownLinksResolve(string runDirectory, string repositoryPath)
-    {
-        var linkPattern = SourceLinkPattern();
-        foreach (var reportPath in Directory.EnumerateFiles(runDirectory, "*.md", SearchOption.AllDirectories)
-                     .Where(path => !Path.GetFileName(path).Equals("index.md", StringComparison.Ordinal)))
-        {
-            var report = File.ReadAllText(reportPath);
-            foreach (Match link in linkPattern.Matches(report))
-            {
-                var target = Uri.UnescapeDataString(link.Groups["target"].Value);
-                var sourcePath = Uri.TryCreate(target, UriKind.Absolute, out var uri) && uri.IsFile
-                    ? uri.LocalPath
-                    : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(reportPath)!, target.Replace('/', Path.DirectorySeparatorChar)));
-                Assert.True(File.Exists(sourcePath), $"Markdown source link does not resolve: '{target}' from '{reportPath}'.");
-                Assert.True(IsWithin(repositoryPath, sourcePath), $"Markdown source link escaped its target repository: '{target}'.");
-            }
-        }
-    }
-
     [GeneratedRegex("^[a-z0-9][a-z0-9-]{0,63}$", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex TargetNamePattern();
 
-    [GeneratedRegex(@"\]\((?<target>[^)]+)#L[0-9]+\)", RegexOptions.CultureInvariant, 1000)]
-    private static partial Regex SourceLinkPattern();
 }

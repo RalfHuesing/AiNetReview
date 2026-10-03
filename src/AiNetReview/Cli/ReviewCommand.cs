@@ -192,7 +192,7 @@ public sealed class ReviewCommand
                 try
                 {
                     report = await services.GetRequiredService<MarkdownReportWriter>()
-                        .WriteAsync(config, result, cancellationToken, absoluteConfigPath).ConfigureAwait(false);
+                        .WriteAsync(config, result, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {

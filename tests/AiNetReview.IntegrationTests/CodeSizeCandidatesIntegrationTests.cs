@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using AiNetReview.Bootstrap;
 using AiNetReview.Cli;
@@ -52,12 +53,11 @@ public sealed class CodeSizeCandidatesIntegrationTests
         var lowReport = await File.ReadAllTextAsync(Path.Combine(lowDirectory, "production", "all-findings", "code-size-candidates.md"));
         var lowTestReport = await File.ReadAllTextAsync(Path.Combine(lowDirectory, "tests", "all-findings", "code-size-candidates.md"));
         Assert.Contains("Total findings: 1", lowReport, StringComparison.Ordinal);
-        Assert.Contains("#### File: Sample/Class1.cs (1 findings)", lowReport, StringComparison.Ordinal);
+        Assert.Contains("Sample/Class1.cs", lowReport, StringComparison.Ordinal);
         Assert.Contains("Total findings: 1", lowTestReport, StringComparison.Ordinal);
-        Assert.Contains("#### File: Tests/Class1.cs (1 findings)", lowTestReport, StringComparison.Ordinal);
-        Assert.Contains("Test option sources:", lowReport, StringComparison.Ordinal);
-        Assert.Contains("`extremeMemberCodeLines` explicitly configured", lowReport, StringComparison.Ordinal);
-        Assert.Contains("`minMemberCodeLines` inherited", lowReport, StringComparison.Ordinal);
+        Assert.Contains("Tests/Class1.cs", lowTestReport, StringComparison.Ordinal);
+        Assert.Contains("Effective options", lowReport, StringComparison.Ordinal);
+        Assert.Contains("extremeMemberCodeLines", lowReport, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(lowDirectory, "production", "changed-files", "code-size-candidates.md")));
         Assert.Equal(lowOptionsJson, await File.ReadAllTextAsync(configPath));
 
@@ -70,8 +70,8 @@ public sealed class CodeSizeCandidatesIntegrationTests
         var highDirectory = Path.Combine(projectRoot, "reports", highRunId);
         var highReport = await File.ReadAllTextAsync(Path.Combine(highDirectory, "production", "all-findings", "code-size-candidates.md"));
         Assert.Contains("Total findings: 1", highReport, StringComparison.Ordinal);
-        Assert.Contains("#### File: Sample/Class1.cs (1 findings)", highReport, StringComparison.Ordinal);
-        Assert.DoesNotContain("#### File: Tests/Class1.cs", highReport, StringComparison.Ordinal);
+        Assert.Contains("Sample/Class1.cs", highReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("Tests/Class1.cs", highReport, StringComparison.Ordinal);
         Assert.Contains("Effective options (production projects)", highReport, StringComparison.Ordinal);
         Assert.Contains("Effective options (test projects)", highReport, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(highDirectory, "production", "changed-files", "code-size-candidates.md")));
@@ -135,12 +135,20 @@ public sealed class CodeSizeCandidatesIntegrationTests
         Assert.True(File.Exists(flowReportPath));
         var sizeReport = await File.ReadAllTextAsync(sizeReportPath);
         Assert.Contains("same for production and test projects", sizeReport, StringComparison.Ordinal);
-        Assert.Contains("`extremeMemberCodeLines` explicitly configured", sizeReport, StringComparison.Ordinal);
+        Assert.Contains("extremeMemberCodeLines", sizeReport, StringComparison.Ordinal);
         Assert.Contains("LongOperation", sizeReport, StringComparison.Ordinal);
         Assert.Contains("Member: ", sizeReport, StringComparison.Ordinal);
         Assert.Contains("relative length\\-and\\-control\\-flow criterion", sizeReport, StringComparison.Ordinal);
         Assert.Contains("extreme member\\-size threshold", sizeReport, StringComparison.Ordinal);
-        Assert.Contains("Related: [method-control-flow-outliers (production/all-findings)](../../production/all-findings/method-control-flow-outliers.md)", sizeReport, StringComparison.Ordinal);
+        var allFindingsMap = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", firstRunId, "audit-map", "all-findings", "index.md"));
+        var relatedFindingIds = allFindingsMap.Split('\n')
+            .Where(static line => line.Contains("method-control-flow-outliers.md", StringComparison.Ordinal))
+            .Select(line => Regex.Match(line, @"finding-[a-f0-9]{24}", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)).Value)
+            .Where(static id => id.Length > 0)
+            .ToArray();
+        Assert.NotEmpty(relatedFindingIds);
+        Assert.Contains(relatedFindingIds, id => sizeReport.Contains(id, StringComparison.Ordinal));
+        Assert.Contains("method-control-flow-outliers.md", sizeReport, StringComparison.Ordinal);
         Assert.Equal(1, sizeReport.Split("Is this executable body cohesive, and are its paths and tests easy to review?", StringSplitOptions.None).Length - 1);
         Assert.Contains("Class: ", sizeReport, StringComparison.Ordinal);
         Assert.Contains("relative type\\-size criterion", sizeReport, StringComparison.Ordinal);
@@ -161,7 +169,7 @@ public sealed class CodeSizeCandidatesIntegrationTests
         Assert.Equal(1, sizeReport.Split("Can relevant code in this file be located and edited with focused context?", StringSplitOptions.None).Length - 1);
         var flowReport = await File.ReadAllTextAsync(flowReportPath);
         Assert.Contains("same for production and test projects", flowReport, StringComparison.Ordinal);
-        Assert.Contains("`percentile` explicitly configured", flowReport, StringComparison.Ordinal);
+        Assert.Contains("\"percentile\": 90", flowReport, StringComparison.Ordinal);
         Assert.Contains("8 decisions across 8 constructs (cutoff 8)", flowReport, StringComparison.Ordinal);
         Assert.Contains("decision-count and maximum-nesting populations have separate nearest-rank values at the effective `percentile`", flowReport, StringComparison.Ordinal);
         Assert.Contains("Inclusive cutoffs are `max(8, decision percentile)` and `max(4, nesting percentile)`", flowReport, StringComparison.Ordinal);

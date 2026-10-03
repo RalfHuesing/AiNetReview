@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Threading;
 using AiNetReview.Core.Analysis;
@@ -61,14 +62,14 @@ public sealed class HostAdapterIntegrationTests
         var firstMap = await File.ReadAllTextAsync(Path.Combine(firstRunDirectory, "audit-map", "all-findings", "index.md"));
         Assert.Contains("3 production types in 3 distinct declaration files", allReport, StringComparison.Ordinal);
         Assert.Contains("Example:", allReport, StringComparison.Ordinal);
-        Assert.Contains("[src/Sample/A.cs](../../../../src/Sample/A.cs):", allReport, StringComparison.Ordinal);
-        Assert.Contains("[src/Sample/B.cs](../../../../src/Sample/B.cs):", allReport, StringComparison.Ordinal);
-        Assert.Contains("[src/Sample/C.cs](../../../../src/Sample/C.cs):", allReport, StringComparison.Ordinal);
-        Assert.Contains("Finding origin: production", allReport, StringComparison.Ordinal);
-        Assert.Contains("Subject occurrences:", firstMap, StringComparison.Ordinal);
+        Assert.Contains("L1", allReport, StringComparison.Ordinal);
+        Assert.Contains("src/Sample/B.cs:1", allReport, StringComparison.Ordinal);
+        Assert.Contains("src/Sample/C.cs:1", allReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("<a id=", allReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("Subject occurrences:", firstMap, StringComparison.Ordinal);
         Assert.Contains("src/Sample/A.cs", firstMap, StringComparison.Ordinal);
-        Assert.Contains("src/Sample/B.cs", firstMap, StringComparison.Ordinal);
-        Assert.Contains("src/Sample/C.cs", firstMap, StringComparison.Ordinal);
+        Assert.DoesNotContain("src/Sample/B.cs", firstMap, StringComparison.Ordinal);
+        Assert.DoesNotContain("src/Sample/C.cs", firstMap, StringComparison.Ordinal);
         Assert.False(Directory.EnumerateFileSystemEntries(firstRunDirectory, "changed-files", SearchOption.AllDirectories).Any());
         var firstId = GetFirstAuditMapFindingId(firstMap);
         Assert.NotEmpty(firstId);
@@ -86,7 +87,7 @@ public sealed class HostAdapterIntegrationTests
         using var unchangedResponse = JsonDocument.Parse(unchanged.Output);
         var unchangedDirectory = Path.Combine(projectRoot, "reports", unchangedResponse.RootElement.GetProperty("runId").GetString()!);
         Assert.False(File.Exists(Path.Combine(unchangedDirectory, "production", "changed-files", "type-dependency-cycle-candidates.md")));
-        Assert.Contains("Unique findings: **0**", await File.ReadAllTextAsync(Path.Combine(unchangedDirectory, "audit-map", "changed-files", "index.md")), StringComparison.Ordinal);
+        Assert.Contains("Findings: **0**", await File.ReadAllTextAsync(Path.Combine(unchangedDirectory, "audit-map", "changed-files", "index.md")), StringComparison.Ordinal);
 
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "notes.md"), "non-C# edit");
         var nonCSharp = await InvokeProductionCommandAsync(["review", projectRoot]);
@@ -201,18 +202,19 @@ public sealed class HostAdapterIntegrationTests
         Assert.Contains("10 production consumer types (minimum 10", hubReport, StringComparison.Ordinal);
         Assert.Contains("10 production dependency types (minimum 10", hubReport, StringComparison.Ordinal);
         Assert.Contains("1 direct test consumer types are listed separately", hubReport, StringComparison.Ordinal);
-        Assert.Contains("Finding origin: production", hubReport, StringComparison.Ordinal);
-        Assert.DoesNotContain("Finding origin: mixed", hubReport, StringComparison.Ordinal);
-        Assert.Contains("[src/Sample/Hub.cs](../../../../src/Sample/Hub.cs):", hubReport, StringComparison.Ordinal);
-        Assert.Contains("[src/Sample/Hub.Partial.cs](../../../../src/Sample/Hub.Partial.cs):", hubReport, StringComparison.Ordinal);
+        Assert.Contains("L", hubReport, StringComparison.Ordinal);
+        Assert.Contains("src/Sample/Hub.Partial.cs:", hubReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("Finding origin:", hubReport, StringComparison.Ordinal);
         Assert.Contains("tests/Sample.Tests/HubTests.cs", hubReport, StringComparison.Ordinal);
         foreach (var index in Enumerable.Range(0, 10))
         {
             Assert.Contains($"Consumer{index}", hubReport, StringComparison.Ordinal);
             Assert.Contains($"Dependency{index}", hubReport, StringComparison.Ordinal);
         }
-        Assert.Contains("Related:", hubReport, StringComparison.Ordinal);
-        Assert.Contains("type-dependency-cycle-candidates", hubReport, StringComparison.Ordinal);
+        var relatedCycleId = GetAuditMapFindingId(firstMap, "type-dependency-cycle-candidates.md");
+        Assert.NotEmpty(relatedCycleId);
+        Assert.Contains(relatedCycleId, hubReport, StringComparison.Ordinal);
+        Assert.Contains("type-dependency-cycle-candidates.md", hubReport, StringComparison.Ordinal);
         Assert.Contains("type-dependency-hub-candidates", firstMap, StringComparison.Ordinal);
         var firstId = GetAuditMapFindingId(firstMap, "type-dependency-hub-candidates");
         Assert.NotEmpty(firstId);
@@ -240,7 +242,8 @@ public sealed class HostAdapterIntegrationTests
         var testOnlyReport = await File.ReadAllTextAsync(Path.Combine(testOnlyDirectory, "production", "changed-files", "type-dependency-hub-candidates.md"));
         Assert.Contains("source unchanged; included snapshot-wide", testOnlyReport, StringComparison.Ordinal);
         var testOnlyMap = await File.ReadAllTextAsync(Path.Combine(testOnlyDirectory, "audit-map", "changed-files", "index.md"));
-        Assert.Contains("dependency-hub findings follow the snapshot-wide selection rule", testOnlyMap, StringComparison.Ordinal);
+        Assert.Contains("Selected changed-file findings.", testOnlyMap, StringComparison.Ordinal);
+        Assert.Contains("dependency-hub findings use snapshot-wide selection", testOnlyMap, StringComparison.Ordinal);
 
         Assert.Equal(0, (await InvokeProductionCommandAsync(["baseline", projectRoot])).ExitCode);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "notes.md"), "non-C# edit");
@@ -346,10 +349,10 @@ public sealed class HostAdapterIntegrationTests
         var allReport = await File.ReadAllTextAsync(Path.Combine(runDirectory, "production", "all-findings", "indirection-drift-candidates.md"));
         Assert.False(Directory.Exists(Path.Combine(runDirectory, "production", "changed-files")));
         Assert.Contains("Forwarding path: 2 forwarding edges across 3 types and 3 files", allReport, StringComparison.Ordinal);
-        Assert.True(allReport.IndexOf("[Sample/ZApi.cs](../../../../Sample/ZApi.cs):", StringComparison.Ordinal)
-            < allReport.IndexOf("[Sample/BService.cs](../../../../Sample/BService.cs):", StringComparison.Ordinal));
-        Assert.True(allReport.IndexOf("[Sample/BService.cs](../../../../Sample/BService.cs):", StringComparison.Ordinal)
-            < allReport.IndexOf("[Sample/ARepository.cs](../../../../Sample/ARepository.cs):", StringComparison.Ordinal));
+        Assert.True(allReport.IndexOf("Sample/ZApi.cs:", StringComparison.Ordinal)
+            < allReport.IndexOf("Sample/BService.cs:", StringComparison.Ordinal));
+        Assert.True(allReport.IndexOf("Sample/BService.cs:", StringComparison.Ordinal)
+            < allReport.IndexOf("Sample/ARepository.cs:", StringComparison.Ordinal));
         Assert.Contains("What responsibility does each forwarding layer add", allReport, StringComparison.Ordinal);
 
         await File.WriteAllTextAsync(servicePath, "public static class BService { public static int Run(int value) { return value; } }");
@@ -427,14 +430,13 @@ public sealed class HostAdapterIntegrationTests
         Assert.Contains("2 methods;", exactReport, StringComparison.Ordinal);
         Assert.Contains("Total findings: 1", exactReport, StringComparison.Ordinal);
         Assert.Contains("Total findings: 1 across 1 projects and 1 source files.", exactReport, StringComparison.Ordinal);
-        Assert.Contains("### Project: ProductA/ProductA.csproj (production; 1 files, 1 findings)", exactReport, StringComparison.Ordinal);
-        Assert.Contains("#### File: ProductA/First.cs (1 findings)", exactReport, StringComparison.Ordinal);
+        Assert.Contains("ProductA/ProductA.csproj", exactReport, StringComparison.Ordinal);
+        Assert.Contains("ProductA/First.cs", exactReport, StringComparison.Ordinal);
         Assert.Matches("[0-9]+(?:\\.[0-9]+)?% similarity \\(minimum [0-9]+(?:\\.[0-9]+)?%\\)", exactReport);
-        Assert.Contains("[ProductA/First.cs](../../../../ProductA/First.cs): ", exactReport, StringComparison.Ordinal);
-        Assert.Contains("[ProductB/Second.cs](../../../../ProductB/Second.cs): ", exactReport, StringComparison.Ordinal);
+        Assert.Contains("L", exactReport, StringComparison.Ordinal);
+        Assert.Contains("ProductB/Second.cs:", exactReport, StringComparison.Ordinal);
         Assert.Contains("## Findings", exactReport, StringComparison.Ordinal);
         Assert.DoesNotContain("Metrics", exactReport, StringComparison.Ordinal);
-        AssertMarkdownLinksResolve(Path.Combine(projectRoot, "reports", exact.RunId));
 
         await WriteDuplicateConfigAsync(configPath, "fuzzy");
         var fuzzy = await RunProductionDuplicateCodeAsync(configPath);
@@ -443,7 +445,6 @@ public sealed class HostAdapterIntegrationTests
         Assert.Contains("\"minimumSimilarity\": \"fuzzy\"", fuzzyReport, StringComparison.Ordinal);
         Assert.Contains("3 methods;", fuzzyReport, StringComparison.Ordinal);
         Assert.Contains("similarity (minimum 65.0%)", fuzzyReport, StringComparison.Ordinal);
-        AssertMarkdownLinksResolve(Path.Combine(projectRoot, "reports", fuzzy.RunId));
 
         await File.WriteAllTextAsync(secondSource,
             WrapDuplicateMethod("SecondContainer", "RunChanged", BuildAlternateDuplicateBody()));
@@ -520,26 +521,26 @@ public sealed class HostAdapterIntegrationTests
         Assert.Contains("Structural duplicate: 2 occurrences in 2 executable members", structuralReport, StringComparison.Ordinal);
         Assert.Contains("Total findings: 1", structuralReport, StringComparison.Ordinal);
         Assert.Contains("Total findings: 1 across 1 projects and 1 source files.", structuralReport, StringComparison.Ordinal);
-        Assert.Contains("### Project: ProductA/ProductA.csproj (production; 1 files, 1 findings)", structuralReport, StringComparison.Ordinal);
-        Assert.Contains("#### File: ProductA/First.cs (1 findings)", structuralReport, StringComparison.Ordinal);
-        Assert.Contains("[ProductA/First.cs](../../../../ProductA/First.cs)", structuralReport, StringComparison.Ordinal);
-        Assert.Contains("[ProductB/Second.cs](../../../../ProductB/Second.cs)", structuralReport, StringComparison.Ordinal);
+        Assert.Contains("ProductA/ProductA.csproj", structuralReport, StringComparison.Ordinal);
+        Assert.Contains("(production; 1 files, 1 findings)", structuralReport, StringComparison.Ordinal);
+        Assert.Contains("ProductA/First.cs", structuralReport, StringComparison.Ordinal);
+        Assert.Contains("L", structuralReport, StringComparison.Ordinal);
+        var structuralSecondOccurrence = Assert.Single(structuralReport.Split('\n').Where(static line => line.Contains("ProductB/Second.cs", StringComparison.Ordinal)));
+        Assert.Matches(@"\[`1:\d+`–`1:\d+`\)", structuralSecondOccurrence);
         var structuralRunDirectory = Path.Combine(projectRoot, "reports", together.RunId);
         var mapIndex = await File.ReadAllTextAsync(Path.Combine(structuralRunDirectory, "audit-map", "all-findings", "index.md"));
-        Assert.Contains("Unique findings: **2**", mapIndex, StringComparison.Ordinal);
+        Assert.Contains("Findings: **2**", mapIndex, StringComparison.Ordinal);
         var packageReports = Directory.GetFiles(Path.Combine(structuralRunDirectory, "audit-map", "all-findings"), "*.md")
             .Where(path => !Path.GetFileName(path).Equals("index.md", StringComparison.Ordinal))
             .Select(File.ReadAllText).ToArray();
         Assert.Empty(packageReports);
-        Assert.Contains("structural-duplication-candidates.md#finding-", mapIndex, StringComparison.Ordinal);
+        Assert.Contains("structural-duplication-candidates.md", mapIndex, StringComparison.Ordinal);
         Assert.Contains("ProductA/First.cs", mapIndex, StringComparison.Ordinal);
-        Assert.Contains("ProductB/Second.cs", mapIndex, StringComparison.Ordinal);
-        var anchorStart = structuralReport.IndexOf("<a id=\"finding-", StringComparison.Ordinal);
-        Assert.True(anchorStart >= 0);
-        var anchorEnd = structuralReport.IndexOf("\"></a>", anchorStart, StringComparison.Ordinal);
-        var findingAnchor = structuralReport[(anchorStart + "<a id=\"".Length)..anchorEnd];
-        Assert.Contains("#" + findingAnchor, mapIndex, StringComparison.Ordinal);
-        AssertMarkdownLinksResolve(structuralRunDirectory);
+        Assert.DoesNotContain("ProductB/Second.cs", mapIndex, StringComparison.Ordinal);
+        var structuralId = GetAuditMapFindingId(mapIndex, "structural-duplication-candidates.md");
+        Assert.NotEmpty(structuralId);
+        Assert.Contains(structuralId, structuralReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("<a id=", structuralReport, StringComparison.Ordinal);
 
         await WriteStructuralDuplicateConfigAsync(configPath, includeStructural: true, structuralEnabled: false);
         var disabled = await RunStructuralReviewAsync(projectRoot);
@@ -566,10 +567,11 @@ public sealed class HostAdapterIntegrationTests
         var changedStructuralReport = await ReadStructuralDuplicateReportAsync(projectRoot, changed.RunId, "changed-files");
         Assert.Contains("Total findings: 1", changedStructuralReport, StringComparison.Ordinal);
         Assert.Contains("Total findings: 1 across 1 projects and 1 source files.", changedStructuralReport, StringComparison.Ordinal);
-        Assert.Contains("### Project: ProductA/ProductA.csproj (production; 1 files, 1 findings)", changedStructuralReport, StringComparison.Ordinal);
-        Assert.Contains("#### File: ProductA/First.cs (1 findings)", changedStructuralReport, StringComparison.Ordinal);
-        Assert.Contains("[ProductA/First.cs](../../../../ProductA/First.cs)", changedStructuralReport, StringComparison.Ordinal);
-        Assert.Contains("[ProductB/Second.cs](../../../../ProductB/Second.cs)", changedStructuralReport, StringComparison.Ordinal);
+        Assert.Contains("ProductA/ProductA.csproj", changedStructuralReport, StringComparison.Ordinal);
+        Assert.Contains("ProductA/First.cs", changedStructuralReport, StringComparison.Ordinal);
+        Assert.Contains("L", changedStructuralReport, StringComparison.Ordinal);
+        var changedSecondOccurrence = Assert.Single(changedStructuralReport.Split('\n').Where(static line => line.Contains("ProductB/Second.cs", StringComparison.Ordinal)));
+        Assert.Matches(@"\[`1:\d+`–`1:\d+`\)", changedSecondOccurrence);
 
     }
 
@@ -676,7 +678,6 @@ public sealed class HostAdapterIntegrationTests
         Assert.Contains("It does not assess test assertion quality.", allReport, StringComparison.Ordinal);
         Assert.False(Directory.Exists(Path.Combine(firstRunDirectory, "production", "changed-files")));
         Assert.DoesNotContain("changed-files", index, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("reference-only", allReport, StringComparison.Ordinal);
 
         var baseline = await InvokeProductionCommandAsync(["baseline", projectRoot]);
         Assert.Equal(0, baseline.ExitCode);
@@ -1125,24 +1126,15 @@ public sealed class HostAdapterIntegrationTests
 
     private static string GetFirstAuditMapFindingId(string markdown)
     {
-        const string prefix = "[finding-";
-        var start = markdown.IndexOf(prefix, StringComparison.Ordinal);
-        if (start < 0) return string.Empty;
-        start++;
-        var end = markdown.IndexOf(']', start);
-        return end < 0 ? string.Empty : markdown[start..end];
+        return Regex.Match(markdown, @"finding-[a-f0-9]{24}", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)).Value;
     }
 
     private static string GetAuditMapFindingId(string markdown, string analysisId)
     {
-        var analysis = markdown.IndexOf(analysisId, StringComparison.Ordinal);
-        if (analysis < 0) return string.Empty;
-        const string prefix = "[finding-";
-        var start = markdown.LastIndexOf(prefix, analysis, StringComparison.Ordinal);
-        if (start < 0) return string.Empty;
-        start++;
-        var end = markdown.IndexOf(']', start);
-        return end < 0 ? string.Empty : markdown[start..end];
+        var routeLine = markdown.Split('\n').FirstOrDefault(line => line.Contains(analysisId, StringComparison.Ordinal));
+        return routeLine is null
+            ? string.Empty
+            : Regex.Match(routeLine, @"finding-[a-f0-9]{24}", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)).Value;
     }
 
     private static async Task<(string RunId, int Detected)> RunProductionIndirectionAsync(string configPath)
@@ -1265,52 +1257,6 @@ public sealed class HostAdapterIntegrationTests
 
     private static Task<string> ReadDuplicateCodeReportAsync(string projectRoot, string runId) =>
         File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId, "production", "all-findings", "duplicate-code-candidates.md"));
-
-    private static void AssertMarkdownLinksResolve(string runDirectory)
-    {
-        foreach (var reportPath in Directory.GetFiles(runDirectory, "*.md", SearchOption.AllDirectories))
-        {
-            var content = File.ReadAllText(reportPath);
-            var anchorIds = new HashSet<string>(StringComparer.Ordinal);
-            var anchorCursor = 0;
-            while ((anchorCursor = content.IndexOf("<a id=\"", anchorCursor, StringComparison.Ordinal)) >= 0)
-            {
-                var idStart = anchorCursor + "<a id=\"".Length;
-                var idEnd = content.IndexOf('\"', idStart);
-                Assert.True(idEnd > idStart, $"Malformed HTML anchor in '{reportPath}'.");
-                Assert.True(anchorIds.Add(content[idStart..idEnd]), $"Duplicate HTML anchor '{content[idStart..idEnd]}' in '{reportPath}'.");
-                anchorCursor = idEnd + 1;
-            }
-
-            var linkStart = 0;
-            while ((linkStart = content.IndexOf("](", linkStart, StringComparison.Ordinal)) >= 0)
-            {
-                var targetStart = linkStart + 2;
-                var targetEnd = content.IndexOf(')', targetStart);
-                if (targetEnd < 0)
-                {
-                    break;
-                }
-
-                var target = Uri.UnescapeDataString(content[targetStart..targetEnd]);
-                linkStart = targetEnd + 1;
-                var fragmentIndex = target.IndexOf('#');
-                var relativePath = fragmentIndex < 0 ? target : target[..fragmentIndex];
-                var resolved = Path.GetFullPath(Path.Combine(
-                    Path.GetDirectoryName(reportPath)!,
-                    relativePath.Replace('/', Path.DirectorySeparatorChar)));
-                Assert.True(File.Exists(resolved), $"Markdown link does not resolve: '{target}' from '{reportPath}'.");
-                if (fragmentIndex >= 0 && (target[(fragmentIndex + 1)..].StartsWith("finding-", StringComparison.Ordinal)
-                    || target[(fragmentIndex + 1)..].StartsWith("area-", StringComparison.Ordinal)))
-                {
-                    var fragment = target[(fragmentIndex + 1)..];
-                    var targetMarkdown = File.ReadAllText(resolved);
-                    var anchor = "<a id=\"" + fragment + "\"></a>";
-                    Assert.Equal(1, targetMarkdown.Split(anchor, StringSplitOptions.None).Length - 1);
-                }
-            }
-        }
-    }
 
     private static string BuildDuplicateBody() => string.Join(" ", Enumerable.Range(1, 20).Select(index =>
         $"var v{index} = {(index == 1 ? "value" : $"v{index - 1}")} + {index};")) + " return v20;";

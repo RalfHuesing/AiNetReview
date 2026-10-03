@@ -60,9 +60,7 @@ public sealed class MarkdownReportWriter
     public async Task<PublishedReport> WriteAsync(
         ReviewConfig config,
         ReviewRunResult result,
-        CancellationToken cancellationToken = default,
-        string? configurationPath = null,
-        BaselineCommandContext? baselineCommandContext = null)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(result);
@@ -105,11 +103,11 @@ public sealed class MarkdownReportWriter
                         var allArea = allFindings.Where(finding => GetFindingArea(finding) == area).ToArray();
                         if (hasBaseline)
                         {
-                            await WriteViewAnalysisAsync(temporaryPath, config.ProjectRoot, area, "changed-files", configuredAnalysis, changedArea, changedFindings, findings,
-                                    changedFindingIds, true, cancellationToken)
+                            await WriteViewAnalysisAsync(temporaryPath, area, "changed-files", configuredAnalysis, changedArea, changedFindings, findings,
+                                    changedFindingIds, hasBaseline: true, cancellationToken)
                                 .ConfigureAwait(false);
                         }
-                        await WriteViewAnalysisAsync(temporaryPath, config.ProjectRoot, area, "all-findings", configuredAnalysis, allArea, findings, findings,
+                        await WriteViewAnalysisAsync(temporaryPath, area, "all-findings", configuredAnalysis, allArea, findings, findings,
                                 allFindingIds, hasBaseline, cancellationToken)
                             .ConfigureAwait(false);
                     }
@@ -132,15 +130,15 @@ public sealed class MarkdownReportWriter
 
                 if (hasBaseline)
                 {
-                    await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, config.ProjectRoot, changedFindings,
+                    await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, changedFindings,
                         "changed-files", cancellationToken, true).ConfigureAwait(false);
                 }
-                await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, config.ProjectRoot, findings,
+                await AuditMapReportWriter.WriteAuditMapAsync(temporaryPath, runId, findings,
                     "all-findings", cancellationToken, hasBaseline).ConfigureAwait(false);
 
                 cancellationToken.ThrowIfCancellationRequested();
                 var indexPath = Path.Combine(temporaryPath, "index.md");
-                await WriteUtf8Async(indexPath, FormatIndex(runId, config, config.AllAnalyses.OrderBy(static item => item.AnalysisId, StringComparer.Ordinal).ToArray(), result, findings, changedFindings, configurationPath, baselineCommandContext, hasBaseline), cancellationToken)
+                await WriteUtf8Async(indexPath, FormatIndex(runId, config, config.AllAnalyses.OrderBy(static item => item.AnalysisId, StringComparer.Ordinal).ToArray(), result, findings, changedFindings, hasBaseline), cancellationToken)
                     .ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (beforePublication is not null)
@@ -237,40 +235,33 @@ public sealed class MarkdownReportWriter
         ReviewRunResult result,
         IReadOnlyList<ReviewFinding> findings,
         IReadOnlyList<ReviewFinding> changedFindings,
-        string? configurationPath,
-        BaselineCommandContext? baselineCommandContext,
         bool hasBaseline)
     {
         var builder = new StringBuilder();
         builder.Append("# AiNetReview – ").Append(runId).Append("\n\n")
-            .Append("- Run ID: `").Append(runId).Append("`\n")
-            .Append("- Repository: `").Append(EscapeInline(Path.GetFullPath(config.ProjectRoot))).Append("`\n")
-            .Append("- Solution: `").Append(EscapeInline(config.SolutionPath)).Append("`\n\n")
+            .Append("Repository: ").Append(FormatCodeSpan(Path.GetFullPath(config.ProjectRoot))).Append("; solution: ")
+            .Append(FormatCodeSpan(config.SolutionPath)).Append(".\n\n")
             .Append("## Review guidance\n\n")
-            .Append("Findings are potential review signals that may point to deeper or cross-cutting problems. First read the target repository's applicable instructions and relevant design documents. Investigate every finding in the commissioned working set using relevant source code, callers, contracts, and tests, in the context of application goals, architecture, and responsibilities. Related findings may be evaluated together. Do not dismiss a signal solely because it is heuristic or its attribution is uncertain. Justify each classification with concrete evidence: false positive, acceptable design, needs clarification, or actionable. An accurate signal can describe an acceptable design; distinguish that from a false positive. A signal alone does not require a change; changes must follow from this assessment. Avoid metric-driven refactoring and symptom workarounds; make a local change when the broader context supports it. Explain consequential changes and tradeoffs to the user. The goal is to support understandable, reliable agentic development and help prevent drift, not to claim that the analysis proves drift. A normal unbounded audit covers production, tests, and mixed findings in all three ")
-            .Append(hasBaseline ? "changed-files" : "all-findings")
-            .Append(" areas. A user-limited assignment must name the remaining areas as unreviewed. Findings are measurements on non-generated C# candidates in the loaded snapshot; they do not prove runner discovery, execution, runtime coverage, test quality, or defects. Missing-test-evidence, cycle, and dependency-hub analyses use production subjects; the other seven maintenance analyses include both project roles. Dependency-hub findings keep direct test consumers as separate context and exclude generated, metadata, dynamic, and implicit compiler-created types. Dead-code `apiSurface` applies equally to production and test libraries.")
-            .Append(hasBaseline ? " Scope or option changes do not make source files changed; a complete reevaluation after such a change needs an explicitly requested full-repository audit. Do not inspect or report findings from any `all-findings/` area unless the user explicitly requests a full repository audit." : "")
-            .Append("\n\n")
-            .Append("For test findings, examine the behavior under test, assertion strength, whether expected results are independent of production logic, isolation, failure localization, and the role of setup, fixtures, hooks, data providers, fakes, mocks, builders, and helpers. Distinguish executable code from declarative test data and string fixtures. For mixed findings, assess production behavior and tests together, especially whether expectations independently verify the implementation. Do not mechanically split tests, merge scenarios, remove infrastructure, or refactor solely to lower a metric; change code only when contextual evidence supports it.\n\n");
+            .Append("Review each finding in scope against source, callers, contracts, tests, and repository design. Classify with concrete evidence as false positive, acceptable design, needs clarification, or actionable. A signal alone does not require a change; avoid metric-driven refactoring. Findings describe static evidence in the loaded snapshot, not execution, runtime coverage, test quality, or defects.\n\n")
+            .Append("The normal unbounded scope is all three ").Append(hasBaseline ? "changed-files" : "all-findings")
+            .Append(" areas. Name any assigned areas left unreviewed; related findings may be assessed together.\n\n");
 
         builder.Append("## Audit map\n\n");
         if (hasBaseline)
         {
-            builder.Append("The [changed-files audit map](audit-map/changed-files/index.md) lists every selected finding once, grouped by project and representative source file. ");
+            builder.Append("Audit map: `audit-map/changed-files/index.md`; findings are grouped by project and representative source file. ");
         }
         else
         {
-            builder.Append("The [all-findings audit map](audit-map/all-findings/index.md) lists every current finding once, grouped by project and representative source file. ");
+            builder.Append("Audit map: `audit-map/all-findings/index.md`; findings are grouped by project and representative source file. ");
         }
-        builder.Append("Use each finding's direct link to inspect its original signal and evidence, then examine the relevant implementation, callers, contracts, and tests. For each finding, report its ID, classification (false positive, acceptable design, needs clarification, or actionable), concrete evidence, and unresolved context. Name unreviewed findings or source-file groups explicitly; a partial map review is not a complete audit.");
+        builder.Append("Each grouped row gives stable finding IDs and a canonical analysis report path relative to this map. Source paths are repository-relative; `Lnn` refers to the file group above. Report each ID's classification, evidence, and unresolved context; name unreviewed findings or source groups explicitly.");
         if (hasBaseline)
         {
-            builder.Append(" The [all-findings map](audit-map/all-findings/index.md) is reference-only and requires an explicitly requested full-repository audit.");
+            builder.Append(" `audit-map/all-findings/index.md` is reference-only and requires an explicit full-repository audit request.");
         }
         builder.Append("\n\n");
 
-        var changedCount = changedFindings.Count;
         var allCount = findings.Count;
         if (allCount == 0)
         {
@@ -287,12 +278,12 @@ public sealed class MarkdownReportWriter
         builder.Append("## Audit scope\n\n");
         if (hasBaseline)
         {
-            builder.Append("Counts are per view and are not additive between changed-files and all-findings. The global project/source-file counts below use the unique representative project/file pairs; area counts can overlap those pairs.\n\n")
+            builder.Append("Counts are per view and are not additive between changed-files and all-findings. Scope or option changes require an explicitly requested full audit.\n\n")
                 .Append("| Area | Changed-file findings | All findings |\n| --- | ---: | ---: |\n");
         }
         else
         {
-            builder.Append("The global project/source-file count uses unique representative project/file pairs; area counts can overlap those pairs.\n\n")
+            builder.Append("\n")
                 .Append("| Area | All findings |\n| --- | ---: |\n");
         }
         foreach (var area in FindingAreas)
@@ -312,11 +303,9 @@ public sealed class MarkdownReportWriter
             builder.Append("\nA normal unbounded assignment includes all three `changed-files` areas. A limited assignment must identify every remaining area as unreviewed. `all-findings` requires an explicit full-repository audit request.\n\n");
             foreach (var area in FindingAreas)
             {
-                builder.Append("- [").Append(area).Append(" changed-files (")
-                    .Append(changedFindings.Count(finding => GetFindingArea(finding) == area).ToString(CultureInfo.InvariantCulture))
-                    .Append(")](").Append(area).Append("/changed-files/index.md)\n");
+                builder.Append("- ").Append(FormatCodeSpan(area + "/changed-files/index.md")).Append('\n');
             }
-            builder.Append("- [Audit map: changed-files](audit-map/changed-files/index.md)\n");
+            builder.Append("- ").Append(FormatCodeSpan("audit-map/changed-files/index.md")).Append('\n');
             builder.Append("\n## Complete findings (reference only)\n\n")
                 .Append("> **Agent instruction:** Do not inspect, summarize, or display findings from any `all-findings` area unless the user explicitly requests an audit of the entire repository.\n\n");
         }
@@ -324,47 +313,43 @@ public sealed class MarkdownReportWriter
         {
             builder.Append("\nA normal unbounded assignment includes all three `all-findings` areas. A limited assignment must identify every remaining area as unreviewed.\n\n");
         }
-        builder.Append(allCount.ToString(CultureInfo.InvariantCulture)).Append(" findings across all areas.\n\n");
         foreach (var area in FindingAreas)
         {
-            builder.Append("- [").Append(area).Append(" all-findings (")
-                .Append(findings.Count(finding => GetFindingArea(finding) == area).ToString(CultureInfo.InvariantCulture))
-                .Append(")](").Append(area).Append("/all-findings/index.md)\n");
+            builder.Append("- ").Append(FormatCodeSpan(area + "/all-findings/index.md")).Append('\n');
         }
-        builder.Append("- [Audit map: all-findings](audit-map/all-findings/index.md)");
+        builder.Append("- ").Append(FormatCodeSpan("audit-map/all-findings/index.md"));
         if (hasBaseline)
         {
             builder.Append(" (reference only)");
         }
         builder.Append('\n');
 
-        builder.Append("\n## Loaded C# projects\n\n| Project | Classified role | Classification reason |\n| --- | --- | --- |\n");
+        builder.Append("\n## Loaded C# projects\n\n| Project | Role | Classification reason |\n| --- | --- | --- |\n");
         foreach (var project in result.ProjectClassifications.OrderBy(static item => item.ProjectPath, StringComparer.Ordinal))
         {
-            builder.Append("| ").Append(EscapeInline(project.ProjectPath)).Append(" | ")
+            builder.Append("| ").Append(FormatCodeSpan(project.ProjectPath)).Append(" | ")
                 .Append(project.Role == ProjectRole.Tests ? "tests" : "production").Append(" | ")
-                .Append(EscapeInline(project.Reason.ToString())).Append(" |\n");
+                .Append(FormatCodeSpan(project.Reason.ToString())).Append(" |\n");
         }
 
-        builder.Append("\n## Analyses and effective options\n\n| Analysis | Enabled | Applicability to tests | Effective options | Test option provenance |\n| --- | --- | --- | --- | --- |\n");
+        builder.Append("\n## Analyses and effective options\n\n| Analysis | Enabled | Subject scope | Effective options |\n| --- | --- | --- | --- |\n");
         foreach (var analysis in analyses)
         {
             var enabled = analysis.Enabled;
-            var effective = FormatOptions(analysis.EffectiveOptions);
-            var testScope = analysis.AnalysisId == "missing-test-evidence-candidates"
-                ? "Production-only targets; test projects are evidence sources"
-                : "Production and tests";
-            if (analysis.EffectiveTestOptions is { } testOptions)
+            var effective = analysis.EffectiveOptions.Values.Count == 0 ? "—" : FormatOptions(analysis.EffectiveOptions);
+            var testScope = analysis.AnalysisId switch
+            {
+                "missing-test-evidence-candidates" => "Production targets; tests are evidence",
+                "type-dependency-cycle-candidates" or "type-dependency-hub-candidates" => "Production",
+                _ => "Production and tests",
+            };
+            if (analysis.EffectiveTestOptions is { Values.Count: > 0 } testOptions
+                && !string.Equals(FormatOptions(testOptions), FormatOptions(analysis.EffectiveOptions), StringComparison.Ordinal))
             {
                 effective += " / tests " + FormatOptions(testOptions);
             }
-
-            var provenance = analysis.Analysis.Descriptor.TestOptions.Count == 0
-                ? "—"
-                : string.Join("; ", analysis.Analysis.Descriptor.TestOptions.Select(option =>
-                    option.Name + (analysis.ExplicitTestOptions?.GetValueOrDefault(option.Name) == true ? " explicit" : " inherited")));
-            builder.Append("| `").Append(analysis.AnalysisId).Append("` | ").Append(enabled ? "yes" : "no").Append(" | ").Append(testScope)
-                .Append(" | ").Append(FormatCodeSpan(effective)).Append(" | ").Append(EscapeInline(provenance)).Append(" |\n");
+            builder.Append("| ").Append(FormatCodeSpan(analysis.AnalysisId)).Append(" | ").Append(enabled ? "yes" : "no").Append(" | ").Append(testScope)
+                .Append(" | ").Append(effective == "—" ? effective : FormatCodeSpan(effective)).Append(" |\n");
         }
 
         var exclusions = result.Analyses.SelectMany(analysis => analysis.Result.ScopeExclusions
@@ -382,45 +367,13 @@ public sealed class MarkdownReportWriter
             builder.Append("| Analysis | Project area | Reason |\n| --- | --- | --- |\n");
             foreach (var exclusion in exclusions)
             {
-                builder.Append("| `").Append(exclusion.AnalysisId).Append("` | `")
-                    .Append(EscapeInline(exclusion.ProjectPath)).Append("` | ")
+                builder.Append("| ").Append(FormatCodeSpan(exclusion.AnalysisId)).Append(" | ")
+                    .Append(FormatCodeSpan(exclusion.ProjectPath)).Append(" | ")
                     .Append(EscapeInline(exclusion.Reason)).Append(" |\n");
             }
             builder.Append('\n');
         }
 
-        builder.Append("## Global totals\n\n");
-        if (hasBaseline)
-        {
-            builder.Append("Changed-files: ").Append(changedCount.ToString(CultureInfo.InvariantCulture)).Append(" findings across ")
-                .Append(changedFindings.Select(static finding => (finding.Finding.ProjectPath, finding.Finding.SourcePath)).Distinct().Count()
-                    .ToString(CultureInfo.InvariantCulture)).Append(" unique representative project/file pairs; ");
-        }
-        builder.Append(hasBaseline ? "all-findings: " : "All-findings: ")
-            .Append(allCount.ToString(CultureInfo.InvariantCulture)).Append(" findings; all-findings contain ")
-            .Append(findings.Select(static finding => (finding.Finding.ProjectPath, finding.Finding.SourcePath)).Distinct().Count()
-                .ToString(CultureInfo.InvariantCulture))
-            .Append(" unique representative project/file pairs.\n\n");
-
-        builder.Append("## Set a new baseline\n\n");
-
-        if (baselineCommandContext is null)
-        {
-            var executable = Environment.ProcessPath
-                ?? throw new InvalidOperationException("The current process executable path is unavailable.");
-            builder.Append("Run this PowerShell command from any directory to set the comparison point to the current source files:\n\n")
-                .Append("```powershell\n& ").Append(QuotePowerShell(Path.GetFullPath(executable))).Append(" baseline ")
-                .Append(QuotePowerShell(Path.GetFullPath(config.ProjectRoot))).Append("\n```\n\n");
-        }
-        else
-        {
-            builder.Append("Run this PowerShell command to update the centrally stored baseline for this manual audit target without writing into the target repository:\n\n")
-                .Append("```powershell\n& ").Append(QuotePowerShell(baselineCommandContext.ScriptPath))
-                .Append(" -Target ").Append(QuotePowerShell(baselineCommandContext.TargetName))
-                .Append(" -BaselineOnly\n```\n\n");
-        }
-
-        builder.Append("The command replaces the baseline for all source files and does not require a report.\n");
         return builder.ToString();
     }
 
@@ -436,10 +389,10 @@ public sealed class MarkdownReportWriter
     {
         var builder = new StringBuilder();
         builder.Append("# ").Append(area).Append(" — ").Append(title).Append("\n\n")
-            .Append("This index covers ").Append(area).Append(" findings in this view. Related findings in other areas remain visible in their own index. See the [shared audit guidance](../../index.md#review-guidance).\n\n");
+            .Append("This index covers ").Append(area).Append(" findings in this view. Related findings in other areas remain visible in their own index. Root report: `../../index.md`.\n\n");
         if (requiresFullAudit)
         {
-            builder.Append("> **Notice for AI agents:** This area contains current findings for reference. Do not review or report them unless the user explicitly requested a full repository audit. Use [`changed-files/`](../changed-files/index.md) for active review.\n\n");
+            builder.Append("> Full-audit reference: inspect only when the user explicitly requests a full-repository audit. Active review: `../changed-files/index.md`.\n\n");
         }
 
         var visible = analyses.Where(analysis => findings.Any(finding => finding.AnalysisId == analysis.AnalysisId))
@@ -453,9 +406,8 @@ public sealed class MarkdownReportWriter
             foreach (var analysis in visible)
             {
                 var count = findings.Count(finding => finding.AnalysisId == analysis.AnalysisId);
-                builder.Append("- [").Append(EscapeLinkText(analysis.Analysis.Descriptor.Title)).Append(" (")
-                    .Append(count.ToString(CultureInfo.InvariantCulture)).Append(")](")
-                    .Append(EncodePathSegment(analysis.AnalysisId)).Append(".md)\n");
+                builder.Append("- ").Append(FormatCodeSpan(EncodePathSegment(analysis.AnalysisId) + ".md"))
+                    .Append(" ( ").Append(count.ToString(CultureInfo.InvariantCulture)).Append(" findings)\n");
             }
         }
 
@@ -512,7 +464,6 @@ public sealed class MarkdownReportWriter
 
     private static async Task WriteViewAnalysisAsync(
         string runDirectory,
-        string projectRoot,
         string area,
         string viewDirectory,
         ConfiguredReviewAnalysis configuredAnalysis,
@@ -531,15 +482,13 @@ public sealed class MarkdownReportWriter
         var reportDirectory = Path.Combine(runDirectory, area, viewDirectory);
         Directory.CreateDirectory(reportDirectory);
         var analysisPath = Path.Combine(reportDirectory, configuredAnalysis.AnalysisId + ".md");
-        await WriteUtf8Async(analysisPath, FormatAnalysisReport(configuredAnalysis, projectRoot, analysisPath, area, viewDirectory, findings, visibleViewFindings, allFindings, findingIds, hasBaseline), cancellationToken)
+        await WriteUtf8Async(analysisPath, FormatAnalysisReport(configuredAnalysis, analysisPath, viewDirectory, findings, visibleViewFindings, allFindings, findingIds, hasBaseline), cancellationToken)
             .ConfigureAwait(false);
     }
 
     private static string FormatAnalysisReport(
         ConfiguredReviewAnalysis configuredAnalysis,
-        string projectRoot,
         string reportPath,
-        string area,
         string viewDirectory,
         IReadOnlyList<ReviewFinding> findings,
         IReadOnlyList<ReviewFinding> visibleViewFindings,
@@ -552,25 +501,26 @@ public sealed class MarkdownReportWriter
         builder.Append("# ").Append(EscapeLinkText(descriptor.Title)).Append("\n\n")
             .Append(EscapeInline(descriptor.Purpose)).Append("\n\n")
             .Append(viewDirectory == "all-findings" && hasBaseline
-                ? "Review policy: In the commissioned scope, investigate every finding and justify its classification; a signal alone does not require a change. This area is reference-only; inspect or report it only when the user explicitly requests a full repository audit. See the [root index's Review guidance](../../index.md#review-guidance).\n\n"
-                : "Review policy: In the commissioned scope, investigate every finding and justify its classification; a signal alone does not require a change. A normal unbounded audit includes all three areas; see the [root index's Review guidance](../../index.md#review-guidance).\n\n")
-            .Append(FormatEffectiveOptions(configuredAnalysis)).Append("\n\n")
-            .Append("Review questions:\n\n");
-        if (area is "tests" or "mixed")
+                ? "Full-audit reference; inspect only when the user explicitly requests a full-repository audit.\n\n"
+                : string.Empty);
+        var effectiveOptions = FormatEffectiveOptions(configuredAnalysis);
+        if (effectiveOptions.Length > 0)
         {
-            builder.Append("- Does the test verify observable behavior with meaningful assertions?\n")
-                .Append("- Is the expected result independent of the production implementation?\n")
-                .Append("- Are setup and test paths isolated, understandable, and easy to diagnose when they fail?\n")
-                .Append("- What responsibility does each fixture, hook, data provider, fake, mock, builder, or helper add?\n")
-                .Append("- Which parts are executable code, and which are declarative test data or string fixtures?\n");
-            if (area == "mixed")
-            {
-                builder.Append("- Do the expectations independently check the production behavior represented by this mixed finding?\n");
-            }
+            builder.Append(effectiveOptions);
         }
+        builder.Append("Review questions:\n\n");
         foreach (var question in descriptor.ReviewQuestions)
         {
             builder.Append("- ").Append(EscapeInline(question)).Append('\n');
+        }
+        builder.Append("\nSource paths are repository-relative; `Lnn` refers to the file group above. Related report paths are relative to this report.\n");
+
+        var allMissingTestFindingsAreUncertain = configuredAnalysis.AnalysisId == "missing-test-evidence-candidates"
+            && findings.Count > 0
+            && findings.All(static item => Metric(item.Finding, "attributionUncertain") > 0);
+        if (allMissingTestFindingsAreUncertain)
+        {
+            builder.Append("\nAttribution uncertain: every finding in this report has uncertain static test attribution.\n");
         }
 
         if (configuredAnalysis.AnalysisId is "method-control-flow-outliers" or "code-size-candidates" or "missing-test-evidence-candidates")
@@ -662,13 +612,13 @@ public sealed class MarkdownReportWriter
                 ? "role not represented"
                 : string.Join(" + ", representedRoles.OrderBy(static role => role)
                     .Select(static role => role == ProjectRole.Tests ? "tests" : "production"));
-            builder.Append("### Project: ").Append(EscapeInline(projectGroup.Key)).Append(" (")
+            builder.Append("### Project: ").Append(FormatCodeSpan(projectGroup.Key)).Append(" (")
                 .Append(roleLabel).Append("; ")
                 .Append(projectGroup.Count().ToString(CultureInfo.InvariantCulture)).Append(" files, ")
                 .Append(projectFindingCount.ToString(CultureInfo.InvariantCulture)).Append(" findings)\n\n");
             foreach (var group in projectGroup)
             {
-                builder.Append("#### File: ").Append(EscapeInline(group.SourcePath)).Append(" (")
+                builder.Append("#### File: ").Append(FormatCodeSpan(group.SourcePath)).Append(" (")
                     .Append(group.Findings.Length.ToString(CultureInfo.InvariantCulture)).Append(" findings");
                 if (viewDirectory == "changed-files" && configuredAnalysis.AnalysisId is "missing-test-evidence-candidates" or "type-dependency-cycle-candidates" or "type-dependency-hub-candidates")
                 {
@@ -676,112 +626,171 @@ public sealed class MarkdownReportWriter
                 }
 
                 builder.Append(")\n\n");
-                builder.Append("Source: [open ").Append(EscapeLinkText(group.SourcePath)).Append("](")
-                    .Append(FormatSourceLink(reportPath, projectRoot, group.SourcePath)).Append(")\n\n");
                 foreach (var reviewFinding in group.Findings)
                 {
                     var finding = reviewFinding.Finding;
+                    var isCluster = finding.RelatedSymbols.Count > 1;
+                    var isDuplicateCluster = isCluster && reviewFinding.AnalysisId == "duplicate-code-candidates";
+                    var hasOccurrenceList = isDuplicateCluster
+                        || reviewFinding.AnalysisId is "indirection-drift-candidates" or "structural-duplication-candidates"
+                        || reviewFinding.AnalysisId == "code-size-candidates" && finding.Discriminator == "file-size";
                     if (findingIds.TryGetValue(FindingKey(reviewFinding), out var findingId))
                     {
-                        builder.Append("<a id=\"finding-").Append(findingId).Append("\"></a>\n");
+                        builder.Append("- ").Append(findingId).Append('\n');
+                        if (!hasOccurrenceList)
+                        {
+                            builder.Append("  - Subject: ").Append(FormatCodeSpan(FormatSymbolIdentity(finding.SubjectId))).Append(" at ")
+                                .Append(FormatFindingLocation(group.SourcePath, finding.SourcePath, finding.StartLine)).Append('\n');
+                        }
                     }
 
-                    var isCluster = finding.RelatedSymbols.Count > 1;
-                    var occurrenceRoles = reviewFinding.SubjectOccurrences
-                        .Select(static occurrence => occurrence.Role)
-                        .Distinct()
-                        .OrderBy(static role => role)
-                        .Select(static role => role == ProjectRole.Tests ? "tests" : "production")
-                        .ToArray();
-                    if (occurrenceRoles.Length > 0)
-                    {
-                        builder.Append("- Finding origin: ").Append(string.Join(" + ", occurrenceRoles)).Append('\n');
-                    }
                     if (reviewFinding.AnalysisId == "indirection-drift-candidates")
                     {
-                        builder.Append("- Forwarding path: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
+                        builder.Append("  - Forwarding path: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
                         foreach (var member in finding.Evidence)
                         {
-                            builder.Append("  - [").Append(EscapeLinkText(member.SourcePath)).Append("](")
-                                .Append(FormatSourceLink(reportPath, projectRoot, member.SourcePath)).Append("):")
-                                .Append(member.Line.ToString(CultureInfo.InvariantCulture)).Append(": ")
-                                .Append(FormatCodeSpan(member.Label)).Append(" (")
+                            builder.Append("    - ").Append(FormatFindingLocation(group.SourcePath, member.SourcePath, member.Line)).Append(" ")
+                                .Append(FormatCodeSpan(FormatSymbolIdentity(member.Label))).Append(" (")
                                 .Append(GetOccurrenceRole(reviewFinding, finding.ProjectPath, member.SourcePath, member.Label)).Append(")\n");
                         }
                     }
                     else if (reviewFinding.AnalysisId == "structural-duplication-candidates")
                     {
-                        builder.Append("- Structural duplicate: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
+                        builder.Append("  - Structural duplicate: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
                         foreach (var occurrence in finding.Evidence)
                         {
                             var (projectPath, start, end) = ParseStructuralEvidenceDetail(occurrence.Detail);
-                            builder.Append("  - Project ").Append(FormatCodeSpan(projectPath))
-                                .Append(", file [").Append(EscapeLinkText(occurrence.SourcePath)).Append("](")
-                                .Append(FormatSourceLink(reportPath, projectRoot, occurrence.SourcePath)).Append(")")
-                                .Append(": ").Append(FormatCodeSpan(occurrence.Label))
-                                .Append(" (start ").Append(FormatCodeSpan(start)).Append("; end-exclusive ")
-                                .Append(FormatCodeSpan(end)).Append("; ")
-                                .Append(GetOccurrenceRole(reviewFinding, projectPath, occurrence.SourcePath, occurrence.Label)).Append(")\n");
+                            var occurrenceRole = GetOccurrenceRole(reviewFinding, projectPath, occurrence.SourcePath, occurrence.Label);
+                            builder.Append("    - ");
+                            if (!string.Equals(projectPath, finding.ProjectPath, StringComparison.Ordinal))
+                            {
+                                builder.Append(FormatCodeSpan(projectPath)).Append(' ');
+                            }
+                            if (!string.Equals(group.SourcePath.Replace('\\', '/'), occurrence.SourcePath.Replace('\\', '/'), StringComparison.Ordinal))
+                            {
+                                builder.Append(FormatSourceLocation(occurrence.SourcePath, 0)).Append(' ');
+                            }
+                            builder.Append(FormatCodeSpan(FormatSymbolIdentity(occurrence.Label)))
+                                .Append(" [").Append(FormatCodeSpan(start)).Append("–").Append(FormatCodeSpan(end)).Append(')');
+                            if (!string.Equals(projectPath, finding.ProjectPath, StringComparison.Ordinal))
+                            {
+                                builder.Append(" (").Append(occurrenceRole).Append(')');
+                            }
+                            builder.Append('\n');
                         }
                     }
                     else if (reviewFinding.AnalysisId == "missing-test-evidence-candidates")
                     {
-                        builder.Append("- ").Append(FormatCodeSpan(finding.SubjectId)).Append(" (line ")
-                            .Append(finding.StartLine.ToString(CultureInfo.InvariantCulture)).Append(")\n")
-                            .Append("  - Signal: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append('\n');
+                        builder.Append("  - Signal: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding,
+                            allMissingTestFindingsAreUncertain))).Append('\n');
                         if (finding.Discriminator == "indirect-test-path-only" && finding.Evidence.Count > 1)
                         {
                             var path = finding.Evidence.Skip(1)
-                                .Select(evidence => $"{FormatCodeSpan(evidence.Label)} ({FormatCodeSpan(evidence.SourcePath + ":" + evidence.Line.ToString(CultureInfo.InvariantCulture))}; {GetEvidenceOccurrenceRole(reviewFinding, evidence)})");
+                                .Select(evidence => $"{FormatCodeSpan(FormatSymbolIdentity(evidence.Label))} ({FormatFindingLocation(group.SourcePath, evidence.SourcePath, evidence.Line)}; {GetEvidenceOccurrenceRole(reviewFinding, evidence)})");
                             builder.Append("  - Shortest resolved test path: ").Append(string.Join(" -> ", path)).Append('\n');
                         }
                     }
                     else if (reviewFinding.AnalysisId == "type-dependency-cycle-candidates")
                     {
-                        builder.Append("- Dependency group: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
+                        builder.Append("  - Dependency group: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
                         builder.Append("  - Example cycle and review question: ").Append(EscapeInline(finding.Rationale)).Append('\n');
                         builder.Append("  - Participating declarations and internal edge witnesses:\n");
                         foreach (var item in finding.Evidence)
                         {
-                            builder.Append("    - [").Append(EscapeLinkText(item.SourcePath)).Append("](")
-                                .Append(FormatSourceLink(reportPath, projectRoot, item.SourcePath)).Append("):")
-                                .Append(item.Line.ToString(CultureInfo.InvariantCulture)).Append(": ")
-                                .Append(FormatCodeSpan(item.Label)).Append(" — ").Append(EscapeInline(item.Detail)).Append('\n');
+                            builder.Append("    - ").Append(FormatFindingLocation(group.SourcePath, item.SourcePath, item.Line)).Append(" ")
+                                .Append(FormatCodeSpan(FormatSymbolIdentity(item.Label))).Append(" — ").Append(EscapeInline(item.Detail)).Append('\n');
                         }
                     }
                     else if (reviewFinding.AnalysisId == "type-dependency-hub-candidates")
                     {
-                        builder.Append("- Dependency hub: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
+                        builder.Append("  - Dependency hub: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
                         builder.Append("  - Neighborhood and review question: ").Append(EscapeInline(finding.Rationale)).Append('\n');
                         builder.Append("  - Type declarations, direct production neighbors, and separate test consumers:\n");
                         foreach (var item in finding.Evidence)
                         {
-                            builder.Append("    - [").Append(EscapeLinkText(item.SourcePath)).Append("](")
-                                .Append(FormatSourceLink(reportPath, projectRoot, item.SourcePath)).Append("):")
-                                .Append(item.Line.ToString(CultureInfo.InvariantCulture)).Append(": ")
-                                .Append(FormatCodeSpan(item.Label)).Append(" — ").Append(EscapeInline(item.Detail)).Append('\n');
+                            builder.Append("    - ").Append(FormatFindingLocation(group.SourcePath, item.SourcePath, item.Line)).Append(" ")
+                                .Append(FormatCodeSpan(FormatSymbolIdentity(item.Label))).Append(" — ").Append(EscapeInline(item.Detail)).Append('\n');
+                        }
+                    }
+                    else if (isDuplicateCluster)
+                    {
+                        builder.Append("  - Cluster: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append('\n');
+                        var renderedSymbols = new HashSet<FindingSymbol>();
+                        foreach (var evidence in finding.Evidence)
+                        {
+                            var evidenceIdentity = GetDuplicateEvidenceIdentity(evidence.Detail);
+                            var candidates = finding.RelatedSymbols.Where(candidate =>
+                                candidate.SourcePath == evidence.SourcePath && candidate.Line == evidence.Line).ToArray();
+                            var symbol = candidates.FirstOrDefault(candidate => candidate.SymbolId == evidenceIdentity
+                                    && evidence.Detail.Contains("in project '" + candidate.ProjectPath + "'", StringComparison.Ordinal))
+                                ?? candidates.FirstOrDefault(candidate => candidate.SymbolId == evidenceIdentity)
+                                ?? candidates.FirstOrDefault(candidate => candidate.SymbolId == evidence.Label)
+                                ?? candidates.FirstOrDefault(candidate => evidence.Detail.Contains(
+                                    "in project '" + candidate.ProjectPath + "'", StringComparison.Ordinal))
+                                ?? candidates.FirstOrDefault();
+                            if (symbol is not null)
+                            {
+                                renderedSymbols.Add(symbol);
+                            }
+                            var projectPath = symbol?.ProjectPath ?? finding.ProjectPath;
+                            builder.Append("    - ");
+                            if (!string.Equals(projectPath, finding.ProjectPath, StringComparison.Ordinal))
+                            {
+                                builder.Append(FormatCodeSpan(projectPath)).Append(' ');
+                            }
+                            builder.Append(FormatFindingLocation(group.SourcePath, evidence.SourcePath, evidence.Line)).Append(' ')
+                                .Append(FormatCodeSpan(FormatSymbolIdentity(symbol?.SymbolId ?? evidenceIdentity)))
+                                .Append(" — ").Append(EscapeInline(FormatDuplicateEvidenceDetail(evidence.Detail)));
+                            if (!string.Equals(projectPath, finding.ProjectPath, StringComparison.Ordinal))
+                            {
+                                builder.Append(" (").Append(GetOccurrenceRole(reviewFinding, projectPath, evidence.SourcePath, symbol?.SymbolId ?? string.Empty)).Append(')');
+                            }
+                            builder.Append('\n');
+                        }
+                        foreach (var symbol in finding.RelatedSymbols.Where(symbol => !renderedSymbols.Contains(symbol)))
+                        {
+                            builder.Append("    - ");
+                            if (!string.Equals(symbol.ProjectPath, finding.ProjectPath, StringComparison.Ordinal))
+                            {
+                                builder.Append(FormatCodeSpan(symbol.ProjectPath)).Append(' ');
+                            }
+                            builder.Append(FormatFindingLocation(group.SourcePath, symbol.SourcePath, symbol.Line)).Append(' ')
+                                .Append(FormatCodeSpan(FormatSymbolIdentity(symbol.SymbolId)));
+                            if (!string.Equals(symbol.ProjectPath, finding.ProjectPath, StringComparison.Ordinal))
+                            {
+                                builder.Append(" (").Append(GetOccurrenceRole(reviewFinding, symbol)).Append(')');
+                            }
+                            builder.Append('\n');
                         }
                     }
                     else if (isCluster)
                     {
-                        builder.Append("- Cluster: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append('\n');
+                        builder.Append("  - Cluster: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append('\n');
                         foreach (var symbol in finding.RelatedSymbols)
                         {
-                            builder.Append("  - [").Append(EscapeLinkText(symbol.SourcePath)).Append("](")
-                                .Append(FormatSourceLink(reportPath, projectRoot, symbol.SourcePath)).Append("): ")
-                                .Append(FormatCodeSpan(symbol.SymbolId)).Append(" (line ")
-                                .Append(symbol.Line.ToString(CultureInfo.InvariantCulture)).Append("; ")
-                                .Append(GetOccurrenceRole(reviewFinding, symbol)).Append(")\n");
+                            builder.Append("  - ");
+                            if (!string.Equals(symbol.ProjectPath, finding.ProjectPath, StringComparison.Ordinal))
+                            {
+                                builder.Append(FormatCodeSpan(symbol.ProjectPath)).Append(' ');
+                            }
+                            builder.Append(FormatFindingLocation(group.SourcePath, symbol.SourcePath, symbol.Line)).Append(' ')
+                                .Append(FormatCodeSpan(FormatSymbolIdentity(symbol.SymbolId)));
+                            if (!string.Equals(symbol.ProjectPath, finding.ProjectPath, StringComparison.Ordinal))
+                            {
+                                builder.Append(" (").Append(GetOccurrenceRole(reviewFinding, symbol)).Append(')');
+                            }
+                            builder.Append('\n');
                         }
                     }
                     else
                     {
-                        builder.Append("- ").Append(FormatCodeSpan(finding.SubjectId)).Append(" (line ")
-                            .Append(finding.StartLine.ToString(CultureInfo.InvariantCulture)).Append(")\n")
-                            .Append("  - Signal: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding))).Append('\n');
+                        builder.Append("  - Signal: ").Append(EscapeInline(FormatSignal(configuredAnalysis.AnalysisId, finding,
+                            allMissingTestFindingsAreUncertain))).Append('\n');
                     }
 
-                    var related = FormatRelated(reviewFinding, viewDirectory, visibleViewFindings, allFindings);
+                    AppendUnrepresentedEvidence(builder, reviewFinding, group.SourcePath);
+
+                    var related = FormatRelated(reviewFinding, reportPath, viewDirectory, visibleViewFindings, allFindings);
                     if (!string.IsNullOrEmpty(related))
                     {
                         // Analysis IDs are validated lowercase slugs; preserve their exact identifiers and the all-findings suffix.
@@ -803,8 +812,154 @@ public sealed class MarkdownReportWriter
         return sourceChanged ? "source new or changed" : "source unchanged; included snapshot-wide";
     }
 
+    private static void AppendUnrepresentedEvidence(StringBuilder builder, ReviewFinding finding, string representativePath)
+    {
+        var evidenceIsRendered = finding.AnalysisId is "indirection-drift-candidates"
+            or "structural-duplication-candidates"
+            or "missing-test-evidence-candidates"
+            or "type-dependency-cycle-candidates"
+            or "type-dependency-hub-candidates"
+            || finding.AnalysisId == "duplicate-code-candidates" && finding.Finding.RelatedSymbols.Count > 1;
+        if (!evidenceIsRendered && finding.Finding.Evidence.Count > 0)
+        {
+            var evidenceItems = finding.Finding.Evidence.Where(evidence => !IsRedundantDeclarationEvidence(finding, evidence)).ToArray();
+            if (evidenceItems.Length > 0)
+            {
+                builder.Append("  - Evidence:\n");
+                foreach (var evidence in evidenceItems)
+                {
+                    builder.Append("    - ").Append(FormatFindingLocation(representativePath, evidence.SourcePath, evidence.Line)).Append(' ')
+                        .Append(FormatCodeSpan(FormatSymbolIdentity(evidence.Label)));
+                    if (!string.IsNullOrWhiteSpace(evidence.Detail))
+                    {
+                        builder.Append(" — ").Append(EscapeInline(evidence.Detail));
+                    }
+
+                    if (GetEvidenceOccurrenceRole(finding, evidence) == "tests")
+                    {
+                        builder.Append(" (tests)");
+                    }
+                    builder.Append('\n');
+                }
+            }
+        }
+
+        var representedPaths = finding.Finding.Evidence.Select(static evidence => evidence.SourcePath)
+            .Append(finding.Finding.SourcePath)
+            .ToHashSet(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        if (finding.Finding.RelatedSymbols.Count > 1)
+        {
+            representedPaths.UnionWith(finding.Finding.RelatedSymbols.Select(static symbol => symbol.SourcePath));
+        }
+
+        var additionalPaths = finding.SourcePaths.Where(path => !representedPaths.Contains(path))
+            .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (additionalPaths.Length > 0)
+        {
+            builder.Append("  - Other source files: ")
+                .Append(string.Join(", ", additionalPaths.Select(FormatCodeSpan))).Append('\n');
+        }
+    }
+
+    private static bool IsRedundantDeclarationEvidence(ReviewFinding finding, FindingEvidence evidence)
+    {
+        if (!string.Equals(evidence.SourcePath, finding.Finding.SourcePath, StringComparison.Ordinal)
+            || evidence.Line != finding.Finding.StartLine)
+        {
+            return false;
+        }
+
+        return finding.AnalysisId switch
+        {
+            "code-size-candidates" => (evidence.Label == "Executable member declaration"
+                    && evidence.Detail == "This loaded source line identifies the measured member declaration.")
+                || (evidence.Label == "Class declaration part"
+                    && evidence.Detail == "This loaded source line identifies one part contributing to the measured type."),
+            "dead-code-candidates" => evidence.Label is "Type declaration" or "Method declaration"
+                && evidence.Detail == "Candidate declaration selected from production C# source.",
+            _ => false,
+        };
+    }
+
+    private static string GetDuplicateEvidenceIdentity(string detail)
+    {
+        const string projectMarker = " in project '";
+        var markerIndex = detail.IndexOf(projectMarker, StringComparison.Ordinal);
+        return markerIndex >= 0 ? detail[..markerIndex] : detail;
+    }
+
+    private static string FormatDuplicateEvidenceDetail(string detail)
+    {
+        const string tokenSuffix = " body tokens).";
+        if (!detail.EndsWith(tokenSuffix, StringComparison.Ordinal))
+        {
+            return detail;
+        }
+
+        var countStart = detail.LastIndexOf(" (", StringComparison.Ordinal);
+        return countStart >= 0
+            ? detail[(countStart + 2)..^2]
+            : detail;
+    }
+
+    private static string FormatSourceLocation(string sourcePath, int line)
+    {
+        var normalizedPath = sourcePath.Replace('\\', '/');
+        return FormatCodeSpan(line > 0 ? normalizedPath + ":" + line.ToString(CultureInfo.InvariantCulture) : normalizedPath);
+    }
+
+    private static string FormatFindingLocation(string representativePath, string sourcePath, int line)
+    {
+        if (line > 0 && string.Equals(representativePath.Replace('\\', '/'), sourcePath.Replace('\\', '/'), StringComparison.Ordinal))
+        {
+            return FormatCodeSpan("L" + line.ToString(CultureInfo.InvariantCulture));
+        }
+
+        return FormatSourceLocation(sourcePath, line);
+    }
+
+    private static string FormatSymbolIdentity(string symbolId)
+    {
+        var separator = symbolId.IndexOf(':');
+        if (separator != 1 || symbolId.Length < 3)
+        {
+            return symbolId;
+        }
+
+        var kind = symbolId[0];
+        if (kind is not ('M' or 'T' or 'P' or 'F' or 'E' or '!'))
+        {
+            return symbolId;
+        }
+
+        var identity = symbolId[(separator + 1)..];
+        var returnTypeStart = identity.IndexOf('~');
+        if (returnTypeStart >= 0)
+        {
+            identity = identity[..returnTypeStart];
+        }
+
+        var signature = identity.IndexOf('(');
+        if (signature >= 0)
+        {
+            identity = identity[..signature];
+        }
+
+        identity = identity.Replace('+', '.');
+        var parts = identity.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length switch
+        {
+            0 => symbolId,
+            1 => parts[0],
+            _ => parts[^2] + "." + parts[^1],
+        };
+    }
+
     private static string FormatRelated(
         ReviewFinding finding,
+        string reportPath,
         string currentView,
         IReadOnlyList<ReviewFinding> visibleFindings,
         IReadOnlyList<ReviewFinding> allFindings)
@@ -821,20 +976,23 @@ public sealed class MarkdownReportWriter
                 && candidate.Finding.SourcePath == reference.SourcePath
                 && candidate.Finding.SubjectId == reference.SubjectId
                 && candidate.Finding.Discriminator == reference.Discriminator);
-            if (target is null)
-            {
-                return reference.AnalysisId;
-            }
+            if (target is null) return (Path: string.Empty, Suffix: string.Empty, Id: reference.AnalysisId + " (target unavailable in this run)");
 
             var inCurrentView = visibleFindings.Any(candidate => FindingKey(candidate) == FindingKey(target));
             var targetArea = GetFindingArea(target);
             var targetView = inCurrentView ? currentView : "all-findings";
-            var suffix = inCurrentView ? string.Empty : " (all-findings reference)";
-            var link = "../../" + targetArea + "/" + targetView + "/" + EncodePathSegment(reference.AnalysisId) + ".md";
-            return "[" + reference.AnalysisId + " (" + targetArea + "/" + targetView + ")](" + link + ")" + suffix;
-        }).Distinct(StringComparer.Ordinal).ToArray();
-
-        return string.Join(", ", relatedItems);
+            var targetPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(reportPath)!, "..", "..", targetArea, targetView, EncodePathSegment(reference.AnalysisId) + ".md"));
+            var relativePath = Path.GetRelativePath(Path.GetDirectoryName(reportPath)!, targetPath).Replace('\\', '/');
+            var suffix = inCurrentView ? string.Empty : "; all-findings reference";
+            return (Path: relativePath, Suffix: suffix, Id: GetFindingId(target));
+        }).Distinct().ToArray();
+        var groupedItems = relatedItems.Where(static item => item.Path.Length > 0)
+            .GroupBy(static item => (item.Path, item.Suffix))
+            .OrderBy(static group => group.Key.Path, StringComparer.Ordinal)
+            .ThenBy(static group => group.Key.Suffix, StringComparer.Ordinal)
+            .Select(group => FormatCodeSpan(group.Key.Path) + ": " + string.Join(", ", group.Select(static item => item.Id).Order(StringComparer.Ordinal)) + group.Key.Suffix)
+            .Concat(relatedItems.Where(static item => item.Path.Length == 0).Select(static item => item.Id).Order(StringComparer.Ordinal));
+        return string.Join("; ", groupedItems);
     }
 
     internal static string FindingKey(ReviewFinding finding) => finding.AnalysisId + "\0" + finding.Finding.ProjectPath + "\0"
@@ -868,16 +1026,7 @@ public sealed class MarkdownReportWriter
         return occurrence?.Role == ProjectRole.Tests ? "tests" : "production";
     }
 
-    internal static string FormatSourceLink(string reportPath, string projectRoot, string sourcePath)
-    {
-        var absoluteSource = Path.GetFullPath(sourcePath, projectRoot);
-        var relative = Path.GetRelativePath(Path.GetDirectoryName(reportPath)!, absoluteSource).Replace('\\', '/');
-        return string.Join('/', relative.Split('/').Select(EncodePathSegment));
-    }
-
-    private static string QuotePowerShell(string value) => "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";
-
-    internal static string FormatSignal(string analysisId, FindingDraft finding)
+    internal static string FormatSignal(string analysisId, FindingDraft finding, bool suppressAttributionUncertainty = false)
     {
         if (analysisId == "dead-code-candidates")
         {
@@ -966,7 +1115,7 @@ public sealed class MarkdownReportWriter
             var signal = new StringBuilder(category)
                 .Append("; ").Append(FormatNumber(Metric(finding, "decisionCount"))).Append(" decisions, nesting ")
                 .Append(FormatNumber(Metric(finding, "maxDecisionNesting")));
-            if (Metric(finding, "attributionUncertain") > 0)
+            if (Metric(finding, "attributionUncertain") > 0 && !suppressAttributionUncertainty)
             {
                 signal.Append("; attribution uncertain");
             }
@@ -1090,6 +1239,11 @@ public sealed class MarkdownReportWriter
     private static string FormatEffectiveOptions(ConfiguredReviewAnalysis configuredAnalysis)
     {
         var testOptions = configuredAnalysis.EffectiveTestOptions;
+        if (configuredAnalysis.EffectiveOptions.Values.Count == 0
+            && (testOptions is null || testOptions.Values.Count == 0))
+        {
+            return string.Empty;
+        }
         if (testOptions is null)
         {
             return "Effective options: " + FormatCodeSpan(FormatOptions(configuredAnalysis.EffectiveOptions)) + "\n\n";
@@ -1113,12 +1267,6 @@ public sealed class MarkdownReportWriter
                 .Append(FormatCodeSpan(FormatOptions(testOptions))).Append("\n\n");
         }
 
-        var sources = testDescriptors.Select(option =>
-        {
-            var isExplicit = configuredAnalysis.ExplicitTestOptions?.GetValueOrDefault(option.Name) ?? false;
-            return FormatCodeSpan(option.Name) + (isExplicit ? " explicitly configured" : " inherited");
-        });
-        builder.Append("Test option sources: ").Append(string.Join("; ", sources)).Append(".\n\n");
         return builder.ToString();
     }
 

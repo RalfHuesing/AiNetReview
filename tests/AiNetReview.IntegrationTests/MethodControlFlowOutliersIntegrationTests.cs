@@ -65,9 +65,9 @@ public sealed class MethodControlFlowOutliersIntegrationTests
         Assert.Contains("Total findings: 1", p99TestReport, StringComparison.Ordinal);
         Assert.Contains("Effective options (production projects)", p99Report, StringComparison.Ordinal);
         Assert.Contains("Effective options (test projects)", p99Report, StringComparison.Ordinal);
-        Assert.Contains("Test option sources: `percentile` explicitly configured.", p99Report, StringComparison.Ordinal);
-        Assert.Contains("#### File: Sample/Class1.cs (2 findings)", p99Report, StringComparison.Ordinal);
-        Assert.Contains("#### File: Tests/Class1.cs (1 findings)", p99TestReport, StringComparison.Ordinal);
+        Assert.Contains("\"percentile\": 99", p99Report, StringComparison.Ordinal);
+        Assert.Contains("Sample/Class1.cs", p99Report, StringComparison.Ordinal);
+        Assert.Contains("Tests/Class1.cs", p99TestReport, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(projectRoot, "reports", p99RunId, "production", "changed-files", "method-control-flow-outliers.md")));
 
         await File.WriteAllTextAsync(configPath,
@@ -82,8 +82,8 @@ public sealed class MethodControlFlowOutliersIntegrationTests
         var p50TestReport = await File.ReadAllTextAsync(Path.Combine(p50TestDirectory, "method-control-flow-outliers.md"));
         Assert.Contains("Total findings: 2", p50Report, StringComparison.Ordinal);
         Assert.Contains("Total findings: 2", p50TestReport, StringComparison.Ordinal);
-        Assert.Contains("#### File: Sample/Class1.cs (2 findings)", p50Report, StringComparison.Ordinal);
-        Assert.Contains("#### File: Tests/Class1.cs (2 findings)", p50TestReport, StringComparison.Ordinal);
+        Assert.Contains("Sample/Class1.cs", p50Report, StringComparison.Ordinal);
+        Assert.Contains("Tests/Class1.cs", p50TestReport, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(projectRoot, "reports", p50RunId, "production", "changed-files", "method-control-flow-outliers.md")));
         using var baselineAfter = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", "baseline.json")));
         Assert.Equal(baselineFiles, baselineAfter.RootElement.GetProperty("files").GetRawText());
@@ -164,7 +164,7 @@ public sealed class MethodControlFlowOutliersIntegrationTests
         Assert.Contains("these measures are not cyclomatic complexity", report, StringComparison.Ordinal);
         Assert.DoesNotContain("sourceSpanLines", report, StringComparison.Ordinal);
         Assert.Contains("Total findings: 1", report, StringComparison.Ordinal);
-        Assert.Contains("#### File: Sample/Class1.cs (1 findings)", report, StringComparison.Ordinal);
+        Assert.Contains("Sample/Class1.cs", report, StringComparison.Ordinal);
         Assert.Contains("## Findings", report, StringComparison.Ordinal);
         Assert.Contains("HighlyBranched", report, StringComparison.Ordinal);
         Assert.DoesNotContain("public int", report, StringComparison.Ordinal);

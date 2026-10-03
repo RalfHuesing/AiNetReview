@@ -87,7 +87,7 @@ public sealed class HostProcessIntegrationTests
     }
 
     [Fact]
-    public async Task ProcessInvocation_ChangedSourcePublishesBothViewsAndExecutesGeneratedBaselineCommand()
+    public async Task ProcessInvocation_ChangedSourcePublishesBothViewsAndBaselineCommandRemainsUsable()
     {
         using var host = IsolatedHost.Create();
         var projectRoot = await CreateProjectAsync(host.HostDirectory, "namespace Sample; public sealed class SampleType { }", "target project");
@@ -125,36 +125,19 @@ public sealed class HostProcessIntegrationTests
         Assert.True(File.Exists(allAuditMap));
         Assert.Contains("audit-map/changed-files/index.md", rootIndex, StringComparison.Ordinal);
         Assert.Contains("audit-map/all-findings/index.md", rootIndex, StringComparison.Ordinal);
-        Assert.Contains("Unique findings:", await File.ReadAllTextAsync(changedAuditMap), StringComparison.Ordinal);
+        Assert.Contains("Findings:", await File.ReadAllTextAsync(changedAuditMap), StringComparison.Ordinal);
         var changedView = Path.Combine(runDirectory, "production", "changed-files");
         var allView = Path.Combine(runDirectory, "production", "all-findings");
 
-        Assert.Contains($" baseline '{projectRoot}'", rootIndex, StringComparison.Ordinal);
-        var baselineCommand = Assert.Single(rootIndex.Split('\n').Select(static line => line.Trim())
-            .Where(static line => line.StartsWith("& '", StringComparison.Ordinal)));
-        var executableSeparator = baselineCommand.IndexOf("' baseline '", StringComparison.Ordinal);
-        Assert.True(executableSeparator > 2, baselineCommand);
-        var generatedExecutablePath = baselineCommand[3..executableSeparator];
-        var generatedProjectRoot = baselineCommand[(executableSeparator + "' baseline '".Length)..^1];
-        Assert.Equal(projectRoot, generatedProjectRoot);
-        var generatedStartInfo = new ProcessStartInfo(generatedExecutablePath)
-        {
-            WorkingDirectory = projectRoot,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        generatedStartInfo.ArgumentList.Add("baseline");
-        generatedStartInfo.ArgumentList.Add(generatedProjectRoot);
-        using var generatedBaselineProcess = Process.Start(generatedStartInfo)
-            ?? throw new InvalidOperationException("The generated baseline command could not be started.");
-        var (generatedBaselineOutput, generatedBaselineError) = await ReadProcessOutputAsync(generatedBaselineProcess);
-        Assert.Equal(0, generatedBaselineProcess.ExitCode);
-        Assert.Empty(generatedBaselineError);
-        Assert.Contains("\"status\":\"completed\"", generatedBaselineOutput, StringComparison.Ordinal);
+        Assert.DoesNotContain(" baseline '", rootIndex, StringComparison.Ordinal);
+        using var repeatedBaselineProcess = host.Start(projectRoot, "baseline", Path.GetDirectoryName(configPath)!);
+        var (repeatedBaselineOutput, repeatedBaselineError) = await ReadProcessOutputAsync(repeatedBaselineProcess);
+        Assert.Equal(0, repeatedBaselineProcess.ExitCode);
+        Assert.Empty(repeatedBaselineError);
+        Assert.Contains("completed", repeatedBaselineOutput, StringComparison.Ordinal);
         Assert.Contains("## Audit scope", rootIndex, StringComparison.Ordinal);
-        Assert.Contains("(production/changed-files/index.md)", rootIndex, StringComparison.Ordinal);
-        Assert.Contains("(production/all-findings/index.md)", rootIndex, StringComparison.Ordinal);
+        Assert.Contains("production/changed-files/index.md", rootIndex, StringComparison.Ordinal);
+        Assert.Contains("production/all-findings/index.md", rootIndex, StringComparison.Ordinal);
         Assert.Contains("Run", await File.ReadAllTextAsync(Path.Combine(changedView, "method-control-flow-outliers.md")), StringComparison.Ordinal);
         Assert.Contains("Run", await File.ReadAllTextAsync(Path.Combine(allView, "method-control-flow-outliers.md")), StringComparison.Ordinal);
     }
@@ -211,21 +194,21 @@ public sealed class HostProcessIntegrationTests
         Assert.True(File.Exists(indexReportPath));
         var indexReport = await File.ReadAllTextAsync(indexReportPath);
         Assert.Contains(runId!, indexReport, StringComparison.Ordinal);
-        var repositoryLine = Assert.Single(indexReport.Split('\n').Where(static line => line.StartsWith("- Repository:", StringComparison.Ordinal)));
-        var repositoryPath = repositoryLine["- Repository: `".Length..^1].Replace("\\\\", "\\", StringComparison.Ordinal);
+        var repositoryLine = Assert.Single(indexReport.Split('\n').Where(static line => line.StartsWith("Repository:", StringComparison.Ordinal)));
+        var repositoryPath = repositoryLine["Repository: `".Length..repositoryLine.IndexOf("`; solution:", StringComparison.Ordinal)].Replace("\\\\", "\\", StringComparison.Ordinal);
         Assert.True(Path.IsPathFullyQualified(repositoryPath));
-        Assert.Contains("- Solution: `AiNetReview.slnx`", indexReport, StringComparison.Ordinal);
+        Assert.Contains("solution: `AiNetReview.slnx`", repositoryLine, StringComparison.Ordinal);
         var hasBaseline = File.Exists(Path.Combine(outputDirectory, "baseline.json"));
         if (hasBaseline)
         {
-            Assert.Contains("(production/changed-files/index.md)", indexReport, StringComparison.Ordinal);
+            Assert.Contains("production/changed-files/index.md", indexReport, StringComparison.Ordinal);
         }
         else
         {
             Assert.DoesNotContain("changed-files", indexReport, StringComparison.OrdinalIgnoreCase);
         }
-        Assert.Contains("(production/all-findings/index.md)", indexReport, StringComparison.Ordinal);
-        Assert.Contains($"& '{executablePath}' baseline '{repositoryRoot}'", indexReport, StringComparison.Ordinal);
+        Assert.Contains("production/all-findings/index.md", indexReport, StringComparison.Ordinal);
+        Assert.DoesNotContain(" baseline '", indexReport, StringComparison.Ordinal);
         var analysisReportPath = Path.Combine(outputDirectory, runId!, "production", "all-findings", "method-control-flow-outliers.md");
         if (detectedCount > 0)
         {
