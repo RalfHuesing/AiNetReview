@@ -4,6 +4,19 @@ Basierend auf dem Audit-Bericht [`audit-report.md`](audit-report.md) und den Sys
 
 Die Punkte sind strikt nach Priorität und empfohlener Umsetzungsreihenfolge gegliedert. Jeder Teilschritt kann einzeln abgehakt (`[x]`) werden.
 
+## Selected implementation scope (2026-10-03)
+
+Only F-001, F-003, and the configuration-aware executable selection in F-004 are authorized for this implementation. F-002, release pipeline changes (4.2), release-script alignment (4.3), and P3 follow-ups remain outside this scope. Existing unchecked items below retain their original broader audit recommendations.
+
+- [ ] F-001: restore cross-compilation static test edges and verify the self-review regression.
+- [x] F-003: clean up interrupted configuration bootstrap and verify retry/preservation.
+- [ ] F-004 (4.1 only): select the current Debug/Release host artifact and verify Release execution.
+- [ ] Final verification and independent GPT-6.1-Sol/medium audit; Luna fix rounds if required.
+
+Implementation baseline: `4f7a0a741aba4b3416852fdaa3507657d37e2366`; working tree clean before changes. Implementation agents: GPT-6-Luna/high. The orchestrator owns this checklist and task-slice commits.
+
+F-003 verification: the new cancellation regression failed against the original direct write (final file remained). After the fix, 19 ZeroConfig tests and a focused 20-test bootstrap/cancellation selection passed. Same-directory temporary publication preserves existing configuration and permits a successful retry; cleanup is restricted to the owned temporary file. Broad gates and the final audit follow after all selected fixes.
+
 ---
 
 ## Übersicht & Priorisierung

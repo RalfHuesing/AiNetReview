@@ -231,17 +231,45 @@ public sealed class ReviewCommand
 
     private static async Task<bool> CreateConfigFileAsync(string path, string contents, CancellationToken cancellationToken)
     {
-        var streamCreated = false;
+        var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
+        var temporaryFileCreated = false;
         try
         {
-            await using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-            streamCreated = true;
-            await using var writer = new StreamWriter(stream);
-            await writer.WriteAsync(contents.AsMemory(), cancellationToken).ConfigureAwait(false);
+            await using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                temporaryFileCreated = true;
+                await using var writer = new StreamWriter(stream);
+                await writer.WriteAsync(contents.AsMemory(), cancellationToken).ConfigureAwait(false);
+                await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            try
+            {
+                File.Move(temporaryPath, path);
+            }
+            catch (IOException) when (File.Exists(path))
+            {
+                return false;
+            }
         }
-        catch (IOException) when (!streamCreated && File.Exists(path))
+        finally
         {
-            return false;
+            if (temporaryFileCreated)
+            {
+                try
+                {
+                    File.Delete(temporaryPath);
+                }
+                catch (IOException)
+                {
+                    // A leftover temporary file cannot block a later bootstrap.
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Preserve the original write, move, or cancellation outcome.
+                }
+            }
         }
 
         return true;

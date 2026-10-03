@@ -3,7 +3,9 @@ namespace AiNetReview.IntegrationTests;
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using AiNetReview;
 using AiNetReview.Bootstrap;
@@ -67,6 +69,37 @@ public sealed class ZeroConfigIntegrationTests
         var missingConfig = await InvokeAsync(["review", projectRoot], services);
         AssertSuccessfulReview(projectRoot, missingConfig);
         Assert.True(File.Exists(configPath));
+    }
+
+    [Fact]
+    public async Task ReviewCommand_CancelledConfigBootstrapLeavesNoFinalFileAndCanRetry()
+    {
+        using var tempDirectory = TestTempDirectory.Create("ainet-zero-config-cancel-");
+        var projectRoot = await CreateProjectAsync(tempDirectory.DirectoryPath);
+        var configPath = Path.Combine(projectRoot, "ainetreview.json");
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        var createConfig = typeof(ReviewCommand).GetMethod("CreateConfigFileAsync", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("Config bootstrap method was not found.");
+        var bootstrapTask = (Task<bool>)(createConfig.Invoke(null, [configPath, "{\"schemaVersion\":1}", cancellation.Token])
+            ?? throw new InvalidOperationException("Config bootstrap did not return a task."));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => bootstrapTask);
+        Assert.False(File.Exists(configPath));
+
+        await using var services = BuildServices();
+        var retry = await InvokeAsync(["review", projectRoot], services);
+
+        AssertSuccessfulReview(projectRoot, retry);
+        Assert.True(File.Exists(configPath));
+
+        var existingConfiguration = await File.ReadAllTextAsync(configPath);
+        using var activeCancellation = new CancellationTokenSource();
+        var existingConfigBootstrap = (Task<bool>)(createConfig.Invoke(null, [configPath, "invalid replacement", activeCancellation.Token])
+            ?? throw new InvalidOperationException("Config bootstrap did not return a task."));
+        Assert.False(await existingConfigBootstrap);
+        Assert.Equal(existingConfiguration, await File.ReadAllTextAsync(configPath));
     }
 
     [Theory]
