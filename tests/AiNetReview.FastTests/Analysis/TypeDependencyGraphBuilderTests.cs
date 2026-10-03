@@ -187,6 +187,26 @@ public sealed class TypeDependencyGraphBuilderTests
     }
 
     [Fact]
+    public async Task BuildAsync_RecognizesSpecialGenericConstraintsAndEscapedTypeNames()
+    {
+        using var fixture = CreateConstraintKeywordFixture();
+
+        var project = fixture.Context.Solution.Projects.Single();
+        var compilation = await project.GetCompilationAsync();
+        Assert.NotNull(compilation);
+        Assert.Empty(compilation!.GetDiagnostics().Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
+
+        var graph = await TypeDependencyGraphBuilder.BuildAsync(fixture.Context, CancellationToken.None);
+
+        var consumer = Node(graph, "T:App.Consumer`4", "Example.Core");
+        Assert.Contains(graph.ProductionEdges, edge => edge.From == consumer && edge.To.Symbol.Name == "notnull");
+        Assert.Contains(graph.ProductionEdges, edge => edge.From == consumer && edge.To.Symbol.Name == "unmanaged");
+        var localConsumer = Node(graph, "T:App.Names.LocalConsumer`2", "Example.Core");
+        Assert.Contains(graph.ProductionEdges, edge => edge.From == localConsumer && edge.To.Symbol.Name == "notnull");
+        Assert.Contains(graph.ProductionEdges, edge => edge.From == localConsumer && edge.To.Symbol.Name == "unmanaged");
+    }
+
+    [Fact]
     public async Task BuildAsync_FailsAtRequiredAmbiguousMemberBinding()
     {
         using var fixture = CreateAmbiguousFixture();
@@ -195,6 +215,19 @@ public sealed class TypeDependencyGraphBuilderTests
             () => TypeDependencyGraphBuilder.BuildAsync(fixture.Context, CancellationToken.None));
 
         Assert.Contains("Ambiguous.cs", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("position", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BuildAsync_FailsAtRequiredUnresolvedConstraintType()
+    {
+        using var fixture = CreateUnresolvedConstraintFixture();
+
+        var exception = await Assert.ThrowsAsync<AnalysisFailedException>(
+            () => TypeDependencyGraphBuilder.BuildAsync(fixture.Context, CancellationToken.None));
+
+        Assert.Contains("Missing", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Constraint.cs", exception.Message, StringComparison.Ordinal);
         Assert.Contains("position", exception.Message, StringComparison.Ordinal);
     }
 
@@ -451,6 +484,26 @@ public sealed class TypeDependencyGraphBuilderTests
         var projectId = ProjectId.CreateNewId();
         AddProject(workspace, projectId, "Example.Core", root, FastTestReferences.CreatePlatformReferences());
         AddDocument(workspace, projectId, "Broken.cs", "namespace App; public class Broken { Missing dependency; }", Path.Combine(root, "Broken.cs"));
+        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+    }
+
+    private static Fixture CreateConstraintKeywordFixture()
+    {
+        var workspace = new AdhocWorkspace();
+        var root = Path.Combine(Path.GetTempPath(), "TypeDependencyGraph", Guid.NewGuid().ToString("N"));
+        var projectId = ProjectId.CreateNewId();
+        AddProject(workspace, projectId, "Example.Core", root, FastTestReferences.CreatePlatformReferences());
+        AddDocument(workspace, projectId, "Constraints.cs", "#nullable enable\nusing System; namespace App { public class Consumer<T, U, V, W> where T : notnull where U : unmanaged where V : Names.@notnull where W : Names.@unmanaged { public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null; public void LocalOwner() { void Check<TState>(TState state) where TState : notnull { } } } public delegate void Callback<TState>(TState state) where TState : notnull; } namespace App.Names { public class @notnull { } public class @unmanaged { } public class LocalConsumer<T, U> where T : @notnull where U : @unmanaged { } }", Path.Combine(root, "Constraints.cs"));
+        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+    }
+
+    private static Fixture CreateUnresolvedConstraintFixture()
+    {
+        var workspace = new AdhocWorkspace();
+        var root = Path.Combine(Path.GetTempPath(), "TypeDependencyGraph", Guid.NewGuid().ToString("N"));
+        var projectId = ProjectId.CreateNewId();
+        AddProject(workspace, projectId, "Example.Core", root, FastTestReferences.CreatePlatformReferences());
+        AddDocument(workspace, projectId, "Constraint.cs", "namespace App; public class Consumer<T> where T : Missing { }", Path.Combine(root, "Constraint.cs"));
         return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
     }
 

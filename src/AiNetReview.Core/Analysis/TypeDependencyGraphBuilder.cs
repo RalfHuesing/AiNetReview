@@ -244,6 +244,11 @@ internal static class TypeDependencyGraphBuilder
                     continue;
                 }
 
+                if (IsSpecialConstraintType(typeSyntax, declaration))
+                {
+                    continue;
+                }
+
                 if (typeSyntax is IdentifierNameSyntax { Identifier.ValueText: "var" })
                 {
                     continue;
@@ -283,6 +288,37 @@ internal static class TypeDependencyGraphBuilder
                     : TypeDependencyEvidenceKind.ExplicitTypeUse;
                 AddTypeReferences(source, type, declaration.Project, typeSyntax, kind);
             }
+        }
+
+        private bool IsSpecialConstraintType(TypeSyntax typeSyntax, TypeDeclaration declaration)
+        {
+            if (typeSyntax is not IdentifierNameSyntax identifier
+                || identifier.Identifier.Text is not ("notnull" or "unmanaged")
+                || typeSyntax.Parent is not TypeConstraintSyntax constraint
+                || !ReferenceEquals(constraint.Type, typeSyntax)
+                || constraint.Parent is not TypeParameterConstraintClauseSyntax clause)
+            {
+                return false;
+            }
+
+            ISymbol? owner = clause.Parent switch
+            {
+                TypeDeclarationSyntax typeDeclaration => declaration.SemanticModel.GetDeclaredSymbol(typeDeclaration, cancellationToken),
+                MethodDeclarationSyntax methodDeclaration => declaration.SemanticModel.GetDeclaredSymbol(methodDeclaration, cancellationToken),
+                LocalFunctionStatementSyntax localFunction => declaration.SemanticModel.GetDeclaredSymbol(localFunction, cancellationToken),
+                DelegateDeclarationSyntax delegateDeclaration => declaration.SemanticModel.GetDeclaredSymbol(delegateDeclaration, cancellationToken),
+                _ => null,
+            };
+            var typeParameter = owner switch
+            {
+                INamedTypeSymbol namedType => namedType.TypeParameters.FirstOrDefault(parameter => parameter.Name == clause.Name.Identifier.ValueText),
+                IMethodSymbol method => method.TypeParameters.FirstOrDefault(parameter => parameter.Name == clause.Name.Identifier.ValueText),
+                _ => null,
+            };
+
+            return typeParameter is not null
+                && (identifier.Identifier.ValueText == "notnull" && typeParameter.HasNotNullConstraint
+                    || identifier.Identifier.ValueText == "unmanaged" && typeParameter.HasUnmanagedTypeConstraint);
         }
 
         public void CollectOperations(TypeDeclaration declaration, TypeDependencyNode source)
