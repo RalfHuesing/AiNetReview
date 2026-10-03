@@ -10,6 +10,6 @@ The linked rules apply to work in this repository:
 - [Dependencies and NuGet packages](06-dependencies.mdc)
 - [Code quality](07-code-quality.mdc)
 - [Production review analysis configuration](08-production-review-analysis-configuration.mdc)
-- [C# navigation and reference](09-code-navigation-and-reference.mdc)
+- [AiNetCodeNavigator MCP navigation](09-ainetcodenavigator-mcp-navigation.mdc)
 
 Keep rules short and enforceable. Put implementation details in `docs/` only after they exist. Put planned contracts in `tasks/`.
