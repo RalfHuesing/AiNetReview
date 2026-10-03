@@ -1,5 +1,5 @@
 ---
-status: draft
+status: ready
 ---
 
 # Solution-wide type dependency review signals
@@ -37,6 +37,7 @@ Keep the first implementation small. Use explicit graph relationships, conservat
 - Architecture configuration, inferred layers, namespace/project cycle analysis, or assertions that a dependency direction violates intended architecture.
 - Relative repository rankings, percentiles, weighted scores, centrality measures, transitive impact estimates, dependency-depth metrics, or extra review analyses.
 - Runtime dispatch resolution, points-to analysis, DI interpretation, reflection analysis, behavior-equivalence detection, or automatic identification of competing responsibilities.
+- Partial graph results, per-finding uncertainty propagation, or a graph-incompleteness reporting protocol. An unexpectedly unavailable required static binding is an analysis failure.
 - External metadata types, generated types/documents, implicit compiler-created types such as top-level `Program`, or test types as finding subjects or intermediate production graph nodes. Their omission is a declared boundary, not evidence of absence of runtime dependencies.
 - Automatic refactoring, source suppression comments, build-breaking diagnostics, duplicate report exports, a separate service, or a new report navigation hierarchy.
 - A roadmap or production changes during this concept-planning step. Changes to current-state documentation belong to the eventual verified implementation.
@@ -49,6 +50,8 @@ A node represents one explicitly declared named source type: class, record, stru
 
 Normalize constructed generic types to their original definitions. Resolve cross-project symbols back to their declaring source node; do not depend on reference equality between compilations or simple type names. Identity includes the declaring project and stable symbol identity, so same-named types in different projects remain distinct.
 
+For every declaration-file and neighbor-file count, file identity is the canonical project-root-relative source path with `/` separators, following the existing path comparison convention (case-insensitive on Windows, ordinal otherwise). The same source path linked into multiple projects counts as one file, not several project/file occurrences. Type nodes and project counts remain project-specific. Apply this definition consistently to the cycle selection floor and all descriptive file counts.
+
 ### Directed edges
 
 `A -> B` means that eligible code owned by type A has a semantically bound, direct static dependency on eligible source type B. Record the source location and one of these evidence kinds:
@@ -58,13 +61,15 @@ Normalize constructed generic types to their original definitions. Resolve cross
 
 Traverse arrays, nullable/pointer types, function-pointer signatures, and generic type arguments to recover eligible named source types. An external wrapper such as `List<Order>` contributes `Order`, not a metadata node for `List`. Declaration dependencies on a property's type belong to the declaring type; a property use by another type does not invent a transitive dependency on that property's return type.
 
-References in executable members, initializers, local functions, and lambdas belong to their containing named type. Do not create edges from lexical containment, namespace imports, attribute uses, `nameof`, comments, string literals, or unbound/dynamic targets. Inheritance edges remain visibly distinguishable from member-use edges.
+References in executable members, initializers, local functions, and lambdas belong to their containing named type. Do not create edges from lexical containment, namespace imports, attribute uses, `nameof`, comments, string literals, or dynamic targets. Unexpectedly unavailable required static bindings follow the failure policy below rather than being silently skipped. Inheritance edges remain visibly distinguishable from member-use edges.
 
 An interface or virtual member use targets its statically declared member owner. Do not add guessed edges to possible implementations. Test-to-production edges use the same definition but remain contextual.
 
 Drop self-edges. Deduplicate node pairs for graph structure and counts, regardless of reference-site count or evidence kind. Keep one deterministic source witness per pair and evidence kind; repeated uses must not inflate measurements or generate repeated findings. Witness selection and output ordering use project path, source path, source position, and stable symbol identity.
 
-Missing compilation, syntax root, or semantic model fails analysis rather than producing an apparently complete graph. An unresolved individual binding contributes no guessed edge; retain its source-local uncertainty and label affected finding context as incomplete. The measurements describe known bound edges. Uncertainty neither proves an extra edge nor invalidates a cycle already witnessed by bound edges.
+Missing compilation, syntax root, semantic model, or required static binding fails the analysis. A required static binding is the declaration/type/member resolution needed to evaluate one of the included dependency uses above; a null result for an unrelated syntax child is not itself a failure. Use the appropriate Roslyn symbol/type/operation lookup before declaring the resolution unavailable. An unresolved or ambiguous required binding, an error type, or a failure to map an eligible loaded-source target to its declaring node must not produce a guessed edge or a partial graph.
+
+Fail with a concrete explanation and the originating project, source path, and source position. Under the existing runner/publication contract this aborts the audit run and publishes no partial result. This failure policy is the user-selected KISS decision: there is no per-finding uncertainty propagation or incompleteness notice. Dynamic targets and successfully resolved targets outside the declared measurement scope, including metadata and generated types, remain deliberate exclusions and do not trigger failure. Counts and components describe the bound static graph within that scope, not all runtime dependencies.
 
 ### Roslyn implementation and cost
 
@@ -138,19 +143,17 @@ Label this selection policy explicitly. It is conservative and may select unaffe
 
 - Verify bound member uses through inferred receivers, constructors including implicit object creation, signatures, generic arguments inside external wrappers, inherited/extension members, nested and partial types, and cross-project symbol resolution. Repeated sites must not inflate counts. Test/generated/metadata references and excluded syntax must obey the declared boundary.
 - Verify SCCs against acyclic graphs, self/two-type cycles, qualifying groups, overlapping cycles in one component, partial declaration files, and exact inclusive floors. Every reported cycle edge must have a matching bound source witness.
+- Verify linked source documents across projects: preserve separate project-specific type nodes, but count a shared canonical source path once in cycle declaration-file counts and hub neighbor-file counts.
 - Verify fan-in/fan-out independently and together at their thresholds. High fan-in alone and high fan-out alone do not select a hub. Distinct test consumers remain separate. Options and generated configuration expose the stated defaults and reject invalid values.
 - Verify stable finding identities/order across repeated execution, valid source links, cross-project subjects, production-origin findings with test context, complete neighbor evidence, empty-result behavior, cancellation/failure, and snapshot-wide selection including deleted C# references.
+- Verify that an unavailable required static binding fails with its source location and the host publishes no partial run. Deliberately excluded dynamic/metadata/generated targets and null lookups on unrelated syntax children must not trigger that failure. Do not use guessed edges or a partial-result label as a fallback.
 - Run the required affected test suites and repository gates for the eventual implementation. Do not add a routine benchmark suite or claim a runtime budget without measurement.
 - Perform one full audit of the new analyses' findings on AiNetReview. Review every emitted finding against its sources, relevant callers/contracts, and existing findings. Record measurement correctness, whether the structure is intentional, and whether it adds a concrete useful review question; do not treat an accurate but unhelpful signal as product success.
 - Use fixtures to inspect intended negative cases and acceptable designs as well. If AiNetReview yields no real findings, record that limitation rather than claiming real-world usefulness was demonstrated. Do not lower thresholds merely to manufacture findings.
 - Report concrete examples and observed runtime; no unsupported claims about token savings, maintainability gains, or error probabilities. Propose changes when noise is dominated by a recurring irrelevant edge kind, poor selection, or redundant context. Remove or revise a weak signal instead of adding scores or increasingly elaborate exceptions. Changes to these product semantics require a renewed concept decision, not silent implementation tuning.
 
-## Planning result
+## Review and approval
 
-Exactly two analyses are selected. The solution-wide scope, current-snapshot-only operation, production selection with separate test context, graph definition, starting thresholds, reporting, and verification boundaries are specified above. This concept remains `status: draft`; review and approval belong to [workflow step 2](../../.agents/agent-workflow/02-konzept-pruefung-und-freigabe.md), which the user starts separately.
+Exactly two analyses are selected. The solution-wide scope, current-snapshot-only operation, production selection with separate test context, graph definition, starting thresholds, user-selected failure policy, reporting, and verification boundaries are specified above.
 
-## Review decision (draft only)
-
-The first independent read-only review identified one blocking ambiguity in the unresolved-binding paragraph: the propagation boundary of "affected finding context" is undefined. An unknown dependency originating outside a selected type/component can affect incoming counts or component membership, so source-local annotation alone must not imply complete graph coverage. No other actionable findings were reported. Verification against `SolutionLoader` confirmed that ordinary compilation errors already fail loading; the remaining decision concerns an unexpectedly unavailable binding needed for the graph, not intentionally excluded dynamic or external dependencies.
-
-Pending user decision: either fail the analysis, and therefore the audit run under the existing runner contract, with a source-local explanation when a required static binding cannot be obtained; or continue with known edges and an explicit graph-wide incompleteness notice, without selective uncertainty propagation. The first variant is recommended for KISS because it avoids a partial-result completeness protocol. Neither variant is approved yet. Keep `status: draft` until this behavior is decided, the measurement/reporting/verification clauses are reconciled, and the release criteria of workflow step 2 are met.
+The two independent read-only reviews required by [workflow step 2](../../.agents/agent-workflow/02-konzept-pruefung-und-freigabe.md) are complete. The unresolved-binding decision is resolved by the user-selected audit-abort policy; file identity for linked documents is explicit and covered by verification. No review findings were discarded, and no blocking findings or pending product decisions remain. The concept is approved with `status: ready`. Roadmap creation and implementation require their separately invoked workflow steps.
