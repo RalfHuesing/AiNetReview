@@ -150,6 +150,171 @@ public sealed class HostAdapterIntegrationTests
     }
 
     [Fact]
+    public async Task ReviewCommand_ProductionTypeDependencyHubsPublishCompleteNeighborhoodAndSnapshotWideSelections()
+    {
+        using var tempDirectory = TestTempDirectory.Create("ainet-host-type-hub-");
+        var projectRoot = tempDirectory.GetPath("hub-project");
+        var productionDirectory = Path.Combine(projectRoot, "src", "Sample");
+        var testDirectory = Path.Combine(projectRoot, "tests", "Sample.Tests");
+        Directory.CreateDirectory(productionDirectory);
+        Directory.CreateDirectory(testDirectory);
+        const string projectContent = "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>";
+        var productionProject = Path.Combine(productionDirectory, "Sample.csproj");
+        var testProject = Path.Combine(testDirectory, "Sample.Tests.csproj");
+        var hubPath = Path.Combine(productionDirectory, "Hub.cs");
+        var hubPartialPath = Path.Combine(productionDirectory, "Hub.Partial.cs");
+        var testPath = Path.Combine(testDirectory, "HubTests.cs");
+        var hubSource = "namespace Sample; public partial class Hub { "
+            + string.Join(" ", Enumerable.Range(0, 10).Select(index => $"public Dependency{index}? D{index};")) + " }";
+        await File.WriteAllTextAsync(productionProject, projectContent);
+        await File.WriteAllTextAsync(testProject,
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup><ItemGroup><ProjectReference Include=\"../../src/Sample/Sample.csproj\" /></ItemGroup></Project>");
+        await File.WriteAllTextAsync(hubPath, hubSource);
+        await File.WriteAllTextAsync(hubPartialPath, "namespace Sample; public partial class Hub { }");
+        for (var index = 0; index < 10; index++)
+        {
+            await File.WriteAllTextAsync(Path.Combine(productionDirectory, $"Consumer{index}.cs"),
+                $"namespace Sample; public class Consumer{index} {{ public Hub? Value; }}");
+            await File.WriteAllTextAsync(Path.Combine(productionDirectory, $"Dependency{index}.cs"),
+                index == 0
+                    ? "namespace Sample; public class Dependency0 { public Consumer0? Next; }"
+                    : $"namespace Sample; public class Dependency{index} {{ }}");
+        }
+        await File.WriteAllTextAsync(testPath, "namespace Sample.Tests; public class HubTests { public Sample.Hub? Value; }");
+        await RestoreProjectAsync(productionProject, productionDirectory);
+        await RestoreProjectAsync(testProject, testDirectory);
+        await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
+            "<Solution><Project Path=\"src/Sample/Sample.csproj\" /><Project Path=\"tests/Sample.Tests/Sample.Tests.csproj\" /></Solution>");
+        var configPath = Path.Combine(projectRoot, "ainetreview.json");
+        var validConfig = "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"type-dependency-cycle-candidates\":{},\"type-dependency-hub-candidates\":{\"minFanIn\":10,\"minFanOut\":10}}}";
+        await File.WriteAllTextAsync(configPath, validConfig);
+
+        var first = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, first.ExitCode);
+        using var firstResponse = JsonDocument.Parse(first.Output);
+        Assert.Equal(2, firstResponse.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
+        var firstRunId = firstResponse.RootElement.GetProperty("runId").GetString()!;
+        var firstRunDirectory = Path.Combine(projectRoot, "reports", firstRunId);
+        var hubReportPath = Path.Combine(firstRunDirectory, "production", "all-findings", "type-dependency-hub-candidates.md");
+        var hubReport = await File.ReadAllTextAsync(hubReportPath);
+        var firstMap = await File.ReadAllTextAsync(Path.Combine(firstRunDirectory, "audit-map", "all-findings", "index.md"));
+        Assert.Contains("10 production consumer types (minimum 10", hubReport, StringComparison.Ordinal);
+        Assert.Contains("10 production dependency types (minimum 10", hubReport, StringComparison.Ordinal);
+        Assert.Contains("1 direct test consumer types are listed separately", hubReport, StringComparison.Ordinal);
+        Assert.Contains("Finding origin: production", hubReport, StringComparison.Ordinal);
+        Assert.DoesNotContain("Finding origin: mixed", hubReport, StringComparison.Ordinal);
+        Assert.Contains("[src/Sample/Hub.cs](../../../../src/Sample/Hub.cs):", hubReport, StringComparison.Ordinal);
+        Assert.Contains("[src/Sample/Hub.Partial.cs](../../../../src/Sample/Hub.Partial.cs):", hubReport, StringComparison.Ordinal);
+        Assert.Contains("tests/Sample.Tests/HubTests.cs", hubReport, StringComparison.Ordinal);
+        foreach (var index in Enumerable.Range(0, 10))
+        {
+            Assert.Contains($"Consumer{index}", hubReport, StringComparison.Ordinal);
+            Assert.Contains($"Dependency{index}", hubReport, StringComparison.Ordinal);
+        }
+        Assert.Contains("Related:", hubReport, StringComparison.Ordinal);
+        Assert.Contains("type-dependency-cycle-candidates", hubReport, StringComparison.Ordinal);
+        Assert.Contains("type-dependency-hub-candidates", firstMap, StringComparison.Ordinal);
+        var firstId = GetAuditMapFindingId(firstMap, "type-dependency-hub-candidates");
+        Assert.NotEmpty(firstId);
+
+        var repeated = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, repeated.ExitCode);
+        using var repeatedResponse = JsonDocument.Parse(repeated.Output);
+        var repeatedDirectory = Path.Combine(projectRoot, "reports", repeatedResponse.RootElement.GetProperty("runId").GetString()!);
+        var repeatedMap = await File.ReadAllTextAsync(Path.Combine(repeatedDirectory, "audit-map", "all-findings", "index.md"));
+        Assert.Equal(firstId, GetAuditMapFindingId(repeatedMap, "type-dependency-hub-candidates"));
+
+        var explicitDefaultConfig = await File.ReadAllTextAsync(configPath);
+        Assert.Equal(0, (await InvokeProductionCommandAsync(["baseline", projectRoot])).ExitCode);
+        var unchanged = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, unchanged.ExitCode);
+        using var unchangedResponse = JsonDocument.Parse(unchanged.Output);
+        var unchangedDirectory = Path.Combine(projectRoot, "reports", unchangedResponse.RootElement.GetProperty("runId").GetString()!);
+        Assert.False(File.Exists(Path.Combine(unchangedDirectory, "production", "changed-files", "type-dependency-hub-candidates.md")));
+
+        await File.AppendAllTextAsync(testPath, " // test-only change");
+        var testOnly = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, testOnly.ExitCode);
+        using var testOnlyResponse = JsonDocument.Parse(testOnly.Output);
+        var testOnlyDirectory = Path.Combine(projectRoot, "reports", testOnlyResponse.RootElement.GetProperty("runId").GetString()!);
+        var testOnlyReport = await File.ReadAllTextAsync(Path.Combine(testOnlyDirectory, "production", "changed-files", "type-dependency-hub-candidates.md"));
+        Assert.Contains("source unchanged; included snapshot-wide", testOnlyReport, StringComparison.Ordinal);
+        var testOnlyMap = await File.ReadAllTextAsync(Path.Combine(testOnlyDirectory, "audit-map", "changed-files", "index.md"));
+        Assert.Contains("dependency-hub findings follow the snapshot-wide selection rule", testOnlyMap, StringComparison.Ordinal);
+
+        Assert.Equal(0, (await InvokeProductionCommandAsync(["baseline", projectRoot])).ExitCode);
+        await File.WriteAllTextAsync(Path.Combine(projectRoot, "notes.md"), "non-C# edit");
+        var nonCSharp = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, nonCSharp.ExitCode);
+        using var nonCSharpResponse = JsonDocument.Parse(nonCSharp.Output);
+        var nonCSharpDirectory = Path.Combine(projectRoot, "reports", nonCSharpResponse.RootElement.GetProperty("runId").GetString()!);
+        Assert.False(File.Exists(Path.Combine(nonCSharpDirectory, "production", "changed-files", "type-dependency-hub-candidates.md")));
+
+        Assert.Equal(0, (await InvokeProductionCommandAsync(["baseline", projectRoot])).ExitCode);
+        var addedPath = Path.Combine(productionDirectory, "Unrelated.cs");
+        await File.WriteAllTextAsync(addedPath, "namespace Sample; public class Unrelated { }");
+        var added = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, added.ExitCode);
+        using var addedResponse = JsonDocument.Parse(added.Output);
+        var addedDirectory = Path.Combine(projectRoot, "reports", addedResponse.RootElement.GetProperty("runId").GetString()!);
+        Assert.True(File.Exists(Path.Combine(addedDirectory, "production", "changed-files", "type-dependency-hub-candidates.md")));
+
+        Assert.Equal(0, (await InvokeProductionCommandAsync(["baseline", projectRoot])).ExitCode);
+        File.Delete(addedPath);
+        var deleted = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, deleted.ExitCode);
+        using var deletedResponse = JsonDocument.Parse(deleted.Output);
+        var deletedDirectory = Path.Combine(projectRoot, "reports", deletedResponse.RootElement.GetProperty("runId").GetString()!);
+        Assert.True(File.Exists(Path.Combine(deletedDirectory, "production", "changed-files", "type-dependency-hub-candidates.md")));
+
+        await File.WriteAllTextAsync(configPath, explicitDefaultConfig.Replace("\"minFanIn\":10", "\"minFanIn\":11", StringComparison.Ordinal));
+        var configuredThreshold = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, configuredThreshold.ExitCode);
+        using var configuredThresholdResponse = JsonDocument.Parse(configuredThreshold.Output);
+        var configuredThresholdDirectory = Path.Combine(projectRoot, "reports", configuredThresholdResponse.RootElement.GetProperty("runId").GetString()!);
+        Assert.False(File.Exists(Path.Combine(configuredThresholdDirectory, "production", "all-findings", "type-dependency-hub-candidates.md")));
+
+        var hubOnlyConfig = "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"type-dependency-hub-candidates\":{}}}";
+        await File.WriteAllTextAsync(configPath, hubOnlyConfig);
+        var publishedRuns = Directory.GetDirectories(Path.Combine(projectRoot, "reports"), "20*", SearchOption.TopDirectoryOnly).Length;
+        await File.WriteAllTextAsync(hubPath, "namespace Sample; public partial class Hub { public MissingDependency? Value; }");
+        var failed = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(3, failed.ExitCode);
+        using (var failedResponse = JsonDocument.Parse(failed.Error))
+        {
+            Assert.Equal("ANALYSIS_FAILED", failedResponse.RootElement.GetProperty("code").GetString());
+        }
+        Assert.Equal(publishedRuns, Directory.GetDirectories(Path.Combine(projectRoot, "reports"), "20*", SearchOption.TopDirectoryOnly).Length);
+
+        await File.WriteAllTextAsync(hubPath, hubSource);
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var cancelled = await InvokeProductionCommandAsync(["review", projectRoot], cancellation.Token);
+        Assert.Equal(130, cancelled.ExitCode);
+        using (var cancelledResponse = JsonDocument.Parse(cancelled.Error))
+        {
+            Assert.Equal("CANCELLED", cancelledResponse.RootElement.GetProperty("code").GetString());
+        }
+        Assert.Equal(publishedRuns, Directory.GetDirectories(Path.Combine(projectRoot, "reports"), "20*", SearchOption.TopDirectoryOnly).Length);
+
+        await File.WriteAllTextAsync(configPath, "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"type-dependency-hub-candidates\":{\"minFanIn\":11,\"minFanOut\":10}}}");
+        var empty = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(0, empty.ExitCode);
+        using var emptyResponse = JsonDocument.Parse(empty.Output);
+        var emptyDirectory = Path.Combine(projectRoot, "reports", emptyResponse.RootElement.GetProperty("runId").GetString()!);
+        Assert.Equal(0, emptyResponse.RootElement.GetProperty("counts").GetProperty("detected").GetInt32());
+        Assert.False(File.Exists(Path.Combine(emptyDirectory, "production", "all-findings", "type-dependency-hub-candidates.md")));
+
+        await File.WriteAllTextAsync(configPath, explicitDefaultConfig.Replace("\"minFanOut\":10", "\"minFanOut\":0", StringComparison.Ordinal));
+        var invalidOptions = await InvokeProductionCommandAsync(["review", projectRoot]);
+        Assert.Equal(2, invalidOptions.ExitCode);
+        using (var invalidResponse = JsonDocument.Parse(invalidOptions.Error))
+        {
+            Assert.Equal("INVALID_INPUT", invalidResponse.RootElement.GetProperty("code").GetString());
+        }
+    }
+
+    [Fact]
     public async Task ReviewCommand_ProductionIndirectionAnalysisPublishesOrderedPathsAndNoPartialRuns()
     {
         using var tempDirectory = TestTempDirectory.Create("ainet-host-indirection-");
@@ -631,7 +796,7 @@ public sealed class HostAdapterIntegrationTests
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
             "<Solution><Project Path=\"src/Sample/Sample.csproj\" /><Project Path=\"tests/Sample.Tests/Sample.Tests.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
-        const string fullConfig = "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"code-size-candidates\":{},\"dead-code-candidates\":{},\"duplicate-code-candidates\":{},\"indirection-drift-candidates\":{},\"method-control-flow-outliers\":{},\"missing-test-evidence-candidates\":{},\"non-ascii-identifiers\":{},\"structural-duplication-candidates\":{},\"type-dependency-cycle-candidates\":{}}}";
+        const string fullConfig = "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"code-size-candidates\":{},\"dead-code-candidates\":{},\"duplicate-code-candidates\":{},\"indirection-drift-candidates\":{},\"method-control-flow-outliers\":{},\"missing-test-evidence-candidates\":{},\"non-ascii-identifiers\":{},\"structural-duplication-candidates\":{},\"type-dependency-cycle-candidates\":{},\"type-dependency-hub-candidates\":{}}}";
         await File.WriteAllTextAsync(configPath, fullConfig);
 
         var first = await InvokeProductionCommandAsync(["review", projectRoot]);
@@ -647,7 +812,7 @@ public sealed class HostAdapterIntegrationTests
         foreach (var analysisId in new[]
         {
             "code-size-candidates", "dead-code-candidates", "duplicate-code-candidates", "indirection-drift-candidates",
-            "method-control-flow-outliers", "missing-test-evidence-candidates", "non-ascii-identifiers", "structural-duplication-candidates", "type-dependency-cycle-candidates",
+            "method-control-flow-outliers", "missing-test-evidence-candidates", "non-ascii-identifiers", "structural-duplication-candidates", "type-dependency-cycle-candidates", "type-dependency-hub-candidates",
         })
         {
             Assert.Contains($"| `{analysisId}` | yes |", rootIndex, StringComparison.Ordinal);
@@ -831,7 +996,7 @@ public sealed class HostAdapterIntegrationTests
         var report = await File.ReadAllTextAsync(Path.Combine(projectRoot, "reports", runId!, "production", "all-findings", "fixture-finding.md"));
         Assert.Contains("Fixture scenario 'base' requires review of FixtureCaseA.", report, StringComparison.Ordinal);
         Assert.Equal(
-            new[] { "code-size-candidates", "dead-code-candidates", "duplicate-code-candidates", "fixture-finding", "indirection-drift-candidates", "method-control-flow-outliers", "missing-test-evidence-candidates", "non-ascii-identifiers", "structural-duplication-candidates", "type-dependency-cycle-candidates" },
+            new[] { "code-size-candidates", "dead-code-candidates", "duplicate-code-candidates", "fixture-finding", "indirection-drift-candidates", "method-control-flow-outliers", "missing-test-evidence-candidates", "non-ascii-identifiers", "structural-duplication-candidates", "type-dependency-cycle-candidates", "type-dependency-hub-candidates" },
             provider.GetRequiredService<ReviewAnalysisRegistry>().Analyses.Select(static analysis => analysis.Descriptor.AnalysisId));
     }
 
@@ -962,6 +1127,18 @@ public sealed class HostAdapterIntegrationTests
     {
         const string prefix = "[finding-";
         var start = markdown.IndexOf(prefix, StringComparison.Ordinal);
+        if (start < 0) return string.Empty;
+        start++;
+        var end = markdown.IndexOf(']', start);
+        return end < 0 ? string.Empty : markdown[start..end];
+    }
+
+    private static string GetAuditMapFindingId(string markdown, string analysisId)
+    {
+        var analysis = markdown.IndexOf(analysisId, StringComparison.Ordinal);
+        if (analysis < 0) return string.Empty;
+        const string prefix = "[finding-";
+        var start = markdown.LastIndexOf(prefix, analysis, StringComparison.Ordinal);
         if (start < 0) return string.Empty;
         start++;
         var end = markdown.IndexOf(']', start);

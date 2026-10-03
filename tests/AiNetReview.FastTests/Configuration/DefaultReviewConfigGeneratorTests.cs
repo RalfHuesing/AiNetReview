@@ -13,6 +13,7 @@ using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
 using AiNetReview.Core.ReviewAnalyses.CodeSizeCandidates;
 using AiNetReview.Core.ReviewAnalyses.StructuralDuplicationCandidates;
 using AiNetReview.Core.ReviewAnalyses.TypeDependencyCycleCandidates;
+using AiNetReview.Core.ReviewAnalyses.TypeDependencyHubCandidates;
 
 public sealed class DefaultReviewConfigGeneratorTests
 {
@@ -38,6 +39,7 @@ public sealed class DefaultReviewConfigGeneratorTests
             new CodeSizeCandidatesAnalysis(),
             new StructuralDuplicationCandidatesAnalysis(),
             new TypeDependencyCycleCandidatesAnalysis(),
+            new TypeDependencyHubCandidatesAnalysis(),
         ]);
         var generator = new DefaultReviewConfigGenerator(registry);
 
@@ -89,6 +91,10 @@ public sealed class DefaultReviewConfigGeneratorTests
         Assert.Equal(5, missingTestEvidence.GetProperty("minIndirectDecisionCount").GetInt32());
         Assert.Equal(3, missingTestEvidence.GetProperty("minIndirectDecisionNesting").GetInt32());
         Assert.True(generatedAnalyses.GetProperty("type-dependency-cycle-candidates").GetProperty("enabled").GetBoolean());
+        var dependencyHubs = generatedAnalyses.GetProperty("type-dependency-hub-candidates");
+        Assert.True(dependencyHubs.GetProperty("enabled").GetBoolean());
+        Assert.Equal(10, dependencyHubs.GetProperty("minFanIn").GetInt32());
+        Assert.Equal(10, dependencyHubs.GetProperty("minFanOut").GetInt32());
     }
 
     [Fact]

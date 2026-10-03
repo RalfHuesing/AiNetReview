@@ -113,39 +113,14 @@ public sealed class TypeDependencyCycleCandidatesAnalysis : IReviewAnalysis
     }
 
     private static async Task<(int Line, string Snippet)> GetLineAndSnippetAsync(ReviewContext context, ProjectId projectId, string sourcePath, int position, CancellationToken cancellationToken)
-    {
-        var document = FindDocument(context, projectId, sourcePath);
-        var source = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
-        var line = source.Lines.GetLineFromPosition(position);
-        return (line.LineNumber + 1, line.ToString().Trim());
-    }
+        => await TypeDependencyFindingEvidence.GetLineAndSnippetAsync(context, projectId, sourcePath, position, cancellationToken).ConfigureAwait(false);
 
     private static async Task<int> GetLineAsync(ReviewContext context, ProjectId projectId, string sourcePath, int position, CancellationToken cancellationToken) =>
-        (await GetLineAndSnippetAsync(context, projectId, sourcePath, position, cancellationToken).ConfigureAwait(false)).Line;
+        await TypeDependencyFindingEvidence.GetLineAsync(context, projectId, sourcePath, position, cancellationToken).ConfigureAwait(false);
 
-    private static Document FindDocument(ReviewContext context, ProjectId projectId, string sourcePath)
-    {
-        var project = context.Solution.GetProject(projectId)
-            ?? throw new AnalysisFailedException($"Type dependency source project is unavailable for '{sourcePath}'.");
-        return project.Documents.FirstOrDefault(document =>
-        {
-            if (string.IsNullOrWhiteSpace(document.FilePath)) return false;
-            try { return StringComparerForPaths.Equals(context.GetProjectRelativePath(document.FilePath), sourcePath); }
-            catch (AnalysisFailedException) { return false; }
-        }) ?? throw new AnalysisFailedException($"Type dependency source document is unavailable for '{sourcePath}' in project '{project.Name}'.");
-    }
+    private static string GetProjectPath(ReviewContext context, ProjectId projectId) => TypeDependencyFindingEvidence.GetProjectPath(context, projectId);
 
-    private static string GetProjectPath(ReviewContext context, ProjectId projectId)
-    {
-        var project = context.Solution.GetProject(projectId)
-            ?? throw new AnalysisFailedException("Type dependency project is unavailable.");
-        return context.GetProjectRelativePath(project.FilePath
-            ?? throw new AnalysisFailedException($"Type dependency project '{project.Name}' has no project path."));
-    }
-
-    private static string GetStableSymbolId(INamedTypeSymbol symbol) =>
-        DocumentationCommentId.CreateDeclarationId(symbol.OriginalDefinition)
-        ?? symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+    private static string GetStableSymbolId(INamedTypeSymbol symbol) => TypeDependencyFindingEvidence.GetStableSymbolId(symbol);
 
     private static StringComparer StringComparerForPaths => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 }

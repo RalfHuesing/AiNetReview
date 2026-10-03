@@ -249,7 +249,7 @@ public sealed class MarkdownReportWriter
             .Append("## Review guidance\n\n")
             .Append("Findings are potential review signals that may point to deeper or cross-cutting problems. First read the target repository's applicable instructions and relevant design documents. Investigate every finding in the commissioned working set using relevant source code, callers, contracts, and tests, in the context of application goals, architecture, and responsibilities. Related findings may be evaluated together. Do not dismiss a signal solely because it is heuristic or its attribution is uncertain. Justify each classification with concrete evidence: false positive, acceptable design, needs clarification, or actionable. An accurate signal can describe an acceptable design; distinguish that from a false positive. A signal alone does not require a change; changes must follow from this assessment. Avoid metric-driven refactoring and symptom workarounds; make a local change when the broader context supports it. Explain consequential changes and tradeoffs to the user. The goal is to support understandable, reliable agentic development and help prevent drift, not to claim that the analysis proves drift. A normal unbounded audit covers production, tests, and mixed findings in all three ")
             .Append(hasBaseline ? "changed-files" : "all-findings")
-            .Append(" areas. A user-limited assignment must name the remaining areas as unreviewed. Findings are measurements on non-generated C# candidates in the loaded snapshot; they do not prove runner discovery, execution, runtime coverage, test quality, or defects. The missing-test-evidence analysis still targets production functions; the other seven maintenance analyses include both project roles. Dead-code `apiSurface` applies equally to production and test libraries.")
+            .Append(" areas. A user-limited assignment must name the remaining areas as unreviewed. Findings are measurements on non-generated C# candidates in the loaded snapshot; they do not prove runner discovery, execution, runtime coverage, test quality, or defects. Missing-test-evidence, cycle, and dependency-hub analyses use production subjects; the other seven maintenance analyses include both project roles. Dependency-hub findings keep direct test consumers as separate context and exclude generated, metadata, dynamic, and implicit compiler-created types. Dead-code `apiSurface` applies equally to production and test libraries.")
             .Append(hasBaseline ? " Scope or option changes do not make source files changed; a complete reevaluation after such a change needs an explicitly requested full-repository audit. Do not inspect or report findings from any `all-findings/` area unless the user explicitly requests a full repository audit." : "")
             .Append("\n\n")
             .Append("For test findings, examine the behavior under test, assertion strength, whether expected results are independent of production logic, isolation, failure localization, and the role of setup, fixtures, hooks, data providers, fakes, mocks, builders, and helpers. Distinguish executable code from declarative test data and string fixtures. For mixed findings, assess production behavior and tests together, especially whether expectations independently verify the implementation. Do not mechanically split tests, merge scenarios, remove infrastructure, or refactor solely to lower a metric; change code only when contextual evidence supports it.\n\n");
@@ -279,9 +279,9 @@ public sealed class MarkdownReportWriter
                 : "No findings were found.\n\n");
         }
 
-        if (hasBaseline && analyses.Any(static analysis => analysis.Enabled && analysis.AnalysisId is "missing-test-evidence-candidates" or "type-dependency-cycle-candidates"))
+        if (hasBaseline && analyses.Any(static analysis => analysis.Enabled && analysis.AnalysisId is "missing-test-evidence-candidates" or "type-dependency-cycle-candidates" or "type-dependency-hub-candidates"))
         {
-            builder.Append("Changed-files selection for `missing-test-evidence-candidates` and `type-dependency-cycle-candidates` follows the complete C# snapshot: each shows every current finding when any C# path was added, changed, or deleted, and none when the C# snapshot is unchanged. Other analyses keep their file-based selection.\n\n");
+            builder.Append("Changed-files selection for `missing-test-evidence-candidates`, `type-dependency-cycle-candidates`, and `type-dependency-hub-candidates` follows the complete C# snapshot: each shows every current finding when any C# path was added, changed, or deleted, and none when the C# snapshot is unchanged. Other analyses keep their file-based selection.\n\n");
         }
 
         builder.Append("## Audit scope\n\n");
@@ -506,7 +506,7 @@ public sealed class MarkdownReportWriter
     }
 
     private static bool IsChangedForReport(ReviewFinding finding, ReviewRunResult result) =>
-        finding.AnalysisId is "missing-test-evidence-candidates" or "type-dependency-cycle-candidates"
+        finding.AnalysisId is "missing-test-evidence-candidates" or "type-dependency-cycle-candidates" or "type-dependency-hub-candidates"
             ? result.HasCSharpSnapshotChanges != false
             : finding.IsChanged;
 
@@ -618,6 +618,15 @@ public sealed class MarkdownReportWriter
             }
         }
 
+        if (configuredAnalysis.AnalysisId == "type-dependency-hub-candidates")
+        {
+            builder.Append("\nSelection: A production type is reported when its distinct direct production consumer count meets `minFanIn` **and** its distinct direct production dependency count meets `minFanOut`; both inclusive thresholds default to 10 and are configured independently. Neighbor file counts use distinct canonical declaration paths, while project counts retain project-specific types. Every direct production neighbor and retained edge witness is listed. Direct test consumers are separate context and do not affect production counts or finding origin. Generated, metadata, dynamic, and implicit compiler-created types are excluded. This static neighborhood does not prove responsibility concentration or runtime behavior.\n");
+            if (viewDirectory == "changed-files")
+            {
+                builder.Append("\nChanged-files selection is snapshot-wide because a C# change or deletion can alter neighbor counts in unchanged declarations. Any added, changed, or deleted C# path selects all current findings; an unchanged C# snapshot selects none. The source status in each file heading describes only that representative file relative to the baseline.\n");
+            }
+        }
+
         var groups = findings
             .GroupBy(static item => (item.Finding.ProjectPath, item.Finding.SourcePath))
             .OrderBy(static group => group.Key.ProjectPath, StringComparer.Ordinal)
@@ -661,7 +670,7 @@ public sealed class MarkdownReportWriter
             {
                 builder.Append("#### File: ").Append(EscapeInline(group.SourcePath)).Append(" (")
                     .Append(group.Findings.Length.ToString(CultureInfo.InvariantCulture)).Append(" findings");
-                if (viewDirectory == "changed-files" && configuredAnalysis.AnalysisId is "missing-test-evidence-candidates" or "type-dependency-cycle-candidates")
+                if (viewDirectory == "changed-files" && configuredAnalysis.AnalysisId is "missing-test-evidence-candidates" or "type-dependency-cycle-candidates" or "type-dependency-hub-candidates")
                 {
                     builder.Append("; ").Append(GetMissingTestSourceStatus(group.Findings, group.SourcePath));
                 }
@@ -732,6 +741,19 @@ public sealed class MarkdownReportWriter
                         builder.Append("- Dependency group: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
                         builder.Append("  - Example cycle and review question: ").Append(EscapeInline(finding.Rationale)).Append('\n');
                         builder.Append("  - Participating declarations and internal edge witnesses:\n");
+                        foreach (var item in finding.Evidence)
+                        {
+                            builder.Append("    - [").Append(EscapeLinkText(item.SourcePath)).Append("](")
+                                .Append(FormatSourceLink(reportPath, projectRoot, item.SourcePath)).Append("):")
+                                .Append(item.Line.ToString(CultureInfo.InvariantCulture)).Append(": ")
+                                .Append(FormatCodeSpan(item.Label)).Append(" — ").Append(EscapeInline(item.Detail)).Append('\n');
+                        }
+                    }
+                    else if (reviewFinding.AnalysisId == "type-dependency-hub-candidates")
+                    {
+                        builder.Append("- Dependency hub: ").Append(EscapeInline(FormatSignal(reviewFinding.AnalysisId, finding))).Append('\n');
+                        builder.Append("  - Neighborhood and review question: ").Append(EscapeInline(finding.Rationale)).Append('\n');
+                        builder.Append("  - Type declarations, direct production neighbors, and separate test consumers:\n");
                         foreach (var item in finding.Evidence)
                         {
                             builder.Append("    - [").Append(EscapeLinkText(item.SourcePath)).Append("](")
@@ -921,6 +943,11 @@ public sealed class MarkdownReportWriter
                 + FormatNumber(Metric(finding, "declarationFileCount")) + " declaration files across "
                 + FormatNumber(Metric(finding, "projectCount")) + " projects; "
                 + FormatNumber(Metric(finding, "internalEdgeCount")) + " directed dependencies";
+        }
+
+        if (analysisId == "type-dependency-hub-candidates")
+        {
+            return $"{FormatNumber(Metric(finding, "fanIn"))} production consumer types (minimum {FormatNumber(Metric(finding, "minFanIn"))}; {FormatNumber(Metric(finding, "fanInNeighborFileCount"))} files / {FormatNumber(Metric(finding, "fanInNeighborProjectCount"))} projects) and {FormatNumber(Metric(finding, "fanOut"))} production dependency types (minimum {FormatNumber(Metric(finding, "minFanOut"))}; {FormatNumber(Metric(finding, "fanOutNeighborFileCount"))} files / {FormatNumber(Metric(finding, "fanOutNeighborProjectCount"))} projects); {FormatNumber(Metric(finding, "testConsumerCount"))} direct test consumer types separately";
         }
 
         if (analysisId == "non-ascii-identifiers")

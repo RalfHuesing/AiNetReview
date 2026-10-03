@@ -10,6 +10,7 @@ using AiNetReview.Core.ReviewAnalyses.MissingTestEvidenceCandidates;
 using AiNetReview.Core.ReviewAnalyses.CodeSizeCandidates;
 using AiNetReview.Core.ReviewAnalyses.StructuralDuplicationCandidates;
 using AiNetReview.Core.ReviewAnalyses.TypeDependencyCycleCandidates;
+using AiNetReview.Core.ReviewAnalyses.TypeDependencyHubCandidates;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Reporting;
@@ -44,6 +45,7 @@ public static class ServiceRegistration
         services.AddSingleton<IReviewAnalysis, CodeSizeCandidatesAnalysis>();
         services.AddSingleton<IReviewAnalysis, StructuralDuplicationCandidatesAnalysis>();
         services.AddSingleton<IReviewAnalysis, TypeDependencyCycleCandidatesAnalysis>();
+        services.AddSingleton<IReviewAnalysis, TypeDependencyHubCandidatesAnalysis>();
         return services;
     }
 }

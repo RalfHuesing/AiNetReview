@@ -57,6 +57,11 @@
     },
     "type-dependency-cycle-candidates": {
       "enabled": true
+    },
+    "type-dependency-hub-candidates": {
+      "enabled": true,
+      "minFanIn": 10,
+      "minFanOut": 10
     }
   }
 }

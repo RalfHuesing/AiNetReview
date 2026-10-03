@@ -58,7 +58,7 @@ public sealed class ZeroConfigIntegrationTests
             Assert.Equal("external_library", analyses.GetProperty("dead-code-candidates").GetProperty("apiSurface").GetString());
             Assert.Empty(analyses.GetProperty("dead-code-candidates").GetProperty("entryPointAttributes").EnumerateArray());
             Assert.True(analyses.GetProperty("structural-duplication-candidates").GetProperty("enabled").GetBoolean());
-            Assert.Equal(9, analyses.EnumerateObject().Count());
+            Assert.Equal(10, analyses.EnumerateObject().Count());
         }
 
         var reviewSubcommand = await InvokeAsync(["review", projectRoot], services);

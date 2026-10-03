@@ -209,7 +209,7 @@ public sealed class CodeSizeCandidatesIntegrationTests
             Assert.Equal(1000, codeSize.GetProperty("extremeFileLines").GetInt32());
             Assert.Equal(131072, codeSize.GetProperty("extremeFileUtf8Bytes").GetInt32());
             Assert.True(document.RootElement.GetProperty("analyses").GetProperty("structural-duplication-candidates").GetProperty("enabled").GetBoolean());
-            Assert.Equal(9, document.RootElement.GetProperty("analyses").EnumerateObject().Count());
+            Assert.Equal(10, document.RootElement.GetProperty("analyses").EnumerateObject().Count());
         }
 
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "ainetreview.json"),
