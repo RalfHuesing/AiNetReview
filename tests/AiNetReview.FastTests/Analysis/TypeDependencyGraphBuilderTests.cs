@@ -293,8 +293,8 @@ public sealed class TypeDependencyGraphBuilderTests
 
     private static Fixture CreateFixture()
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-TypeDependencyGraph", Guid.NewGuid().ToString("N"));
+        var workspace = new FastTestWorkspace();
+        var root = workspace.RootPath;
         var production = ProjectId.CreateNewId();
         var other = ProjectId.CreateNewId();
         var test = ProjectId.CreateNewId();
@@ -302,11 +302,9 @@ public sealed class TypeDependencyGraphBuilderTests
         AddProject(workspace, production, "Example.Core", root, refs);
         AddProject(workspace, other, "Example.OtherCore", root, refs);
         AddProject(workspace, test, "Example.Tests", root, refs);
-        var solution = workspace.CurrentSolution
-            .AddProjectReference(other, new ProjectReference(production))
-            .AddProjectReference(test, new ProjectReference(production))
-            .AddProjectReference(test, new ProjectReference(other));
-        Assert.True(workspace.TryApplyChanges(solution));
+        workspace.AddProjectReference(other, new ProjectReference(production));
+        workspace.AddProjectReference(test, new ProjectReference(production));
+        workspace.AddProjectReference(test, new ProjectReference(other));
 
         AddDocument(workspace, production, "Core.cs", """
             using System;
@@ -396,30 +394,30 @@ public sealed class TypeDependencyGraphBuilderTests
         AddDocument(workspace, production, "SharedLinked.cs", "namespace Link; public class LinkedType { }", Path.Combine(root, "SharedLinked.cs"));
         AddDocument(workspace, other, "SharedLinked.cs", "namespace Link; public class LinkedType { }", Path.Combine(root, "SharedLinked.cs"));
 
-        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+        return new Fixture(workspace, new ReviewContext(workspace.Solution, root));
     }
 
     private static Fixture CreateMixedGeneratedPartialFixture()
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-TypeDependencyGraph", Guid.NewGuid().ToString("N"));
+        var workspace = new FastTestWorkspace();
+        var root = workspace.RootPath;
         var production = ProjectId.CreateNewId();
         var test = ProjectId.CreateNewId();
         var refs = FastTestReferences.CreatePlatformReferences().ToArray();
         AddProject(workspace, production, "Example.Core", root, refs);
         AddProject(workspace, test, "Example.Tests", root, refs);
-        Assert.True(workspace.TryApplyChanges(workspace.CurrentSolution.AddProjectReference(test, new ProjectReference(production))));
+        workspace.AddProjectReference(test, new ProjectReference(production));
         AddDocument(workspace, production, "Eligible.cs", "namespace App; public partial class PartialTarget { } public class Consumer { public PartialTarget? Value; }", Path.Combine(root, "Eligible.cs"));
         AddDocument(workspace, production, "PartialTarget.g.cs", "namespace App; public partial class PartialTarget { }", Path.Combine(root, "PartialTarget.g.cs"));
         AddDocument(workspace, production, "FullyGenerated.g.cs", "namespace App; public class FullyGeneratedTarget { }", Path.Combine(root, "FullyGenerated.g.cs"));
         AddDocument(workspace, test, "Tests.cs", "namespace Example.Tests; public class TargetTests { public App.PartialTarget? Value; }", Path.Combine(root, "Tests.cs"));
-        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+        return new Fixture(workspace, new ReviewContext(workspace.Solution, root));
     }
 
     private static Fixture CreateGeneratedMemberFixture()
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-TypeDependencyGraph", Guid.NewGuid().ToString("N"));
+        var workspace = new FastTestWorkspace();
+        var root = workspace.RootPath;
         var project = ProjectId.CreateNewId();
         AddProject(workspace, project, "Example.Core", root, FastTestReferences.CreatePlatformReferences());
         AddDocument(workspace, project, "Members.cs", """
@@ -453,13 +451,13 @@ public sealed class TypeDependencyGraphBuilderTests
             public class GeneratedEventTarget : EventArgs { }
             public class EligibleTarget { }
             """, Path.Combine(root, "Members.cs"));
-        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+        return new Fixture(workspace, new ReviewContext(workspace.Solution, root));
     }
 
     private static Fixture CreateDuplicateAssemblyIdentityFixture()
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-TypeDependencyGraph", Guid.NewGuid().ToString("N"));
+        var workspace = new FastTestWorkspace();
+        var root = workspace.RootPath;
         var first = ProjectId.CreateNewId();
         var second = ProjectId.CreateNewId();
         var consumer = ProjectId.CreateNewId();
@@ -467,107 +465,99 @@ public sealed class TypeDependencyGraphBuilderTests
         AddProject(workspace, first, "Example.First", root, refs, assemblyName: "Shared.Core");
         AddProject(workspace, second, "Example.Second", root, refs, assemblyName: "Shared.Core");
         AddProject(workspace, consumer, "Example.Consumer", root, refs);
-        var solution = workspace.CurrentSolution
-            .AddProjectReference(consumer, new ProjectReference(first, ["First"]))
-            .AddProjectReference(consumer, new ProjectReference(second, ["Second"]));
-        Assert.True(workspace.TryApplyChanges(solution));
+        workspace.AddProjectReference(consumer, new ProjectReference(first, ["First"]));
+        workspace.AddProjectReference(consumer, new ProjectReference(second, ["Second"]));
         AddDocument(workspace, first, "First.cs", "namespace App; public class Target { }", Path.Combine(root, "First.cs"));
         AddDocument(workspace, second, "Second.cs", "namespace App; public class Target { }", Path.Combine(root, "Second.cs"));
         AddDocument(workspace, consumer, "Consumer.cs", "extern alias Second; namespace App; public class Consumer { public Second::App.Target? Value; }", Path.Combine(root, "Consumer.cs"));
-        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+        return new Fixture(workspace, new ReviewContext(workspace.Solution, root));
     }
 
     private static Fixture CreateBrokenFixture()
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-TypeDependencyGraph", Guid.NewGuid().ToString("N"));
+        var workspace = new FastTestWorkspace();
+        var root = workspace.RootPath;
         var projectId = ProjectId.CreateNewId();
         AddProject(workspace, projectId, "Example.Core", root, FastTestReferences.CreatePlatformReferences());
         AddDocument(workspace, projectId, "Broken.cs", "namespace App; public class Broken { Missing dependency; }", Path.Combine(root, "Broken.cs"));
-        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+        return new Fixture(workspace, new ReviewContext(workspace.Solution, root));
     }
 
     private static Fixture CreateConstraintKeywordFixture()
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "TypeDependencyGraph", Guid.NewGuid().ToString("N"));
+        var workspace = new FastTestWorkspace();
+        var root = workspace.RootPath;
         var projectId = ProjectId.CreateNewId();
         AddProject(workspace, projectId, "Example.Core", root, FastTestReferences.CreatePlatformReferences());
         AddDocument(workspace, projectId, "Constraints.cs", "#nullable enable\nusing System; namespace App { public class Consumer<T, U, V, W> where T : notnull where U : unmanaged where V : Names.@notnull where W : Names.@unmanaged { public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null; public void LocalOwner() { void Check<TState>(TState state) where TState : notnull { } } } public delegate void Callback<TState>(TState state) where TState : notnull; } namespace App.Names { public class @notnull { } public class @unmanaged { } public class LocalConsumer<T, U> where T : @notnull where U : @unmanaged { } }", Path.Combine(root, "Constraints.cs"));
-        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+        return new Fixture(workspace, new ReviewContext(workspace.Solution, root));
     }
 
     private static Fixture CreateUnresolvedConstraintFixture()
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "TypeDependencyGraph", Guid.NewGuid().ToString("N"));
+        var workspace = new FastTestWorkspace();
+        var root = workspace.RootPath;
         var projectId = ProjectId.CreateNewId();
         AddProject(workspace, projectId, "Example.Core", root, FastTestReferences.CreatePlatformReferences());
         AddDocument(workspace, projectId, "Constraint.cs", "namespace App; public class Consumer<T> where T : Missing { }", Path.Combine(root, "Constraint.cs"));
-        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+        return new Fixture(workspace, new ReviewContext(workspace.Solution, root));
     }
 
     private static Fixture CreateAmbiguousFixture()
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-TypeDependencyGraph", Guid.NewGuid().ToString("N"));
+        var workspace = new FastTestWorkspace();
+        var root = workspace.RootPath;
         var projectId = ProjectId.CreateNewId();
         AddProject(workspace, projectId, "Example.Core", root, FastTestReferences.CreatePlatformReferences());
         AddDocument(workspace, projectId, "Ambiguous.cs", "namespace App; public class Target { public Target(int value) { } public Target(string value) { } } public class Caller { public void Run() { _ = new Target(default); } }", Path.Combine(root, "Ambiguous.cs"));
-        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+        return new Fixture(workspace, new ReviewContext(workspace.Solution, root));
     }
 
     private static Fixture CreateUnresolvedMemberFixture()
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-TypeDependencyGraph", Guid.NewGuid().ToString("N"));
+        var workspace = new FastTestWorkspace();
+        var root = workspace.RootPath;
         var projectId = ProjectId.CreateNewId();
         AddProject(workspace, projectId, "Example.Core", root, FastTestReferences.CreatePlatformReferences());
         AddDocument(workspace, projectId, "UnresolvedMember.cs", "namespace App; public class Caller { public void Run() { MissingCall(); } }", Path.Combine(root, "UnresolvedMember.cs"));
-        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+        return new Fixture(workspace, new ReviewContext(workspace.Solution, root));
     }
 
     private static Fixture CreateUnresolvedMethodGroupFixture()
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-TypeDependencyGraph", Guid.NewGuid().ToString("N"));
+        var workspace = new FastTestWorkspace();
+        var root = workspace.RootPath;
         var projectId = ProjectId.CreateNewId();
         AddProject(workspace, projectId, "Example.Core", root, FastTestReferences.CreatePlatformReferences());
         AddDocument(workspace, projectId, "MethodGroup.cs", "using System; namespace App; public class Caller { public Action Callback = MissingMethod; }", Path.Combine(root, "MethodGroup.cs"));
-        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+        return new Fixture(workspace, new ReviewContext(workspace.Solution, root));
     }
 
     private static Fixture CreateTopLevelProgramFixture()
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-TypeDependencyGraph", Guid.NewGuid().ToString("N"));
+        var workspace = new FastTestWorkspace();
+        var root = workspace.RootPath;
         var projectId = ProjectId.CreateNewId();
         AddProject(workspace, projectId, "Example.App", root, FastTestReferences.CreatePlatformReferences(), OutputKind.ConsoleApplication);
         AddDocument(workspace, projectId, "Program.cs", "using System; Console.WriteLine(typeof(Program)); public class ProgramConsumer { public Type GetProgramType() => typeof(Program); }", Path.Combine(root, "Program.cs"));
-        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+        return new Fixture(workspace, new ReviewContext(workspace.Solution, root));
     }
 
-    private static void AddProject(AdhocWorkspace workspace, ProjectId projectId, string name, string root, IEnumerable<MetadataReference> references,
+    private static void AddProject(FastTestWorkspace workspace, ProjectId projectId, string name, string root, IEnumerable<MetadataReference> references,
         OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary, string? assemblyName = null) =>
-        workspace.AddProject(ProjectInfo.Create(
-            projectId,
-            VersionStamp.Create(),
+        workspace.AddProject(
             name,
-            assemblyName ?? name,
-            LanguageNames.CSharp,
-            filePath: Path.Combine(root, name + ".csproj"),
-            compilationOptions: new CSharpCompilationOptions(outputKind, allowUnsafe: true),
             parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
-            metadataReferences: references));
+            compilationOptions: new CSharpCompilationOptions(outputKind, allowUnsafe: true),
+            projectFilePath: Path.Combine(root, name + ".csproj"),
+            assemblyName: assemblyName ?? name,
+            metadataReferences: references,
+            projectId: projectId);
 
-    private static void AddDocument(AdhocWorkspace workspace, ProjectId projectId, string name, string source, string path) =>
-        workspace.AddDocument(DocumentInfo.Create(
-            DocumentId.CreateNewId(projectId),
-            name,
-            filePath: path,
-            loader: TextLoader.From(TextAndVersion.Create(SourceText.From(source), VersionStamp.Create()))));
+    private static void AddDocument(FastTestWorkspace workspace, ProjectId projectId, string name, string source, string path) =>
+        workspace.AddDocument(projectId, name, source, path);
 
-    private sealed class Fixture(AdhocWorkspace workspace, ReviewContext context) : IDisposable
+    private sealed class Fixture(FastTestWorkspace workspace, ReviewContext context) : IDisposable
     {
         public ReviewContext Context { get; } = context;
         public void Dispose() => workspace.Dispose();

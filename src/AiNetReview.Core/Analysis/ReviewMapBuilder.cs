@@ -135,7 +135,7 @@ internal static class ReviewMapBuilder
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var graph = await TypeDependencyGraphBuilder.BuildAsync(context, cancellationToken).ConfigureAwait(false);
+        var graph = await context.GetTypeDependencyGraphAsync(cancellationToken).ConfigureAwait(false);
         var typeInfo = graph.Nodes.ToDictionary(
             node => GetTypeKey(node.ProjectId, node.Symbol),
             node => new TypeMapInfo(node, CreateTypeId(projectById[node.ProjectId].Key, node.Symbol)));

@@ -15,6 +15,8 @@ using Microsoft.CodeAnalysis.Text;
 /// <summary>Selects explicit types and ordinary methods without known direct or recognized indirect solution use.</summary>
 public sealed class DeadCodeCandidatesAnalysis : IReviewAnalysis
 {
+    public IReviewFindingPresenter FindingPresenter { get; } = new DeadCodeCandidatesFindingPresenter();
+
     private const string ExternalLibrary = "external_library";
     private const string ClosedSolution = "closed_solution";
 
@@ -274,7 +276,8 @@ public sealed class DeadCodeCandidatesAnalysis : IReviewAnalysis
                 declaration.EvidenceLine,
                 declaration.Symbol is INamedTypeSymbol ? "Type declaration" : "Method declaration",
                 "Candidate declaration selected from production C# source.",
-                declaration.Snippet)]);
+                declaration.Snippet,
+                OmitWhenRedundantWithSubject: true)]);
 
     private static bool IsApiProtected(ISymbol symbol, string apiSurface) =>
         apiSurface == ExternalLibrary && IsExternallyVisible(symbol);

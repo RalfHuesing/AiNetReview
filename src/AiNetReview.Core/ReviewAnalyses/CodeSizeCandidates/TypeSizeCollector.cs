@@ -109,5 +109,6 @@ internal sealed record TypeSizePart(
         SourceText.Lines.GetLineFromPosition(NameToken.SpanStart).LineNumber + 1,
         "Class declaration part",
         "This loaded source line identifies one part contributing to the measured type.",
-        SourceText.Lines.GetLineFromPosition(NameToken.SpanStart).ToString().Trim());
+        SourceText.Lines.GetLineFromPosition(NameToken.SpanStart).ToString().Trim(),
+        OmitWhenRedundantWithSubject: true);
 }

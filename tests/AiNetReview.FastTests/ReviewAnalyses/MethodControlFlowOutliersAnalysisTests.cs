@@ -6,6 +6,7 @@ using System.Threading;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.ReviewAnalyses.MethodControlFlowOutliers;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 
 public sealed class MethodControlFlowOutliersAnalysisTests
@@ -384,11 +385,10 @@ public sealed class MethodControlFlowOutliersAnalysisTests
         string generatedFileName = "Noise.g.cs",
         string projectName = "Example")
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-MethodControlFlow-" + Guid.NewGuid().ToString("N"));
+        var workspace = new FastTestWorkspace();
+        var root = workspace.RootPath;
         var projectDirectory = Path.Combine(root, "src");
         var projectFile = Path.Combine(projectDirectory, projectName + ".csproj");
-        var projectId = ProjectId.CreateNewId();
         var platformAssemblies = new[]
             {
                 typeof(object).Assembly,
@@ -397,34 +397,18 @@ public sealed class MethodControlFlowOutliersAnalysisTests
             }
             .Distinct()
             .Select(static assembly => MetadataReference.CreateFromFile(assembly.Location));
-        var projectInfo = ProjectInfo.Create(
-            projectId,
-            VersionStamp.Create(),
-            projectName,
-            projectName,
-            LanguageNames.CSharp,
-            filePath: projectFile,
-            compilationOptions: new Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            metadataReferences: platformAssemblies);
-        workspace.AddProject(projectInfo);
-        workspace.AddDocument(DocumentInfo.Create(
-            DocumentId.CreateNewId(projectId),
-            "Example.cs",
-            filePath: Path.Combine(projectDirectory, "Example.cs"),
-            loader: TextLoader.From(TextAndVersion.Create(SourceText.From(source), VersionStamp.Create()))));
+        var projectId = workspace.AddProject(projectName, parseOptions: CSharpParseOptions.Default,
+            projectFilePath: projectFile, metadataReferences: platformAssemblies);
+        workspace.AddDocument(projectId, "Example.cs", source, Path.Combine(projectDirectory, "Example.cs"));
         if (generatedSource is not null)
         {
-            workspace.AddDocument(DocumentInfo.Create(
-                DocumentId.CreateNewId(projectId),
-                generatedFileName,
-                filePath: Path.Combine(projectDirectory, generatedFileName),
-                loader: TextLoader.From(TextAndVersion.Create(SourceText.From(generatedSource), VersionStamp.Create()))));
+            workspace.AddDocument(projectId, generatedFileName, generatedSource, Path.Combine(projectDirectory, generatedFileName));
         }
 
-        return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+        return new AnalysisFixture(workspace, workspace.CreateReviewContext());
     }
 
-    private sealed class AnalysisFixture(AdhocWorkspace workspace, ReviewContext context) : IDisposable
+    private sealed class AnalysisFixture(FastTestWorkspace workspace, ReviewContext context) : IDisposable
     {
         public ReviewContext Context { get; } = context;
 

@@ -95,61 +95,41 @@ public sealed class ReviewMapBuilderTests
 
     private static Fixture CreateFixture(bool reverseInsertionOrder = false)
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-ReviewMap", Guid.NewGuid().ToString("N"));
-        var production = ProjectId.CreateNewId();
-        var tests = ProjectId.CreateNewId();
-        var references = FastTestReferences.CreatePlatformReferences().ToArray();
+        var workspace = new FastTestWorkspace();
+        var root = workspace.RootPath;
+        ProjectId production;
+        ProjectId tests;
         if (reverseInsertionOrder)
         {
-            AddProject(workspace, tests, "Domain.Tests", Path.Combine(root, "tests", "Domain.Tests", "Domain.Tests.csproj"), references);
-            AddProject(workspace, production, "DömÄin", Path.Combine(root, "src", "DömÄin", "DömÄin.csproj"), references);
+            tests = workspace.AddProject("Domain.Tests", projectFilePath: Path.Combine(root, "tests", "Domain.Tests", "Domain.Tests.csproj"));
+            production = workspace.AddProject("DömÄin", projectFilePath: Path.Combine(root, "src", "DömÄin", "DömÄin.csproj"));
         }
         else
         {
-            AddProject(workspace, production, "DömÄin", Path.Combine(root, "src", "DömÄin", "DömÄin.csproj"), references);
-            AddProject(workspace, tests, "Domain.Tests", Path.Combine(root, "tests", "Domain.Tests", "Domain.Tests.csproj"), references);
+            production = workspace.AddProject("DömÄin", projectFilePath: Path.Combine(root, "src", "DömÄin", "DömÄin.csproj"));
+            tests = workspace.AddProject("Domain.Tests", projectFilePath: Path.Combine(root, "tests", "Domain.Tests", "Domain.Tests.csproj"));
         }
         var linkedPath = Path.Combine(root, "shared", "Linked.cs");
-        Assert.True(workspace.TryApplyChanges(workspace.CurrentSolution.AddProjectReference(tests, new ProjectReference(production))));
+        workspace.AddProjectReference(tests, new ProjectReference(production));
 
         var firstSource = "namespace Example.Domain;\r\npublic partial class Widget { public string Label = \"café\"; }";
         var secondSource = "namespace Example.Domain; public partial class Widget { public class Nested { } }\npublic class BaseType { }\npublic class MiddleType : BaseType { }\npublic class DeepType : MiddleType { }";
         void AddDocuments()
         {
-            AddDocument(workspace, production, "First.cs", firstSource, Path.Combine(root, "src", "DömÄin", "First.cs"));
-            AddDocument(workspace, production, "Second.cs", secondSource, Path.Combine(root, "src", "DömÄin", "Second.cs"));
-            AddDocument(workspace, production, "Global.cs", "namespace Example.Domain { public class ScopedType { } }\npublic class GlobalType { }", Path.Combine(root, "src", "DömÄin", "Global.cs"));
-            AddDocument(workspace, production, "Generated.g.cs", "namespace Example.Domain; public class GeneratedType { }", Path.Combine(root, "src", "DömÄin", "Generated.g.cs"));
-            AddDocument(workspace, production, "Linked.cs", "namespace Example.Domain; public class LinkedType { }", linkedPath);
-            AddDocument(workspace, tests, "WidgetTests.cs", "namespace Example.Domain.Tests; public class WidgetTests { public Example.Domain.DeepType? Subject; }", Path.Combine(root, "tests", "Domain.Tests", "WidgetTests.cs"));
-            AddDocument(workspace, tests, "Linked.cs", "namespace Example.Domain; public class LinkedType { }", linkedPath);
+            workspace.AddDocument(production, "First.cs", firstSource, Path.Combine(root, "src", "DömÄin", "First.cs"));
+            workspace.AddDocument(production, "Second.cs", secondSource, Path.Combine(root, "src", "DömÄin", "Second.cs"));
+            workspace.AddDocument(production, "Global.cs", "namespace Example.Domain { public class ScopedType { } }\npublic class GlobalType { }", Path.Combine(root, "src", "DömÄin", "Global.cs"));
+            workspace.AddDocument(production, "Generated.g.cs", "namespace Example.Domain; public class GeneratedType { }", Path.Combine(root, "src", "DömÄin", "Generated.g.cs"));
+            workspace.AddDocument(production, "Linked.cs", "namespace Example.Domain; public class LinkedType { }", linkedPath);
+            workspace.AddDocument(tests, "WidgetTests.cs", "namespace Example.Domain.Tests; public class WidgetTests { public Example.Domain.DeepType? Subject; }", Path.Combine(root, "tests", "Domain.Tests", "WidgetTests.cs"));
+            workspace.AddDocument(tests, "Linked.cs", "namespace Example.Domain; public class LinkedType { }", linkedPath);
         }
         AddDocuments();
 
-        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root), firstSource, secondSource);
+        return new Fixture(workspace, workspace.CreateReviewContext(), firstSource, secondSource);
     }
 
-    private static void AddProject(AdhocWorkspace workspace, ProjectId id, string name, string path, MetadataReference[] references) =>
-        workspace.AddProject(ProjectInfo.Create(
-            id,
-            VersionStamp.Create(),
-            name,
-            name,
-            LanguageNames.CSharp,
-            filePath: path,
-            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
-            metadataReferences: references));
-
-    private static void AddDocument(AdhocWorkspace workspace, ProjectId id, string name, string source, string path) =>
-        workspace.AddDocument(DocumentInfo.Create(
-            DocumentId.CreateNewId(id),
-            name,
-            filePath: path,
-            loader: TextLoader.From(TextAndVersion.Create(SourceText.From(source), VersionStamp.Create()))));
-
-    private sealed class Fixture(AdhocWorkspace workspace, ReviewContext context, string firstSource, string secondSource) : IDisposable
+    private sealed class Fixture(FastTestWorkspace workspace, ReviewContext context, string firstSource, string secondSource) : IDisposable
     {
         public ReviewContext Context { get; } = context;
         public string FirstSource { get; } = firstSource;

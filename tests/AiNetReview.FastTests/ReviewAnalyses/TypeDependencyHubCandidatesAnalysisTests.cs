@@ -158,92 +158,59 @@ public sealed class TypeDependencyHubCandidatesAnalysisTests
 
     private static AnalysisFixture CreateFixture(int consumerCount, int dependencyCount, bool addTestConsumer = false)
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-TypeDependencyHub-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        var productionId = ProjectId.CreateNewId();
-        workspace.AddProject(ProjectInfo.Create(productionId, VersionStamp.Create(), "Product", "Product", LanguageNames.CSharp,
-            filePath: Path.Combine(root, "Product.csproj"), compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            parseOptions: new CSharpParseOptions(LanguageVersion.Preview), metadataReferences: FastTestReferences.CreatePlatformReferences()));
-        AddDocument(workspace, productionId, root, "Hub.cs", "namespace Sample; public partial class Hub { "
+        var workspace = new FastTestWorkspace();
+        var productionId = workspace.AddProject("Product");
+        workspace.AddDocument(productionId, "Hub.cs", "namespace Sample; public partial class Hub { "
             + string.Join(" ", Enumerable.Range(0, dependencyCount).Select(index => $"public Dependency{index}? D{index};")) + " }");
-        AddDocument(workspace, productionId, root, "Hub.Partial.cs", "namespace Sample; public partial class Hub { }");
+        workspace.AddDocument(productionId, "Hub.Partial.cs", "namespace Sample; public partial class Hub { }");
         foreach (var index in Enumerable.Range(0, consumerCount))
         {
-            AddDocument(workspace, productionId, root, $"Consumer{index}.cs",
+            workspace.AddDocument(productionId, $"Consumer{index}.cs",
                 $"namespace Sample; public class Consumer{index} {{ public Hub? Value; }}");
         }
         foreach (var index in Enumerable.Range(0, dependencyCount))
         {
-            AddDocument(workspace, productionId, root, $"Dependency{index}.cs", $"namespace Sample; public class Dependency{index} {{ }}");
+            workspace.AddDocument(productionId, $"Dependency{index}.cs", $"namespace Sample; public class Dependency{index} {{ }}");
         }
 
         if (addTestConsumer)
         {
-            var testId = ProjectId.CreateNewId();
-            workspace.AddProject(ProjectInfo.Create(testId, VersionStamp.Create(), "Product.Tests", "Product.Tests", LanguageNames.CSharp,
-                filePath: Path.Combine(root, "Product.Tests.csproj"), compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-                parseOptions: new CSharpParseOptions(LanguageVersion.Preview), metadataReferences: FastTestReferences.CreatePlatformReferences(),
-                projectReferences: [new ProjectReference(productionId)]));
-            AddDocument(workspace, testId, root, "Tests.cs", "namespace Sample.Tests; public class HubTests { public Sample.Hub? Value; }");
+            var testId = workspace.AddProject("Product.Tests", projectReferences: [new ProjectReference(productionId)]);
+            workspace.AddDocument(testId, "Tests.cs", "namespace Sample.Tests; public class HubTests { public Sample.Hub? Value; }");
         }
 
-        if (!workspace.TryApplyChanges(workspace.CurrentSolution))
-        {
-            workspace.Dispose();
-            Directory.Delete(root, recursive: true);
-            throw new InvalidOperationException("Could not initialize Roslyn test workspace.");
-        }
-
-        return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root), root);
+        return new AnalysisFixture(workspace, workspace.CreateReviewContext());
     }
 
     private static AnalysisFixture CreateCheckoutFacadeFixture()
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-TypeDependencyHub-Checkout", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        var projectId = ProjectId.CreateNewId();
-        workspace.AddProject(ProjectInfo.Create(projectId, VersionStamp.Create(), "Checkout", "Checkout", LanguageNames.CSharp,
-            filePath: Path.Combine(root, "Checkout.csproj"), compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            parseOptions: new CSharpParseOptions(LanguageVersion.Preview), metadataReferences: FastTestReferences.CreatePlatformReferences()));
+        var workspace = new FastTestWorkspace();
+        var projectId = workspace.AddProject("Checkout");
 
         var dependencies = new[]
         {
             "CartRepository", "PriceCatalog", "DiscountPolicy", "TaxCalculator", "PaymentGateway",
             "InventoryService", "OrderWriter", "ReceiptPublisher", "FraudScreen", "CustomerDirectory",
         };
-        AddDocument(workspace, projectId, root, "CheckoutCompositionRoot.cs",
+        workspace.AddDocument(projectId, "CheckoutCompositionRoot.cs",
             "namespace Sample; public sealed class CheckoutCompositionRoot { "
             + string.Join(" ", dependencies.Select((name, index) => $"public {name}? Dependency{index};")) + " }");
         foreach (var index in Enumerable.Range(0, 10))
         {
-            AddDocument(workspace, projectId, root, $"CheckoutEndpoint{index}.cs",
+            workspace.AddDocument(projectId, $"CheckoutEndpoint{index}.cs",
                 $"namespace Sample; public sealed class CheckoutEndpoint{index} {{ public CheckoutCompositionRoot? Root; }}");
         }
         foreach (var dependency in dependencies)
         {
-            AddDocument(workspace, projectId, root, dependency + ".cs", $"namespace Sample; public sealed class {dependency} {{ }}");
+            workspace.AddDocument(projectId, dependency + ".cs", $"namespace Sample; public sealed class {dependency} {{ }}");
         }
 
-        if (!workspace.TryApplyChanges(workspace.CurrentSolution))
-        {
-            workspace.Dispose();
-            Directory.Delete(root, recursive: true);
-            throw new InvalidOperationException("Could not initialize checkout composition-root fixture.");
-        }
-
-        return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root), root);
+        return new AnalysisFixture(workspace, workspace.CreateReviewContext());
     }
 
-    private static void AddDocument(AdhocWorkspace workspace, ProjectId projectId, string root, string name, string source) =>
-        workspace.AddDocument(DocumentInfo.Create(DocumentId.CreateNewId(projectId), name,
-            filePath: Path.Combine(root, name),
-            loader: TextLoader.From(TextAndVersion.Create(SourceText.From(source), VersionStamp.Create()))));
-
-    private sealed class AnalysisFixture(AdhocWorkspace workspace, ReviewContext context, string root) : IDisposable
+    private sealed class AnalysisFixture(FastTestWorkspace workspace, ReviewContext context) : IDisposable
     {
         public ReviewContext Context { get; } = context;
-        public void Dispose() { workspace.Dispose(); Directory.Delete(root, recursive: true); }
+        public void Dispose() => workspace.Dispose();
     }
 }

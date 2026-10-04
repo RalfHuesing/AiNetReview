@@ -19,7 +19,7 @@ public sealed class SolutionReferenceIndexTests
     {
         using var fixture = CreateCrossProjectFixture();
         var index = await SolutionReferenceIndex.CreateAsync(fixture.Context);
-        var productionWidget = await GetTypeSymbolAsync(fixture.Workspace.CurrentSolution.GetProject(fixture.ProductionProjectId)!, "Widget");
+        var productionWidget = await GetTypeSymbolAsync(fixture.Workspace.Solution.GetProject(fixture.ProductionProjectId)!, "Widget");
         var targetMethod = productionWidget.GetMembers("Target").OfType<IMethodSymbol>().Single();
 
         var coverage = index.GetCoverage(targetMethod);
@@ -73,7 +73,7 @@ public sealed class SolutionReferenceIndexTests
             """);
 
         var index = await SolutionReferenceIndex.CreateAsync(fixture.Context);
-        var example = await GetTypeSymbolAsync(fixture.Workspace.CurrentSolution.GetProject(fixture.ProjectId)!, "Example");
+        var example = await GetTypeSymbolAsync(fixture.Workspace.Solution.GetProject(fixture.ProjectId)!, "Example");
         var candidate = example.GetMembers("Candidate").OfType<IMethodSymbol>().Single();
         var coverage = index.GetCoverage(candidate);
 
@@ -86,9 +86,8 @@ public sealed class SolutionReferenceIndexTests
     [Fact]
     public async Task CreateAsync_FailsWhenSolutionHasNoCSharpReferenceCoverage()
     {
-        using var workspace = new AdhocWorkspace();
-        using var root = TestTempDirectory.Create();
-        var context = new ReviewContext(workspace.CurrentSolution, root.DirectoryPath);
+        using var workspace = new FastTestWorkspace();
+        var context = workspace.CreateReviewContext();
 
         var exception = await Assert.ThrowsAsync<AnalysisFailedException>(
             () => SolutionReferenceIndex.CreateAsync(context));
@@ -141,42 +140,24 @@ public sealed class SolutionReferenceIndexTests
 
     private static ProjectFixture CreateProjectFixture(string projectName, string source)
     {
-        var workspace = new AdhocWorkspace();
-        var root = TestTempDirectory.Create();
-        var projectId = ProjectId.CreateNewId();
-        workspace.AddProject(ProjectInfo.Create(
-            projectId,
-            VersionStamp.Create(),
-            projectName,
-            projectName,
-            LanguageNames.CSharp,
-            filePath: Path.Combine(root.DirectoryPath, projectName + ".csproj"),
-            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
-            metadataReferences: FastTestReferences.CreatePlatformReferences()));
-        workspace.AddDocument(DocumentInfo.Create(
-            DocumentId.CreateNewId(projectId),
-            "Source.cs",
-            filePath: Path.Combine(root.DirectoryPath, "Source.cs"),
-            loader: TextLoader.From(TextAndVersion.Create(SourceText.From(source), VersionStamp.Create()))));
-        return new ProjectFixture(workspace, new ReviewContext(workspace.CurrentSolution, root.DirectoryPath), projectId, root);
+        var workspace = new FastTestWorkspace();
+        var projectId = workspace.AddProject(projectName);
+        workspace.AddDocument(projectId, "Source.cs", source);
+        return new ProjectFixture(workspace, workspace.CreateReviewContext(), projectId);
     }
 
     private static CrossProjectFixture CreateCrossProjectFixture()
     {
-        var workspace = new AdhocWorkspace();
-        var root = TestTempDirectory.Create();
+        var workspace = new FastTestWorkspace();
         var productionProjectId = ProjectId.CreateNewId();
         var testProjectId = ProjectId.CreateNewId();
         var generatedProjectId = ProjectId.CreateNewId();
-        workspace.AddProject(CreateProjectInfo(productionProjectId, "Production", root.DirectoryPath));
-        workspace.AddProject(CreateProjectInfo(testProjectId, "Product.Tests", root.DirectoryPath));
-        workspace.AddProject(CreateProjectInfo(generatedProjectId, "GeneratedConsumer", root.DirectoryPath));
-        var solution = workspace.CurrentSolution
-            .AddProjectReference(testProjectId, new ProjectReference(productionProjectId))
-            .AddProjectReference(generatedProjectId, new ProjectReference(productionProjectId));
-        Assert.True(workspace.TryApplyChanges(solution));
-        AddDocument(workspace, productionProjectId, root.DirectoryPath, "Production.cs", """
+        workspace.AddProject("Production", projectId: productionProjectId);
+        workspace.AddProject("Product.Tests", projectId: testProjectId);
+        workspace.AddProject("GeneratedConsumer", projectId: generatedProjectId);
+        workspace.AddProjectReference(testProjectId, new ProjectReference(productionProjectId));
+        workspace.AddProjectReference(generatedProjectId, new ProjectReference(productionProjectId));
+        workspace.AddDocument(productionProjectId, "Production.cs", """
             namespace Product;
             public class Widget
             {
@@ -186,40 +167,21 @@ public sealed class SolutionReferenceIndexTests
                 public static void Orphan() { }
             }
             """);
-        AddDocument(workspace, testProjectId, root.DirectoryPath, "WidgetTests.cs", """
+        workspace.AddDocument(testProjectId, "WidgetTests.cs", """
             using System;
             using Product;
             public class WidgetTests { private readonly Action callback = Widget.Target; }
             """);
-        AddDocument(workspace, generatedProjectId, root.DirectoryPath, "Widget.g.cs", """
+        workspace.AddDocument(generatedProjectId, "Widget.g.cs", """
             using Product;
             public class GeneratedConsumer { public void Use() { Widget.Target(); } }
             """);
 
         return new CrossProjectFixture(
             workspace,
-            new ReviewContext(workspace.CurrentSolution, root.DirectoryPath),
-            productionProjectId,
-            root);
+            workspace.CreateReviewContext(),
+            productionProjectId);
     }
-
-    private static ProjectInfo CreateProjectInfo(ProjectId projectId, string name, string root) => ProjectInfo.Create(
-        projectId,
-        VersionStamp.Create(),
-        name,
-        name,
-        LanguageNames.CSharp,
-        filePath: Path.Combine(root, name + ".csproj"),
-        compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-        parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
-        metadataReferences: FastTestReferences.CreatePlatformReferences());
-
-    private static void AddDocument(AdhocWorkspace workspace, ProjectId projectId, string root, string name, string source) =>
-        workspace.AddDocument(DocumentInfo.Create(
-            DocumentId.CreateNewId(projectId),
-            name,
-            filePath: Path.Combine(root, name),
-            loader: TextLoader.From(TextAndVersion.Create(SourceText.From(source), VersionStamp.Create()))));
 
     private static async Task<INamedTypeSymbol> GetTypeSymbolAsync(Project project, string name)
     {
@@ -229,18 +191,16 @@ public sealed class SolutionReferenceIndexTests
 
     private sealed class ProjectFixture : IDisposable
     {
-        private readonly AdhocWorkspace workspace;
-        private readonly IDisposable root;
+        private readonly FastTestWorkspace workspace;
 
-        public ProjectFixture(AdhocWorkspace workspace, ReviewContext context, ProjectId projectId, IDisposable root)
+        public ProjectFixture(FastTestWorkspace workspace, ReviewContext context, ProjectId projectId)
         {
             this.workspace = workspace;
-            this.root = root;
             Context = context;
             ProjectId = projectId;
         }
 
-        public AdhocWorkspace Workspace => workspace;
+        public FastTestWorkspace Workspace => workspace;
 
         public ReviewContext Context { get; }
 
@@ -249,24 +209,21 @@ public sealed class SolutionReferenceIndexTests
         public void Dispose()
         {
             workspace.Dispose();
-            root.Dispose();
         }
     }
 
     private sealed class CrossProjectFixture : IDisposable
     {
-        private readonly AdhocWorkspace workspace;
-        private readonly IDisposable root;
+        private readonly FastTestWorkspace workspace;
 
-        public CrossProjectFixture(AdhocWorkspace workspace, ReviewContext context, ProjectId productionProjectId, IDisposable root)
+        public CrossProjectFixture(FastTestWorkspace workspace, ReviewContext context, ProjectId productionProjectId)
         {
             this.workspace = workspace;
-            this.root = root;
             Context = context;
             ProductionProjectId = productionProjectId;
         }
 
-        public AdhocWorkspace Workspace => workspace;
+        public FastTestWorkspace Workspace => workspace;
 
         public ReviewContext Context { get; }
 
@@ -275,7 +232,6 @@ public sealed class SolutionReferenceIndexTests
         public void Dispose()
         {
             workspace.Dispose();
-            root.Dispose();
         }
     }
 }

@@ -4,10 +4,15 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using AiNetReview.Core.Findings;
 using Microsoft.CodeAnalysis;
 
 public sealed class ReviewContext
 {
+    internal RunScopedArtifact<TypeDependencyGraph> TypeDependencyGraphArtifact { get; } = new();
+
+    internal RunScopedArtifact<FindingSourceIndex> FindingSourceIndexArtifact { get; } = new();
+
     public ReviewContext(
         Solution solution,
         string projectRoot,

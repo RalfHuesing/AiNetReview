@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using AiNetReview.IntegrationTests;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Findings;
@@ -485,7 +486,7 @@ public sealed class ReviewRunnerTests
                 public int FixtureCaseB() => 2;
             }
             """);
-        await RestoreAsync(projectFile, projectDirectory);
+        await IntegrationTestHelpers.RestoreAsync(projectFile, projectDirectory);
         var solutionProjects = "<Project Path=\"Sample/Sample.csproj\" />";
         if (includeSecondProject)
         {
@@ -496,7 +497,7 @@ public sealed class ReviewRunnerTests
                 "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
             await File.WriteAllTextAsync(Path.Combine(otherDirectory, "Other.cs"),
                 """namespace Other; public sealed class Other { public int Value => "LoadedOtherValue".Length; }""");
-            await RestoreAsync(otherProject, otherDirectory);
+            await IntegrationTestHelpers.RestoreAsync(otherProject, otherDirectory);
             solutionProjects += "<Project Path=\"Other/Other.csproj\" />";
         }
 
@@ -515,7 +516,7 @@ public sealed class ReviewRunnerTests
                     public void TestB() { }
                 }
                 """);
-            await RestoreAsync(testProject, testDirectory);
+            await IntegrationTestHelpers.RestoreAsync(testProject, testDirectory);
             solutionProjects += "<Project Path=\"tests/Example/Example.csproj\" />";
 
             var emptyDirectory = Path.Combine(root, "Empty");
@@ -523,7 +524,7 @@ public sealed class ReviewRunnerTests
             var emptyProject = Path.Combine(emptyDirectory, "Empty.csproj");
             await File.WriteAllTextAsync(emptyProject,
                 "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
-            await RestoreAsync(emptyProject, emptyDirectory);
+            await IntegrationTestHelpers.RestoreAsync(emptyProject, emptyDirectory);
             solutionProjects += "<Project Path=\"Empty/Empty.csproj\" />";
         }
 
@@ -545,7 +546,7 @@ public sealed class ReviewRunnerTests
             "namespace Sample; public static class Service { public static void Run() => Endpoint.Run(); }");
         await File.WriteAllTextAsync(Path.Combine(projectDirectory, "Endpoint.cs"),
             "namespace Sample; public static class Endpoint { public static void Run() { } } public static class Other { public static void Run() { } }");
-        await RestoreAsync(projectFile, projectDirectory);
+        await IntegrationTestHelpers.RestoreAsync(projectFile, projectDirectory);
         await File.WriteAllTextAsync(Path.Combine(root, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         return root;
     }
@@ -559,25 +560,6 @@ public sealed class ReviewRunnerTests
         $"Fixture finding {id}.",
         new Dictionary<string, double> { ["count"] = 1 },
         [new FindingEvidence(sourcePath, line, "Fixture", $"Evidence for {id}", snippet)]);
-
-    private static async Task RestoreAsync(string projectFile, string workingDirectory)
-    {
-        var startInfo = new ProcessStartInfo("dotnet")
-        {
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        startInfo.ArgumentList.Add("restore");
-        startInfo.ArgumentList.Add(projectFile);
-        startInfo.ArgumentList.Add("--ignore-failed-sources");
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start dotnet restore.");
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        Assert.True(process.ExitCode == 0, $"dotnet restore failed: {await stdout}{await stderr}");
-    }
 
     private sealed class TestAnalysis : IReviewAnalysis
     {

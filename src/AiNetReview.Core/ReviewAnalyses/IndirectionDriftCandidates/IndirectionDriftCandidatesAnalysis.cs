@@ -13,6 +13,8 @@ using Microsoft.CodeAnalysis;
 /// <summary>Reports current statically declared paths formed by transparent method forwarding.</summary>
 public sealed class IndirectionDriftCandidatesAnalysis : IReviewAnalysis
 {
+    public IReviewFindingPresenter FindingPresenter { get; } = new IndirectionDriftCandidatesFindingPresenter();
+
     public ReviewAnalysisDescriptor Descriptor { get; } = new(
         analysisId: "indirection-drift-candidates",
         title: "Indirection Drift Candidates",

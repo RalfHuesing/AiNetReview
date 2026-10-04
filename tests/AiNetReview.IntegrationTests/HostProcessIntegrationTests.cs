@@ -391,7 +391,7 @@ public sealed class HostProcessIntegrationTests
         await File.WriteAllTextAsync(projectFile,
             "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
         await File.WriteAllTextAsync(Path.Combine(project, "Class1.cs"), source);
-        await RestoreProjectAsync(projectFile, project);
+        await IntegrationTestHelpers.RestoreAsync(projectFile, project);
         await File.WriteAllTextAsync(Path.Combine(root, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         return root;
     }
@@ -402,25 +402,6 @@ public sealed class HostProcessIntegrationTests
         await File.WriteAllTextAsync(configPath,
             "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"method-control-flow-outliers\":{}}}");
         return configPath;
-    }
-
-    private static async Task RestoreProjectAsync(string projectFile, string workingDirectory)
-    {
-        var startInfo = new ProcessStartInfo("dotnet")
-        {
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        startInfo.ArgumentList.Add("restore");
-        startInfo.ArgumentList.Add(projectFile);
-        startInfo.ArgumentList.Add("--ignore-failed-sources");
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start dotnet restore.");
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        Assert.True(process.ExitCode == 0, $"dotnet restore failed: {await stdout}{await stderr}");
     }
 
     private static async Task<(string Stdout, string Stderr)> ReadProcessOutputAsync(Process process)

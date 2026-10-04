@@ -17,7 +17,7 @@ public sealed class ReviewSourceClassifierTests
     [Fact]
     public void IsTestProject_RecognizesKnownReferencesNamesAndPaths()
     {
-        using var workspace = new AdhocWorkspace();
+        using var workspace = new FastTestWorkspace();
         var root = Path.Combine(Path.GetTempPath(), "AiNetReview-Classification");
         var byName = AddProject(workspace, "Example.FastTests", Path.Combine(root, "src", "Example.FastTests.csproj"));
         var byPath = AddProject(workspace, "Example", Path.Combine(root, "tests", "Example", "Example.csproj"));
@@ -38,7 +38,7 @@ public sealed class ReviewSourceClassifierTests
     [Fact]
     public void ClassifyProject_ExplainsProjectFileNameAndMissingMarkers()
     {
-        using var workspace = new AdhocWorkspace();
+        using var workspace = new FastTestWorkspace();
         var root = Path.Combine(Path.GetTempPath(), "AiNetReview-Classification");
         var byFileName = AddProject(workspace, "Example", Path.Combine(root, "src", "Example.UnitTests.csproj"));
         var ordinary = AddProject(workspace, "Contest", Path.Combine(root, "src", "Contest.csproj"));
@@ -51,7 +51,7 @@ public sealed class ReviewSourceClassifierTests
     [Fact]
     public void IsTestProject_DoesNotClassifyOrdinaryNamesOrLookalikePaths()
     {
-        using var workspace = new AdhocWorkspace();
+        using var workspace = new FastTestWorkspace();
         var root = Path.Combine(Path.GetTempPath(), "AiNetReview-Classification");
         var project = AddProject(workspace, "Contest", Path.Combine(root, "src", "Contest.csproj"));
 
@@ -131,34 +131,23 @@ public sealed class ReviewSourceClassifierTests
     [Fact]
     public void GetProjectRelativePath_NormalizesAndRejectsPathsOutsideTheReviewRoot()
     {
-        using var workspace = new AdhocWorkspace();
-        using var root = TestTempDirectory.Create();
-        var context = new ReviewContext(workspace.CurrentSolution, root.DirectoryPath);
+        using var workspace = new FastTestWorkspace();
+        var context = workspace.CreateReviewContext();
 
-        Assert.Equal("src/Feature.cs", context.GetProjectRelativePath(Path.Combine(root.DirectoryPath, "src", "Feature.cs")));
-        var exception = Assert.Throws<AnalysisFailedException>(() => context.GetProjectRelativePath(Path.Combine(root.DirectoryPath, "..", "Outside.cs")));
+        Assert.Equal("src/Feature.cs", context.GetProjectRelativePath(Path.Combine(workspace.RootPath, "src", "Feature.cs")));
+        var exception = Assert.Throws<AnalysisFailedException>(() => context.GetProjectRelativePath(Path.Combine(workspace.RootPath, "..", "Outside.cs")));
         Assert.Contains("outside the project root", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public async Task CurrentFindingValidator_PreservesOutsideRootAnalysisFailure()
     {
-        using var workspace = new AdhocWorkspace();
-        using var root = TestTempDirectory.Create();
-        var projectId = ProjectId.CreateNewId();
-        workspace.AddProject(ProjectInfo.Create(
-            projectId,
-            VersionStamp.Create(),
-            "Example",
-            "Example",
-            LanguageNames.CSharp,
-            filePath: Path.Combine(root.DirectoryPath, "src", "Example.csproj")));
-        workspace.AddDocument(DocumentInfo.Create(
-            DocumentId.CreateNewId(projectId),
-            "Outside.cs",
-            filePath: Path.Combine(root.DirectoryPath, "..", "Outside.cs"),
-            loader: TextLoader.From(TextAndVersion.Create(SourceText.From("class Outside {}"), VersionStamp.Create()))));
-        var context = new ReviewContext(workspace.CurrentSolution, root.DirectoryPath);
+        using var workspace = new FastTestWorkspace();
+        var projectId = workspace.AddProject("Example", parseOptions: CSharpParseOptions.Default,
+            metadataReferences: Array.Empty<MetadataReference>(),
+            projectFilePath: Path.Combine(workspace.RootPath, "src", "Example.csproj"));
+        workspace.AddDocument(projectId, "Outside.cs", "class Outside {}", Path.Combine(workspace.RootPath, "..", "Outside.cs"));
+        var context = workspace.CreateReviewContext();
 
         var exception = await Assert.ThrowsAsync<AnalysisFailedException>(() => new CurrentFindingValidator()
             .ValidateAndSortAsync("example-analysis", context, Array.Empty<FindingDraft>()));
@@ -169,17 +158,12 @@ public sealed class ReviewSourceClassifierTests
     [Fact]
     public async Task CurrentFindingValidator_RejectsEmptyOrNonRelatedSubjectSymbols()
     {
-        using var workspace = new AdhocWorkspace();
-        using var root = TestTempDirectory.Create();
-        var projectPath = Path.Combine(root.DirectoryPath, "Example.csproj");
+        using var workspace = new FastTestWorkspace();
+        var projectPath = Path.Combine(workspace.RootPath, "Example.csproj");
         var project = AddProject(workspace, "Example", projectPath);
-        var sourcePath = Path.Combine(root.DirectoryPath, "Example.cs");
-        workspace.AddDocument(DocumentInfo.Create(
-            DocumentId.CreateNewId(project.Id),
-            "Example.cs",
-            filePath: sourcePath,
-            loader: TextLoader.From(TextAndVersion.Create(SourceText.From("class Example {}"), VersionStamp.Create()))));
-        var context = new ReviewContext(workspace.CurrentSolution, root.DirectoryPath);
+        var sourcePath = Path.Combine(workspace.RootPath, "Example.cs");
+        workspace.AddDocument(project.Id, "Example.cs", "class Example {}", sourcePath);
+        var context = workspace.CreateReviewContext();
         var related = new FindingSymbol("Example.csproj", "Example.cs", "T:Example", 1);
         var evidence = new FindingEvidence("Example.cs", 1, "Example", "Candidate declaration.", "class Example {}");
         var invalidSubjects = new[]
@@ -202,45 +186,29 @@ public sealed class ReviewSourceClassifierTests
     }
 
     private static Project AddProject(
-        AdhocWorkspace workspace,
+        FastTestWorkspace workspace,
         string name,
         string filePath,
         IEnumerable<MetadataReference>? metadataReferences = null)
     {
-        var projectId = ProjectId.CreateNewId();
-        workspace.AddProject(ProjectInfo.Create(
-            projectId,
-            VersionStamp.Create(),
+        var projectId = workspace.AddProject(
             name,
-            name,
-            LanguageNames.CSharp,
-            filePath: filePath,
-            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            metadataReferences: metadataReferences));
-        return workspace.CurrentSolution.GetProject(projectId)!;
+            parseOptions: CSharpParseOptions.Default,
+            projectFilePath: filePath,
+            metadataReferences: metadataReferences ?? Array.Empty<MetadataReference>());
+        return workspace.Solution.GetProject(projectId)!;
     }
 
     private static DocumentFixture CreateDocument(string path, string source)
     {
-        var workspace = new AdhocWorkspace();
-        var projectId = ProjectId.CreateNewId();
+        var workspace = new FastTestWorkspace();
         var directory = Path.GetDirectoryName(path) ?? "src";
-        workspace.AddProject(ProjectInfo.Create(
-            projectId,
-            VersionStamp.Create(),
-            "Example",
-            "Example",
-            LanguageNames.CSharp,
-            filePath: Path.Combine(Path.GetTempPath(), "AiNetReview", "Example.csproj"),
-            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)));
-        var documentId = DocumentId.CreateNewId(projectId);
-        workspace.AddDocument(DocumentInfo.Create(
-            documentId,
-            Path.GetFileName(path),
-            filePath: path,
-            folders: directory.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, '/'], StringSplitOptions.RemoveEmptyEntries),
-            loader: TextLoader.From(TextAndVersion.Create(SourceText.From(source), VersionStamp.Create()))));
-        return new DocumentFixture(workspace, workspace.CurrentSolution.GetDocument(documentId)!);
+        var projectId = workspace.AddProject("Example", parseOptions: CSharpParseOptions.Default,
+            metadataReferences: Array.Empty<MetadataReference>(),
+            projectFilePath: Path.Combine(Path.GetTempPath(), "AiNetReview", "Example.csproj"));
+        var documentId = workspace.AddDocument(projectId, Path.GetFileName(path), source, path,
+            directory.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, '/'], StringSplitOptions.RemoveEmptyEntries));
+        return new DocumentFixture(workspace, workspace.Solution.GetDocument(documentId)!);
     }
 
     private static IEnumerable<MetadataReference> PlatformReferences() =>
@@ -248,7 +216,7 @@ public sealed class ReviewSourceClassifierTests
         .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
         .Select(static assemblyPath => MetadataReference.CreateFromFile(assemblyPath));
 
-    private sealed class DocumentFixture(AdhocWorkspace workspace, Document document) : IDisposable
+    private sealed class DocumentFixture(FastTestWorkspace workspace, Document document) : IDisposable
     {
         public Document Document { get; } = document;
 

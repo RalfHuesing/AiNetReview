@@ -710,38 +710,32 @@ public sealed class CodeSizeCandidatesAnalysisTests
     [SuppressMessage("Reliability", "CA2000", Justification = "The returned AnalysisFixture owns and disposes the workspace.")]
     private static AnalysisFixture CreateContext(params ProjectSpec[] projects)
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-CodeSize-" + Guid.NewGuid().ToString("N"));
+        var workspace = new FastTestWorkspace();
+        var root = workspace.RootPath;
         foreach (var spec in projects)
         {
-            var projectId = ProjectId.CreateNewId();
             var projectDirectory = Path.Combine(root, spec.Name);
-            var projectInfo = ProjectInfo.Create(
-                projectId,
-                VersionStamp.Create(),
+            var projectId = workspace.AddProject(
                 spec.Name,
-                spec.Name,
-                LanguageNames.CSharp,
-                filePath: Path.Combine(projectDirectory, spec.Name + ".csproj"),
-                compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+                parseOptions: CSharpParseOptions.Default,
+                projectFilePath: Path.Combine(projectDirectory, spec.Name + ".csproj"),
                 metadataReferences: PlatformReferences());
-            workspace.AddProject(projectInfo);
             var documents = spec.Documents ?? [new DocumentSpec("Example.cs", spec.Source)];
             foreach (var document in documents)
             {
-                workspace.AddDocument(DocumentInfo.Create(
-                    DocumentId.CreateNewId(projectId),
+                workspace.AddDocument(
+                    projectId,
                     document.Name,
-                    filePath: document.FilePath is not null
+                    document.Source,
+                    document.FilePath is not null
                         ? Path.Combine(projectDirectory, document.FilePath)
                         : document.ShareAcrossProjects
                             ? Path.Combine(root, document.Name)
-                            : Path.Combine(projectDirectory, document.Name),
-                    loader: TextLoader.From(TextAndVersion.Create(SourceText.From(document.Source), VersionStamp.Create()))));
+                            : Path.Combine(projectDirectory, document.Name));
             }
         }
 
-        return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+        return new AnalysisFixture(workspace, workspace.CreateReviewContext());
     }
 
     private static IEnumerable<MetadataReference> PlatformReferences() =>
@@ -758,12 +752,12 @@ public sealed class CodeSizeCandidatesAnalysisTests
 
     private sealed record ProjectSpec(string Name, string Source, IReadOnlyList<DocumentSpec>? Documents = null);
 
-    private sealed class AnalysisFixture(AdhocWorkspace workspace, ReviewContext context) : IDisposable
+    private sealed class AnalysisFixture(FastTestWorkspace workspace, ReviewContext context) : IDisposable
     {
-        public AdhocWorkspace Workspace { get; } = workspace;
+        public AdhocWorkspace Workspace { get; } = workspace.Workspace;
 
         public ReviewContext Context { get; } = context;
 
-        public void Dispose() => Workspace.Dispose();
+        public void Dispose() => workspace.Dispose();
     }
 }

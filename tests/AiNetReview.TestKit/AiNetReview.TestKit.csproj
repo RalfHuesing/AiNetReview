@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-
-
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="AiNetReview.FastTests" />

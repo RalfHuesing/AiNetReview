@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using AiNetReview.IntegrationTests;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.Reporting;
@@ -34,8 +35,8 @@ public sealed class ReviewMapsIntegrationTests
         await File.WriteAllTextAsync(Path.Combine(productionDirectory, "First.cs"), firstSource);
         await File.WriteAllTextAsync(Path.Combine(productionDirectory, "Second.cs"), secondSource);
         await File.WriteAllTextAsync(Path.Combine(testsDirectory, "WidgetTests.cs"), testsSource);
-        await RestoreProjectAsync(productionProjectPath, productionDirectory);
-        await RestoreProjectAsync(testsProjectPath, testsDirectory);
+        await IntegrationTestHelpers.RestoreAsync(productionProjectPath, productionDirectory);
+        await IntegrationTestHelpers.RestoreAsync(testsProjectPath, testsDirectory);
         await File.WriteAllTextAsync(Path.Combine(root, "Sample.slnx"),
             "<Solution><Project Path=\"src/Domain/Domain.csproj\" /><Project Path=\"tests/Domain.Tests/Domain.Tests.csproj\" /></Solution>");
 
@@ -164,22 +165,4 @@ public sealed class ReviewMapsIntegrationTests
         }
     }
 
-    private static async Task RestoreProjectAsync(string projectFile, string workingDirectory)
-    {
-        var startInfo = new ProcessStartInfo("dotnet")
-        {
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        startInfo.ArgumentList.Add("restore");
-        startInfo.ArgumentList.Add(projectFile);
-        startInfo.ArgumentList.Add("--ignore-failed-sources");
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start dotnet restore.");
-        var output = process.StandardOutput.ReadToEndAsync();
-        var error = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        Assert.True(process.ExitCode == 0, $"dotnet restore failed: {await output}{await error}");
-    }
 }

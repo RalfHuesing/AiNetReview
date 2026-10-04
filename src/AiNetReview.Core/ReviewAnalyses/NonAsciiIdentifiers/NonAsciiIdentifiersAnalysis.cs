@@ -15,6 +15,8 @@ using Microsoft.CodeAnalysis.Text;
 /// <summary>Reports identifiers that contain non-ASCII characters in production or test C# code.</summary>
 public sealed class NonAsciiIdentifiersAnalysis : IReviewAnalysis
 {
+    public IReviewFindingPresenter FindingPresenter { get; } = new NonAsciiIdentifiersFindingPresenter();
+
     private static readonly IReadOnlyDictionary<string, double> EmptyMetrics =
         new Dictionary<string, double>(StringComparer.Ordinal);
 

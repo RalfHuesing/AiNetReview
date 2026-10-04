@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using AiNetReview.Core.Analysis;
@@ -14,6 +13,8 @@ using Microsoft.CodeAnalysis.Text;
 /// <summary>Reports exact repeated statement fragments after local and parameter name normalization.</summary>
 public sealed class StructuralDuplicationCandidatesAnalysis : IReviewAnalysis
 {
+    public IReviewFindingPresenter FindingPresenter { get; } = new StructuralDuplicationCandidatesFindingPresenter();
+
     private const string ReviewQuestion = "Is this repeated structure intentional, or would a shared implementation improve maintenance without hiding meaningful differences?";
     private const string Explanation = "Statement and control-flow shape, operators, literals, and member names are retained; bound local and parameter names are normalized. Matching member spelling does not establish equivalent API behavior.";
 
@@ -91,8 +92,9 @@ public sealed class StructuralDuplicationCandidatesAnalysis : IReviewAnalysis
             occurrence.SourcePath,
             start.Line + 1,
             occurrence.OwnerId,
-            $"project={JsonSerializer.Serialize(occurrence.ProjectPath)};start={start.Line + 1}:{start.Character + 1};end={end.Line + 1}:{end.Character + 1}",
-            snippet);
+            "Repeated statement fragment.",
+            snippet,
+            SourceRange: new FindingSourceRange(occurrence.ProjectPath, start.Line + 1, start.Character + 1, end.Line + 1, end.Character + 1));
     }
 
     private static int GetFirstLine(StructuralDuplicateDetector.StructuralDuplicateOccurrence occurrence) =>

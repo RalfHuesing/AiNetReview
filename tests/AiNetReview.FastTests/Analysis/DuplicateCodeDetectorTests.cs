@@ -266,44 +266,29 @@ public sealed class DuplicateCodeDetectorTests
 
     private static AnalysisFixture CreateFixture(params (string Project, string File, string Source)[] documents)
     {
-        var workspace = new AdhocWorkspace();
-        var root = TestTempDirectory.Create();
+        var workspace = new FastTestWorkspace();
         var groups = documents.GroupBy(static document => document.Project, StringComparer.Ordinal).ToArray();
-        var projectIds = groups.ToDictionary(static group => group.Key, static _ => ProjectId.CreateNewId(), StringComparer.Ordinal);
+        var projectIds = new Dictionary<string, ProjectId>(StringComparer.Ordinal);
         foreach (var group in groups)
         {
-            workspace.AddProject(ProjectInfo.Create(
-                projectIds[group.Key], VersionStamp.Create(), group.Key, group.Key, LanguageNames.CSharp,
-                filePath: Path.Combine(root.DirectoryPath, group.Key + ".csproj"),
-                compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-                parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
-                metadataReferences: FastTestReferences.CreatePlatformReferences()));
+            projectIds.Add(group.Key, workspace.AddProject(group.Key));
         }
 
         foreach (var document in documents)
         {
-            workspace.AddDocument(DocumentInfo.Create(
-                DocumentId.CreateNewId(projectIds[document.Project]), document.File,
-                filePath: Path.Combine(root.DirectoryPath, document.File),
-                loader: TextLoader.From(TextAndVersion.Create(SourceText.From(document.Source), VersionStamp.Create()))));
+            workspace.AddDocument(projectIds[document.Project], document.File, document.Source);
         }
 
-        if (!workspace.TryApplyChanges(workspace.CurrentSolution))
-        {
-            throw new InvalidOperationException("Could not initialize Roslyn test workspace.");
-        }
-
-        return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root.DirectoryPath), root);
+        return new AnalysisFixture(workspace, workspace.CreateReviewContext());
     }
 
-    private sealed class AnalysisFixture(AdhocWorkspace workspace, ReviewContext context, IDisposable root) : IDisposable
+    private sealed class AnalysisFixture(FastTestWorkspace workspace, ReviewContext context) : IDisposable
     {
         public ReviewContext Context { get; } = context;
 
         public void Dispose()
         {
             workspace.Dispose();
-            root.Dispose();
         }
     }
 }

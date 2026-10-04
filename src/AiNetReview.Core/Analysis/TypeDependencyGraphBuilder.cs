@@ -143,7 +143,7 @@ internal static class TypeDependencyGraphBuilder
                 nodes.Add(identity, node);
             }
 
-            node.Declarations.Add(new TypeDependencyDeclarationLocation(
+            node.AddDeclaration(new TypeDependencyDeclarationLocation(
                 declaration.SourcePath,
                 declaration.Syntax.Span,
                 declaration.Project.Project.Id,
@@ -160,9 +160,15 @@ internal static class TypeDependencyGraphBuilder
             collector.CollectOperations(declaration, source);
         }
 
+        var edges = collector.ToEdges();
+        foreach (var node in nodes.Values)
+        {
+            node.Freeze();
+        }
+
         return new TypeDependencyGraph(
-            nodes.Values.OrderBy(static node => node.StableId, StringComparer.Ordinal).ToArray(),
-            collector.ToEdges());
+            Array.AsReadOnly(nodes.Values.OrderBy(static node => node.StableId, StringComparer.Ordinal).ToArray()),
+            edges);
     }
 
     private static bool IsCSharpDocument(Document document) =>
@@ -397,15 +403,15 @@ internal static class TypeDependencyGraphBuilder
             return false;
         }
 
-        public IReadOnlyList<TypeDependencyEdge> ToEdges() => edges
+        public IReadOnlyList<TypeDependencyEdge> ToEdges() => Array.AsReadOnly(edges
             .OrderBy(pair => nodes[pair.Key.From].StableId, StringComparer.Ordinal)
             .ThenBy(pair => nodes[pair.Key.To].StableId, StringComparer.Ordinal)
             .Select(pair => new TypeDependencyEdge(
                 nodes[pair.Key.From],
                 nodes[pair.Key.To],
-                pair.Value.OrderBy(static witness => witness.Key)
-                    .Select(static witness => witness.Value).ToArray()))
-            .ToArray();
+                Array.AsReadOnly(pair.Value.OrderBy(static witness => witness.Key)
+                    .Select(static witness => witness.Value).ToArray())))
+            .ToArray());
 
         private static IEnumerable<SyntaxNode> GetOperationRoots(SyntaxNode typeSyntax)
         {
@@ -888,11 +894,27 @@ internal sealed class TypeDependencyNode(
     bool isTestProject,
     List<TypeDependencyDeclarationLocation> declarations)
 {
+    private List<TypeDependencyDeclarationLocation>? declarationBuilder = declarations;
+
     public INamedTypeSymbol Symbol { get; } = symbol;
     public ProjectId ProjectId { get; } = projectId;
     public string ProjectName { get; } = projectName;
     public bool IsTestProject { get; } = isTestProject;
-    public List<TypeDependencyDeclarationLocation> Declarations { get; } = declarations;
+    public IReadOnlyList<TypeDependencyDeclarationLocation> Declarations { get; private set; } = declarations.AsReadOnly();
+
+    public void AddDeclaration(TypeDependencyDeclarationLocation declaration) =>
+        (declarationBuilder ?? throw new InvalidOperationException("Type dependency declarations are already finalized.")).Add(declaration);
+
+    public void Freeze()
+    {
+        if (declarationBuilder is null)
+        {
+            return;
+        }
+
+        Declarations = Array.AsReadOnly(declarationBuilder.ToArray());
+        declarationBuilder = null;
+    }
     public string StableId { get; } = $"{symbol.ContainingAssembly?.Identity.Name}:{projectPath.Replace('\\', '/')}/{projectName}:{DocumentationCommentId.CreateDeclarationId(symbol.OriginalDefinition) ?? symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}";
 }
 

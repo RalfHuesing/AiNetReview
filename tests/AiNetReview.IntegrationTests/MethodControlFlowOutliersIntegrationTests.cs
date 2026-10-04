@@ -31,8 +31,8 @@ public sealed class MethodControlFlowOutliersIntegrationTests
         var source = CreateMethodsWithDecisionCounts([8, 10, 11]);
         await File.WriteAllTextAsync(Path.Combine(productionProject, "Class1.cs"), source);
         await File.WriteAllTextAsync(Path.Combine(testProject, "Class1.cs"), source);
-        await RestoreProjectAsync(productionFile, productionProject);
-        await RestoreProjectAsync(testFile, testProject);
+        await IntegrationTestHelpers.RestoreAsync(productionFile, productionProject);
+        await IntegrationTestHelpers.RestoreAsync(testFile, testProject);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
             "<Solution><Project Path=\"Sample/Sample.csproj\" /><Project Path=\"Tests/Sample.Tests.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
@@ -111,7 +111,7 @@ public sealed class MethodControlFlowOutliersIntegrationTests
             + "\n"
             + "    public int Simple(int value) => value + 1;\n"
             + "}\n");
-        await RestoreProjectAsync(projectFile, projectDirectory);
+        await IntegrationTestHelpers.RestoreAsync(projectFile, projectDirectory);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
             "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
@@ -159,26 +159,6 @@ public sealed class MethodControlFlowOutliersIntegrationTests
         Assert.Contains("## Findings", report, StringComparison.Ordinal);
         Assert.Contains("HighlyBranched", report, StringComparison.Ordinal);
         Assert.DoesNotContain("public int", report, StringComparison.Ordinal);
-    }
-
-    private static async Task RestoreProjectAsync(string projectFile, string workingDirectory)
-    {
-        var startInfo = new ProcessStartInfo("dotnet")
-        {
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        startInfo.ArgumentList.Add("restore");
-        startInfo.ArgumentList.Add(projectFile);
-        startInfo.ArgumentList.Add("--ignore-failed-sources");
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Could not start dotnet restore.");
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        Assert.True(process.ExitCode == 0, $"dotnet restore failed: {await stdout}{await stderr}");
     }
 
     private static async Task<(int ExitCode, string Output, string Error)> InvokeAsync(

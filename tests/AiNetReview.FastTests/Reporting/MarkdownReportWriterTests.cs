@@ -3,6 +3,7 @@ namespace AiNetReview.FastTests.Reporting;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -22,6 +23,68 @@ using Microsoft.CodeAnalysis;
 
 public sealed class MarkdownReportWriterTests
 {
+    [Fact]
+    public async Task WriteAsync_AllBuiltInPresentations_MatchesCanonicalBaseline()
+    {
+        using var temp = TestTempDirectory.Create();
+        IReviewAnalysis[] analyses =
+        [
+            new AiNetReview.Core.ReviewAnalyses.DeadCodeCandidates.DeadCodeCandidatesAnalysis(),
+            new AiNetReview.Core.ReviewAnalyses.MethodControlFlowOutliers.MethodControlFlowOutliersAnalysis(),
+            new AiNetReview.Core.ReviewAnalyses.DuplicateCodeCandidates.DuplicateCodeCandidatesAnalysis(),
+            new StructuralDuplicationCandidatesAnalysis(),
+            new AiNetReview.Core.ReviewAnalyses.IndirectionDriftCandidates.IndirectionDriftCandidatesAnalysis(),
+            new TypeDependencyCycleCandidatesAnalysis(),
+            new AiNetReview.Core.ReviewAnalyses.TypeDependencyHubCandidates.TypeDependencyHubCandidatesAnalysis(),
+            new NonAsciiIdentifiersAnalysis(),
+            new MissingTestEvidenceCandidatesAnalysis(),
+            new AiNetReview.Core.ReviewAnalyses.CodeSizeCandidates.CodeSizeCandidatesAnalysis(),
+            new ReportAnalysis("fixture-analysis", "Fixture analysis", "generic"),
+        ];
+        var config = CreateConfig(temp.DirectoryPath, analyses);
+        var drafts = analyses.Select((analysis, index) => CreatePresentationFixture(analysis, index)).ToArray();
+        var findings = drafts.Select(item => CreateReviewFinding(item.Analysis.Descriptor.AnalysisId, item.Finding)).ToArray();
+        var result = new ReviewRunResult(analyses.Select((analysis, index) => new ReviewAnalysisRunResult(
+            analysis.Descriptor.AnalysisId, new ReviewAnalysisResult([drafts[index].Finding]))).ToArray())
+        {
+            Findings = findings,
+        };
+
+        var published = await new MarkdownReportWriter().WriteAsync(config, result);
+        var runDirectory = Path.Combine(config.ResolvedOutputDirectory, published.RunId);
+        var baseline = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var path in Directory.EnumerateFiles(runDirectory, "*.md", SearchOption.AllDirectories))
+        {
+            var relativePath = Path.GetRelativePath(runDirectory, path).Replace('\\', '/');
+            var content = await File.ReadAllTextAsync(path);
+            content = content.Replace(published.RunId, "<run-id>", StringComparison.Ordinal)
+                .Replace(config.ProjectRoot, "<project-root>", StringComparison.Ordinal);
+            baseline.Add(relativePath, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant());
+        }
+
+        Assert.Equal(new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["index.md"] = "a22747e1a31928669b2fea2de013f353a486ec0cf9dfe36bbe52bae8dffce501",
+            ["maps/audit/index.md"] = "f16f7b6567aa7f4b8afbe92c3edf4cd2a112a1e835d1e3294e8604b331ca1fb2",
+            ["maps/index.md"] = "fd7fe73b6f6670315d175eaee284cfb8d818da83a0ca3e5d02f62bab616be7a6",
+            ["maps/projects.md"] = "872ee6307a49406184625af6986778cd8e707caf6781495e58b92f76d0964b59",
+            ["mixed/index.md"] = "20b3fa13c9d6ceaf69b62fab0f64c1adc7dd6ddd578d882d8c710c1d24638afc",
+            ["production/code-size-candidates.md"] = "9ab628d989cf81abcd80d0b80fd7d7bbeb0134c8a16160e83b4c8472ec212dd4",
+            ["production/dead-code-candidates.md"] = "02d2b54e259e80189d43d8c601e36f9b69595a54caba9a0584ff2c5dd0cb4638",
+            ["production/duplicate-code-candidates.md"] = "2d0158a121b147c5beaf708986fd69a2485c540822f10d97654bbe295698dca8",
+            ["production/fixture-analysis.md"] = "0ad2a86b6f1d4a14c11935f1e025dec328291491b94115d798cbc2f961fc59bf",
+            ["production/index.md"] = "041ae4ba331be99f2755e76c0781ecf02b223e239b4391ac64823d538c5d00a4",
+            ["production/indirection-drift-candidates.md"] = "6ad06242c90dbb1dfbca7033edc6d074e46b6862e511cb98c4f515caeca049f3",
+            ["production/method-control-flow-outliers.md"] = "3c8067934fe2f21175a7bcad465793c2e232639701c20e575fb011fc8174a261",
+            ["production/missing-test-evidence-candidates.md"] = "949b1d6cf2cb19e4634179010357deae188c678b818db4b3e30aa0fef98067ef",
+            ["production/non-ascii-identifiers.md"] = "db7470c4fd5310f7db7bf69fb202c40270878d36226d5c20d5626dfa9e050de7",
+            ["production/structural-duplication-candidates.md"] = "f01686468b7c9f882106b1fc8d35a4afc74bb1d418f2edc3d4b3424126c187b3",
+            ["production/type-dependency-cycle-candidates.md"] = "b39438e28fb18fe3a3288a179bc247ab65d3b5991e0845d510f9ca12bbe256ee",
+            ["production/type-dependency-hub-candidates.md"] = "0542f8224ca1a6e3848fddf47c8eea4f47046827f8a992f2cc158d40a68704c7",
+            ["tests/index.md"] = "6abc030bba42fd41f9243cc050d9e04f19942739264aa94737766f4e226e9ce1",
+        }, baseline);
+    }
+
     [Fact]
     public async Task WriteAsync_PublishesAllCycleFindingsInTheSingleCompleteAudit()
     {
@@ -238,11 +301,14 @@ public sealed class MarkdownReportWriterTests
             },
             [
                 new FindingEvidence(sourcePath, 3, owner,
-                    $"project={JsonSerializer.Serialize(projectPath)};start=3:5;end=7:10", "int x = value;"),
+                    $"project={JsonSerializer.Serialize(projectPath)};start=3:5;end=7:10", "int x = value;",
+                    SourceRange: new FindingSourceRange(projectPath, 3, 5, 7, 10)),
                 new FindingEvidence(sourcePath, 4, owner,
-                    $"project={JsonSerializer.Serialize(projectPath)};start=4:1;end=8:2", "int x = value;"),
+                    $"project={JsonSerializer.Serialize(projectPath)};start=4:1;end=8:2", "int x = value;",
+                    SourceRange: new FindingSourceRange(projectPath, 4, 1, 8, 2)),
                 new FindingEvidence(sourcePath, 9, "M:Product.Other.Run(System.Int32)",
-                    $"project={JsonSerializer.Serialize(projectPath)};start=9:2;end=12:1", "int y = input;"),
+                    $"project={JsonSerializer.Serialize(projectPath)};start=9:2;end=12:1", "int y = input;",
+                    SourceRange: new FindingSourceRange(projectPath, 9, 2, 12, 1)),
             ],
             [new FindingSymbol(projectPath, sourcePath, owner, 3),
                 new FindingSymbol(projectPath, sourcePath, "M:Product.Other.Run(System.Int32)", 9)]);
@@ -793,6 +859,123 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("production", mixedReport, StringComparison.Ordinal);
         Assert.Contains("tests", mixedReport, StringComparison.Ordinal);
         Assert.Contains("flow-analysis.md", mixedReport, StringComparison.Ordinal);
+    }
+
+    private static ReviewFinding CreateReviewFinding(string analysisId, FindingDraft finding)
+    {
+        var symbols = finding.RelatedSymbols;
+        var occurrences = symbols.Select(static symbol => new ReviewFindingOccurrence(symbol, ProjectRole.Production)).ToArray();
+        return new ReviewFinding(analysisId, finding, finding.Evidence.Select(static evidence => evidence.SourcePath)
+            .Append(finding.SourcePath).Distinct(StringComparer.Ordinal).ToArray(), [])
+        {
+            Occurrences = occurrences,
+            SubjectOccurrences = finding.SubjectSymbols.Select(static symbol => new ReviewFindingOccurrence(symbol, ProjectRole.Production)).ToArray(),
+        };
+    }
+
+    private static (IReviewAnalysis Analysis, FindingDraft Finding) CreatePresentationFixture(IReviewAnalysis analysis, int index)
+    {
+        const string projectPath = "Sample/Sample.csproj";
+        const string sourcePath = "src/Sample.cs";
+        var identity = $"M:Sample.Method{index}.Run";
+        var related = new[]
+        {
+            new FindingSymbol(projectPath, sourcePath, identity, 10),
+            new FindingSymbol(projectPath, "src/Other.cs", $"M:Sample.Other{index}.Run", 20),
+        }.Take(analysis.Descriptor.AnalysisId == "fixture-analysis" ? 1 : 2).ToArray();
+        var evidence = new List<FindingEvidence>
+        {
+            new(sourcePath, 10, identity, "baseline evidence detail", "void Run()"),
+        };
+        var discriminator = "fixture";
+        var rationale = $"Baseline rationale for {analysis.Descriptor.AnalysisId}.";
+        var metrics = new Dictionary<string, double>(StringComparer.Ordinal);
+        switch (analysis.Descriptor.AnalysisId)
+        {
+            case "dead-code-candidates":
+                discriminator = "type-candidate";
+                break;
+            case "method-control-flow-outliers":
+                metrics["decisionCount"] = 10;
+                metrics["decisionCutoff"] = 8;
+                metrics["decisionConstructCount"] = 3;
+                metrics["maxDecisionNesting"] = 4;
+                metrics["nestingCutoff"] = 4;
+                break;
+            case "duplicate-code-candidates":
+                metrics["memberCount"] = 2;
+                metrics["similarityScore"] = .9;
+                metrics["minimumSimilarityThreshold"] = .8;
+                evidence[0] = new FindingEvidence(sourcePath, 10, identity,
+                    "40 body tokens", "void Run()", RelatedSymbol: related[0]);
+                evidence.Add(new FindingEvidence("src/Other.cs", 20, related[1].SymbolId,
+                    "42 body tokens", "void Run()", RelatedSymbol: related[1]));
+                break;
+            case "structural-duplication-candidates":
+                discriminator = "structural-duplicate:1:2";
+                metrics["memberCount"] = 2;
+                metrics["executableCount"] = 2;
+                metrics["statementCount"] = 3;
+                metrics["tokenCount"] = 60;
+                evidence[0] = new FindingEvidence(sourcePath, 10, identity,
+                    $"project={JsonSerializer.Serialize(projectPath)};start=10:3;end=12:4", "void Run()",
+                    SourceRange: new FindingSourceRange(projectPath, 10, 3, 12, 4));
+                evidence.Add(new FindingEvidence("src/Other.cs", 20, related[1].SymbolId,
+                    $"project={JsonSerializer.Serialize(projectPath)};start=20:1;end=22:2", "void Run()",
+                    SourceRange: new FindingSourceRange(projectPath, 20, 1, 22, 2)));
+                break;
+            case "indirection-drift-candidates":
+                metrics["forwardingEdgeCount"] = 2;
+                metrics["distinctTypeCount"] = 2;
+                metrics["distinctFileCount"] = 2;
+                evidence.Add(new FindingEvidence("src/Other.cs", 20, related[1].SymbolId, "Delegates to the next operation.", "void Run()"));
+                break;
+            case "type-dependency-cycle-candidates":
+                metrics["typeCount"] = 3;
+                metrics["declarationFileCount"] = 3;
+                metrics["projectCount"] = 1;
+                metrics["internalEdgeCount"] = 3;
+                evidence.Add(new FindingEvidence("src/Other.cs", 20, related[1].SymbolId, "Participating declaration.", "class Other"));
+                break;
+            case "type-dependency-hub-candidates":
+                metrics["fanIn"] = 10;
+                metrics["minFanIn"] = 10;
+                metrics["fanInNeighborFileCount"] = 4;
+                metrics["fanInNeighborProjectCount"] = 2;
+                metrics["fanOut"] = 11;
+                metrics["minFanOut"] = 10;
+                metrics["fanOutNeighborFileCount"] = 5;
+                metrics["fanOutNeighborProjectCount"] = 3;
+                metrics["testConsumerCount"] = 2;
+                break;
+            case "non-ascii-identifiers":
+                rationale = "The type identifier 'BestätigungsService' contains non-ASCII characters (e.g. 'ä').";
+                break;
+            case "missing-test-evidence-candidates":
+                discriminator = "no-static-test-path";
+                metrics["decisionCount"] = 4;
+                metrics["maxDecisionNesting"] = 2;
+                metrics["attributionUncertain"] = 0;
+                evidence.Add(new FindingEvidence("tests/SampleTests.cs", 7, "M:Tests.Sample.Run", "Direct test path.", "Run();"));
+                break;
+            case "code-size-candidates":
+                discriminator = "member-size";
+                metrics["memberCodeLines"] = 35;
+                metrics["decisionCount"] = 10;
+                metrics["decisionConstructCount"] = 3;
+                metrics["maxDecisionNesting"] = 4;
+                metrics["relativePathSelected"] = 1;
+                metrics["minMemberCodeLines"] = 20;
+                metrics["percentile"] = 90;
+                metrics["memberPercentileValue"] = 25;
+                metrics["extremePathSelected"] = 0;
+                metrics["extremeMemberCodeLines"] = 100;
+                break;
+        }
+
+        var finding = new FindingDraft(projectPath, sourcePath, identity, discriminator, 10, rationale, metrics, evidence,
+            relatedSymbols: related, subjectSymbols: related.Take(1));
+        return (analysis, finding);
     }
 
     private static ReviewConfig CreateConfig(string root, params IReviewAnalysis[] analyses) => CreateConfig(root, true, analyses);

@@ -223,59 +223,31 @@ public sealed class NonAsciiIdentifiersAnalysisTests
 
     private static AnalysisFixture CreateFixture(params (string Project, string File, string Source)[] documents)
     {
-        var root = TestTempDirectory.Create();
-        var workspace = new AdhocWorkspace();
+        var workspace = new FastTestWorkspace();
         var projectGroups = documents.GroupBy(static doc => doc.Project, StringComparer.Ordinal);
-        var projectIds = projectGroups.ToDictionary(static group => group.Key, static _ => ProjectId.CreateNewId(), StringComparer.Ordinal);
+        var projectIds = new Dictionary<string, ProjectId>(StringComparer.Ordinal);
 
         foreach (var group in projectGroups)
         {
-            var projectDirectory = Path.Combine(root.DirectoryPath, group.Key);
-            Directory.CreateDirectory(projectDirectory);
-            workspace.AddProject(ProjectInfo.Create(
-                projectIds[group.Key],
-                VersionStamp.Create(),
-                group.Key,
-                group.Key,
-                LanguageNames.CSharp,
-                filePath: Path.Combine(projectDirectory, group.Key + ".csproj"),
-                compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-                parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
-                metadataReferences: FastTestReferences.CreatePlatformReferences()));
+            projectIds.Add(group.Key, workspace.AddProject(group.Key, projectFilePath: workspace.GetProjectFilePath(Path.Combine(group.Key, group.Key))));
         }
 
         foreach (var document in documents)
         {
-            var fullPath = Path.Combine(root.DirectoryPath, document.Project, document.File);
-            var dir = Path.GetDirectoryName(fullPath);
-            if (!string.IsNullOrEmpty(dir))
-            {
-                Directory.CreateDirectory(dir);
-            }
-
-            workspace.AddDocument(DocumentInfo.Create(
-                DocumentId.CreateNewId(projectIds[document.Project]),
-                document.File,
-                filePath: fullPath,
-                loader: TextLoader.From(TextAndVersion.Create(SourceText.From(document.Source), VersionStamp.Create()))));
+            workspace.AddDocument(projectIds[document.Project], document.File, document.Source,
+                Path.Combine(workspace.RootPath, document.Project, document.File));
         }
 
-        if (!workspace.TryApplyChanges(workspace.CurrentSolution))
-        {
-            throw new InvalidOperationException("Could not initialize Roslyn test workspace.");
-        }
-
-        return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root.DirectoryPath), root);
+        return new AnalysisFixture(workspace, workspace.CreateReviewContext());
     }
 
-    private sealed class AnalysisFixture(AdhocWorkspace workspace, ReviewContext context, IDisposable root) : IDisposable
+    private sealed class AnalysisFixture(FastTestWorkspace workspace, ReviewContext context) : IDisposable
     {
         public ReviewContext Context { get; } = context;
 
         public void Dispose()
         {
             workspace.Dispose();
-            root.Dispose();
         }
     }
 }

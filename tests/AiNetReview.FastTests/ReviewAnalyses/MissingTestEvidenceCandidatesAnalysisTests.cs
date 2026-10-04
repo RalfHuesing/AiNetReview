@@ -260,36 +260,23 @@ public sealed class MissingTestEvidenceCandidatesAnalysisTests
 
     private static Fixture CreateFixture(string productionSource, string? testSource)
     {
-#pragma warning disable CA2000 // Fixture takes ownership and disposes the workspace returned by this helper.
-        var workspace = new AdhocWorkspace();
-#pragma warning restore CA2000
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-MissingTestEvidenceAnalysis", Guid.NewGuid().ToString("N"));
-        var productionId = ProjectId.CreateNewId();
+        var workspace = new FastTestWorkspace();
         var references = FastTestReferences.CreatePlatformReferences().ToArray();
-        workspace.AddProject(ProjectInfo.Create(productionId, VersionStamp.Create(), "Example.Core", "Example.Core", LanguageNames.CSharp,
-            filePath: Path.Combine(root, "Example.Core.csproj"),
-            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary), metadataReferences: references));
-        AddDocument(workspace, productionId, "Worker.cs", productionSource, Path.Combine(root, "Worker.cs"));
+        var productionId = workspace.AddProject("Example.Core", metadataReferences: references);
+        workspace.AddDocument(productionId, "Worker.cs", productionSource);
 
         if (testSource is not null)
         {
-            var testId = ProjectId.CreateNewId();
-            workspace.AddProject(ProjectInfo.Create(testId, VersionStamp.Create(), "Example.Tests", "Example.Tests", LanguageNames.CSharp,
-                filePath: Path.Combine(root, "Example.Tests.csproj"),
-                compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+            var testId = workspace.AddProject("Example.Tests",
                 metadataReferences: references.Append(TestFrameworkReference.Reference),
-                projectReferences: [new ProjectReference(productionId)]));
-            AddDocument(workspace, testId, "Tests.cs", testSource, Path.Combine(root, "Tests.cs"));
+                projectReferences: [new ProjectReference(productionId)]);
+            workspace.AddDocument(testId, "Tests.cs", testSource);
         }
 
-        return new Fixture(workspace, new ReviewContext(workspace.CurrentSolution, root));
+        return new Fixture(workspace, workspace.CreateReviewContext());
     }
 
-    private static void AddDocument(AdhocWorkspace workspace, ProjectId projectId, string name, string source, string path) =>
-        workspace.AddDocument(DocumentInfo.Create(DocumentId.CreateNewId(projectId), name, filePath: path,
-            loader: TextLoader.From(TextAndVersion.Create(SourceText.From(source), VersionStamp.Create()))));
-
-    private sealed class Fixture(AdhocWorkspace workspace, ReviewContext context) : IDisposable
+    private sealed class Fixture(FastTestWorkspace workspace, ReviewContext context) : IDisposable
     {
         public ReviewContext Context { get; } = context;
 

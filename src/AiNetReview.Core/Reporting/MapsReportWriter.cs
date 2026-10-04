@@ -23,11 +23,11 @@ internal static class MapsReportWriter
         Directory.CreateDirectory(directory);
         if (maps is null)
         {
-            await MarkdownReportWriter.WriteUtf8Async(
+            await ReportIoUtils.WriteUtf8Async(
                 Path.Combine(directory, "index.md"),
                 FormatUnavailableIndex(),
                 cancellationToken).ConfigureAwait(false);
-            await MarkdownReportWriter.WriteUtf8Async(
+            await ReportIoUtils.WriteUtf8Async(
                 Path.Combine(directory, "projects.md"),
                 "# Projects\n\nProject maps were not supplied with this report result.\n",
                 cancellationToken).ConfigureAwait(false);
@@ -44,9 +44,9 @@ internal static class MapsReportWriter
                 .ThenBy(type => type.FullyQualifiedName, StringComparer.Ordinal).ToArray(), StringComparer.Ordinal);
         var typesById = maps.Types.ToDictionary(static type => type.Id, StringComparer.Ordinal);
 
-        await MarkdownReportWriter.WriteUtf8Async(Path.Combine(directory, "index.md"),
+        await ReportIoUtils.WriteUtf8Async(Path.Combine(directory, "index.md"),
             FormatIndex(projects, maps), cancellationToken).ConfigureAwait(false);
-        await MarkdownReportWriter.WriteUtf8Async(Path.Combine(directory, "projects.md"),
+        await ReportIoUtils.WriteUtf8Async(Path.Combine(directory, "projects.md"),
             FormatProjects(projects, projectByKey, filesByProject, typesByProject, cancellationToken), cancellationToken).ConfigureAwait(false);
 
         foreach (var project in projects)
@@ -60,13 +60,13 @@ internal static class MapsReportWriter
             var displayedNames = CreateTypeNames(projectTypes, projectEdges, typesById, projectByKey);
             var projectDirectory = GetProjectDirectory(directory, project);
             Directory.CreateDirectory(projectDirectory);
-            await MarkdownReportWriter.WriteUtf8Async(Path.Combine(projectDirectory, "structure.md"),
+            await ReportIoUtils.WriteUtf8Async(Path.Combine(projectDirectory, "structure.md"),
                 FormatStructure(project, projectFiles, projectTypes, cancellationToken), cancellationToken).ConfigureAwait(false);
-            await MarkdownReportWriter.WriteUtf8Async(Path.Combine(projectDirectory, "dependencies.md"),
+            await ReportIoUtils.WriteUtf8Async(Path.Combine(projectDirectory, "dependencies.md"),
                 FormatDependencyHub(project, projectEdges, typesById, projectByKey, cancellationToken), cancellationToken).ConfigureAwait(false);
-            await MarkdownReportWriter.WriteUtf8Async(Path.Combine(projectDirectory, "dependencies-outgoing.md"),
+            await ReportIoUtils.WriteUtf8Async(Path.Combine(projectDirectory, "dependencies-outgoing.md"),
                 FormatDependencyOutgoing(project, projectEdges, displayedNames, typesById, projectByKey, cancellationToken), cancellationToken).ConfigureAwait(false);
-            await MarkdownReportWriter.WriteUtf8Async(Path.Combine(projectDirectory, "dependencies-incoming.md"),
+            await ReportIoUtils.WriteUtf8Async(Path.Combine(projectDirectory, "dependencies-incoming.md"),
                 FormatDependencyIncoming(project, projectEdges, displayedNames, typesById, projectByKey, cancellationToken), cancellationToken).ConfigureAwait(false);
         }
     }
@@ -106,10 +106,10 @@ internal static class MapsReportWriter
         foreach (var project in projects)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            builder.Append("## ").Append(MarkdownReportWriter.FormatCodeSpan(project.ProjectPath)).Append("\n\n")
-                .Append("Key: ").Append(MarkdownReportWriter.FormatCodeSpan(project.Key)).Append("; role: ")
+            builder.Append("## ").Append(MarkdownFormatUtils.FormatCodeSpan(project.ProjectPath)).Append("\n\n")
+                .Append("Key: ").Append(MarkdownFormatUtils.FormatCodeSpan(project.Key)).Append("; role: ")
                 .Append(project.Role == ProjectRole.Tests ? "tests" : "production")
-                .Append("; classification: ").Append(MarkdownReportWriter.FormatCodeSpan(project.ClassificationReason.ToString())).Append(".\n\n")
+                .Append("; classification: ").Append(MarkdownFormatUtils.FormatCodeSpan(project.ClassificationReason.ToString())).Append(".\n\n")
                 .Append("Files: ").Append(filesByProject.GetValueOrDefault(project.Key, []).Length.ToString(CultureInfo.InvariantCulture))
                 .Append("; types: ").Append(typesByProject.GetValueOrDefault(project.Key, []).Length.ToString(CultureInfo.InvariantCulture)).Append(".\n\n")
                 .Append("Maps: ").Append(ProjectRoute(project, "structure.md"))
@@ -130,7 +130,7 @@ internal static class MapsReportWriter
                 {
                     throw new InvalidDataException($"Project reference target '{reference.TargetProjectKey}' is not present in prepared maps.");
                 }
-                builder.Append("- ").Append(MarkdownReportWriter.FormatCodeSpan(reference.TargetProjectPath))
+                builder.Append("- ").Append(MarkdownFormatUtils.FormatCodeSpan(reference.TargetProjectPath))
                     .Append(" (").Append(reference.TargetRole == ProjectRole.Tests ? "tests" : "production")
                     .Append("); ").Append(ProjectRoute(target, "structure.md")).Append('\n');
             }
@@ -147,8 +147,8 @@ internal static class MapsReportWriter
         CancellationToken cancellationToken)
     {
         var builder = new StringBuilder()
-            .Append("# Structure — ").Append(MarkdownReportWriter.FormatCodeSpan(project.ProjectPath)).Append("\n\n")
-            .Append("Project: ").Append(MarkdownReportWriter.FormatCodeSpan(project.Key)).Append("; sibling map: `dependencies.md`; projects: `../../projects.md`. File sizes are UTF-8 byte counts of loaded source text without a BOM.\n\n")
+            .Append("# Structure — ").Append(MarkdownFormatUtils.FormatCodeSpan(project.ProjectPath)).Append("\n\n")
+            .Append("Project: ").Append(MarkdownFormatUtils.FormatCodeSpan(project.Key)).Append("; sibling map: `dependencies.md`; projects: `../../projects.md`. File sizes are UTF-8 byte counts of loaded source text without a BOM.\n\n")
             .Append("## Folders\n\n| Folder | Files | UTF-8 bytes |\n| --- | ---: | ---: |\n");
 
         var folderTotals = new SortedDictionary<string, (int Count, long Bytes)>(StringComparer.Ordinal) { ["."] = (0, 0) };
@@ -168,7 +168,7 @@ internal static class MapsReportWriter
 
         foreach (var folder in folderTotals)
         {
-            builder.Append("| ").Append(MarkdownReportWriter.FormatCodeSpan(folder.Key)).Append(" | ")
+            builder.Append("| ").Append(MarkdownFormatUtils.FormatCodeSpan(folder.Key)).Append(" | ")
                 .Append(folder.Value.Count.ToString(CultureInfo.InvariantCulture)).Append(" | ")
                 .Append(folder.Value.Bytes.ToString(CultureInfo.InvariantCulture)).Append(" |\n");
         }
@@ -177,10 +177,10 @@ internal static class MapsReportWriter
         foreach (var file in files)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            builder.Append("| ").Append(MarkdownReportWriter.FormatCodeSpan(file.RelativePath)).Append(" | ")
+            builder.Append("| ").Append(MarkdownFormatUtils.FormatCodeSpan(file.RelativePath)).Append(" | ")
                 .Append(file.Lines.ToString(CultureInfo.InvariantCulture)).Append(" | ")
                 .Append(file.Utf8Bytes.ToString(CultureInfo.InvariantCulture)).Append(" | ")
-                .Append(file.Namespaces.Count == 0 ? "—" : string.Join(", ", file.Namespaces.Select(MarkdownReportWriter.FormatCodeSpan)))
+                .Append(file.Namespaces.Count == 0 ? "—" : string.Join(", ", file.Namespaces.Select(MarkdownFormatUtils.FormatCodeSpan)))
                 .Append(" |\n");
         }
 
@@ -194,14 +194,14 @@ internal static class MapsReportWriter
         foreach (var namespaceGroup in types.GroupBy(static type => type.Namespace, StringComparer.Ordinal).OrderBy(static group => group.Key, StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            builder.Append("### ").Append(MarkdownReportWriter.FormatCodeSpan(namespaceGroup.Key.Length == 0 ? "(global namespace)" : namespaceGroup.Key)).Append("\n\n");
+            builder.Append("### ").Append(MarkdownFormatUtils.FormatCodeSpan(namespaceGroup.Key.Length == 0 ? "(global namespace)" : namespaceGroup.Key)).Append("\n\n");
             foreach (var type in namespaceGroup.OrderBy(static type => type.FullyQualifiedName, StringComparer.Ordinal))
             {
-                builder.Append("- ").Append(MarkdownReportWriter.FormatCodeSpan(type.Name)).Append(" (")
+                builder.Append("- ").Append(MarkdownFormatUtils.FormatCodeSpan(type.Name)).Append(" (")
                     .Append(type.Kind).Append("): ")
                     .Append(string.Join(", ", type.Declarations.OrderBy(static declaration => declaration.SourcePath, StringComparer.Ordinal)
                         .ThenBy(static declaration => declaration.Line)
-                        .Select(declaration => MarkdownReportWriter.FormatCodeSpan(declaration.SourcePath + ":" + declaration.Line.ToString(CultureInfo.InvariantCulture)))))
+                        .Select(declaration => MarkdownFormatUtils.FormatCodeSpan(declaration.SourcePath + ":" + declaration.Line.ToString(CultureInfo.InvariantCulture)))))
                     .Append('\n');
             }
             builder.Append('\n');
@@ -217,8 +217,8 @@ internal static class MapsReportWriter
         CancellationToken cancellationToken)
     {
         var builder = new StringBuilder()
-            .Append("# Type dependencies — ").Append(MarkdownReportWriter.FormatCodeSpan(project.ProjectPath)).Append("\n\n")
-            .Append("Project: ").Append(MarkdownReportWriter.FormatCodeSpan(project.Key)).Append("; sibling map: `structure.md`; projects: `../../projects.md`. Direct edges only; edge locations are source witnesses.\n\n");
+            .Append("# Type dependencies — ").Append(MarkdownFormatUtils.FormatCodeSpan(project.ProjectPath)).Append("\n\n")
+            .Append("Project: ").Append(MarkdownFormatUtils.FormatCodeSpan(project.Key)).Append("; sibling map: `structure.md`; projects: `../../projects.md`. Direct edges only; edge locations are source witnesses.\n\n");
 
         var outgoing = edges.Where(edge => string.Equals(typesById[edge.FromTypeId].ProjectKey, project.Key, StringComparison.Ordinal)).ToArray();
         var incoming = edges.Where(edge => string.Equals(typesById[edge.ToTypeId].ProjectKey, project.Key, StringComparison.Ordinal)).ToArray();
@@ -231,9 +231,9 @@ internal static class MapsReportWriter
         }
 
         builder.Append("\n## Detail maps\n\n")
-            .Append("Outgoing witnesses: ").Append(MarkdownReportWriter.FormatCodeSpan("dependencies-outgoing.md"))
+            .Append("Outgoing witnesses: ").Append(MarkdownFormatUtils.FormatCodeSpan("dependencies-outgoing.md"))
             .Append(" — search for an exact type name or source path, then read the file heading for its `Lnn` witnesses.\n\n")
-            .Append("Incoming consumers: ").Append(MarkdownReportWriter.FormatCodeSpan("dependencies-incoming.md"))
+            .Append("Incoming consumers: ").Append(MarkdownFormatUtils.FormatCodeSpan("dependencies-incoming.md"))
             .Append(" — search for the exact target type name to identify its consumers; consult Consumer declarations for their locations, then follow the source project's outgoing route in Project routes to the canonical witness.\n");
         return builder.ToString();
     }
@@ -247,10 +247,10 @@ internal static class MapsReportWriter
         CancellationToken cancellationToken)
     {
         var builder = new StringBuilder()
-            .Append("# Outgoing type dependencies — ").Append(MarkdownReportWriter.FormatCodeSpan(project.ProjectPath)).Append("\n\n")
-            .Append("Project: ").Append(MarkdownReportWriter.FormatCodeSpan(project.ProjectPath)).Append("; hub: ")
-            .Append(MarkdownReportWriter.FormatCodeSpan("dependencies.md")).Append("; structure: ")
-            .Append(MarkdownReportWriter.FormatCodeSpan("structure.md")).Append(". This is a static graph of direct source-type dependencies; generated code, metadata, dynamic targets, and runtime dispatch are not inferred. Source and witness paths are project-root-relative; `Lnn` is a one-based source line.\n\n")
+            .Append("# Outgoing type dependencies — ").Append(MarkdownFormatUtils.FormatCodeSpan(project.ProjectPath)).Append("\n\n")
+            .Append("Project: ").Append(MarkdownFormatUtils.FormatCodeSpan(project.ProjectPath)).Append("; hub: ")
+            .Append(MarkdownFormatUtils.FormatCodeSpan("dependencies.md")).Append("; structure: ")
+            .Append(MarkdownFormatUtils.FormatCodeSpan("structure.md")).Append(". This is a static graph of direct source-type dependencies; generated code, metadata, dynamic targets, and runtime dispatch are not inferred. Source and witness paths are project-root-relative; `Lnn` is a one-based source line.\n\n")
             .Append("## Outgoing edges\n\nEach file heading applies to the locations listed below it.\n\n");
         var outgoing = edges.Where(edge => string.Equals(typesById[edge.FromTypeId].ProjectKey, project.Key, StringComparison.Ordinal)).ToArray();
         if (outgoing.Length == 0)
@@ -268,9 +268,9 @@ internal static class MapsReportWriter
             builder.Append("### ");
             if (!string.Equals(fileGroup.Key.ProjectKey, project.Key, StringComparison.Ordinal))
             {
-                builder.Append(MarkdownReportWriter.FormatCodeSpan(projectByKey[fileGroup.Key.ProjectKey].ProjectPath)).Append(':');
+                builder.Append(MarkdownFormatUtils.FormatCodeSpan(projectByKey[fileGroup.Key.ProjectKey].ProjectPath)).Append(':');
             }
-            builder.Append(MarkdownReportWriter.FormatCodeSpan(fileGroup.Key.SourcePath)).Append("\n\n");
+            builder.Append(MarkdownFormatUtils.FormatCodeSpan(fileGroup.Key.SourcePath)).Append("\n\n");
             foreach (var edgeGroup in fileGroup.GroupBy(static item => (item.Edge.FromTypeId, item.Edge.ToTypeId))
                          .OrderBy(group => displayedNames[group.Key.FromTypeId], StringComparer.Ordinal)
                          .ThenBy(group => displayedNames[group.Key.ToTypeId], StringComparer.Ordinal))
@@ -280,8 +280,8 @@ internal static class MapsReportWriter
                     .OrderBy(static witness => witness.Line)
                     .ThenBy(static witness => witness.Kind, StringComparer.Ordinal)
                     .Select(witness => "L" + witness.Line.ToString(CultureInfo.InvariantCulture) + " " + witness.Kind);
-                builder.Append("- ").Append(MarkdownReportWriter.FormatCodeSpan(displayedNames[edgeGroup.Key.FromTypeId]))
-                    .Append(" → ").Append(MarkdownReportWriter.FormatCodeSpan(displayedNames[edgeGroup.Key.ToTypeId]))
+                builder.Append("- ").Append(MarkdownFormatUtils.FormatCodeSpan(displayedNames[edgeGroup.Key.FromTypeId]))
+                    .Append(" → ").Append(MarkdownFormatUtils.FormatCodeSpan(displayedNames[edgeGroup.Key.ToTypeId]))
                     .Append(": ").Append(string.Join(", ", locations)).Append('\n');
             }
             builder.Append('\n');
@@ -296,8 +296,8 @@ internal static class MapsReportWriter
             foreach (var edge in unwitnessed)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                builder.Append("- ").Append(MarkdownReportWriter.FormatCodeSpan(displayedNames[edge.FromTypeId])).Append(" → ")
-                    .Append(MarkdownReportWriter.FormatCodeSpan(displayedNames[edge.ToTypeId])).Append(" (no retained witnesses)\n");
+                builder.Append("- ").Append(MarkdownFormatUtils.FormatCodeSpan(displayedNames[edge.FromTypeId])).Append(" → ")
+                    .Append(MarkdownFormatUtils.FormatCodeSpan(displayedNames[edge.ToTypeId])).Append(" (no retained witnesses)\n");
             }
             builder.Append('\n');
         }
@@ -315,10 +315,10 @@ internal static class MapsReportWriter
     {
         var incoming = edges.Where(edge => string.Equals(typesById[edge.ToTypeId].ProjectKey, project.Key, StringComparison.Ordinal)).ToArray();
         var builder = new StringBuilder()
-            .Append("# Incoming type dependencies — ").Append(MarkdownReportWriter.FormatCodeSpan(project.ProjectPath)).Append("\n\n")
-            .Append("Project: ").Append(MarkdownReportWriter.FormatCodeSpan(project.ProjectPath)).Append("; hub: ")
-            .Append(MarkdownReportWriter.FormatCodeSpan("dependencies.md")).Append("; structure: ")
-            .Append(MarkdownReportWriter.FormatCodeSpan("structure.md")).Append(". This is a static graph of direct source-type dependencies; generated code, metadata, dynamic targets, and runtime dispatch are not inferred. Source and declaration paths are project-root-relative; `Lnn` is a one-based source line.\n\n");
+            .Append("# Incoming type dependencies — ").Append(MarkdownFormatUtils.FormatCodeSpan(project.ProjectPath)).Append("\n\n")
+            .Append("Project: ").Append(MarkdownFormatUtils.FormatCodeSpan(project.ProjectPath)).Append("; hub: ")
+            .Append(MarkdownFormatUtils.FormatCodeSpan("dependencies.md")).Append("; structure: ")
+            .Append(MarkdownFormatUtils.FormatCodeSpan("structure.md")).Append(". This is a static graph of direct source-type dependencies; generated code, metadata, dynamic targets, and runtime dispatch are not inferred. Source and declaration paths are project-root-relative; `Lnn` is a one-based source line.\n\n");
         AppendConsumerDeclarations(builder, incoming, displayedNames, typesById, projectByKey, cancellationToken);
         AppendIncomingEdges(builder, incoming, displayedNames, typesById, projectByKey, cancellationToken);
         return builder.ToString();
@@ -345,7 +345,7 @@ internal static class MapsReportWriter
         {
             cancellationToken.ThrowIfCancellationRequested();
             var owner = projectByKey[ownerGroup.Key];
-            builder.Append("### ").Append(MarkdownReportWriter.FormatCodeSpan(owner.ProjectPath)).Append("\n\n");
+            builder.Append("### ").Append(MarkdownFormatUtils.FormatCodeSpan(owner.ProjectPath)).Append("\n\n");
             foreach (var consumerId in ownerGroup.OrderBy(id => displayedNames[id], StringComparer.Ordinal))
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -353,7 +353,7 @@ internal static class MapsReportWriter
                     .OrderBy(static declaration => declaration.SourcePath, StringComparer.Ordinal)
                     .ThenBy(static declaration => declaration.Line)
                     .Select(FormatDeclarationLocation);
-                builder.Append("- ").Append(MarkdownReportWriter.FormatCodeSpan(displayedNames[consumerId]))
+                builder.Append("- ").Append(MarkdownFormatUtils.FormatCodeSpan(displayedNames[consumerId]))
                     .Append(": ").Append(string.Join(", ", declarations)).Append('\n');
             }
             builder.Append('\n');
@@ -380,7 +380,7 @@ internal static class MapsReportWriter
                      .OrderBy(group => displayedNames[group.Key], StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            builder.Append("### ").Append(MarkdownReportWriter.FormatCodeSpan(displayedNames[targetGroup.Key])).Append("\n\n");
+            builder.Append("### ").Append(MarkdownFormatUtils.FormatCodeSpan(displayedNames[targetGroup.Key])).Append("\n\n");
             var consumers = targetGroup.Select(static edge => edge.FromTypeId).Distinct(StringComparer.Ordinal).ToArray();
             foreach (var role in new[] { ProjectRole.Production, ProjectRole.Tests })
             {
@@ -393,9 +393,9 @@ internal static class MapsReportWriter
                     cancellationToken.ThrowIfCancellationRequested();
                     var owner = projectByKey[ownerGroup.Key];
                     var names = ownerGroup.Select(id => displayedNames[id]).Order(StringComparer.Ordinal)
-                        .Select(MarkdownReportWriter.FormatCodeSpan);
+                        .Select(MarkdownFormatUtils.FormatCodeSpan);
                     builder.Append("- ").Append(role == ProjectRole.Tests ? "Test consumers (" : "Production consumers (")
-                        .Append(MarkdownReportWriter.FormatCodeSpan(owner.ProjectPath)).Append("): ")
+                        .Append(MarkdownFormatUtils.FormatCodeSpan(owner.ProjectPath)).Append("): ")
                         .Append(string.Join(", ", names)).Append('\n');
                 }
             }
@@ -450,20 +450,20 @@ internal static class MapsReportWriter
         foreach (var relatedProject in projectKeys)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            builder.Append("| ").Append(MarkdownReportWriter.FormatCodeSpan(relatedProject.ProjectPath)).Append(" | ")
+            builder.Append("| ").Append(MarkdownFormatUtils.FormatCodeSpan(relatedProject.ProjectPath)).Append(" | ")
                 .Append(relatedProject.Role == ProjectRole.Tests ? "tests" : "production")
-                .Append(" | ").Append(MarkdownReportWriter.FormatCodeSpan(StructureRoute(relatedProject)))
-                .Append(" | ").Append(MarkdownReportWriter.FormatCodeSpan(DependencyRoute(relatedProject)))
-                .Append(" | ").Append(MarkdownReportWriter.FormatCodeSpan(OutgoingRoute(relatedProject))).Append(" |\n");
+                .Append(" | ").Append(MarkdownFormatUtils.FormatCodeSpan(StructureRoute(relatedProject)))
+                .Append(" | ").Append(MarkdownFormatUtils.FormatCodeSpan(DependencyRoute(relatedProject)))
+                .Append(" | ").Append(MarkdownFormatUtils.FormatCodeSpan(OutgoingRoute(relatedProject))).Append(" |\n");
         }
         builder.Append('\n');
     }
 
     private static string FormatDeclarationLocation(ReviewMapTypeDeclaration declaration) =>
-        MarkdownReportWriter.FormatCodeSpan(declaration.SourcePath + ":" + declaration.Line.ToString(CultureInfo.InvariantCulture));
+        MarkdownFormatUtils.FormatCodeSpan(declaration.SourcePath + ":" + declaration.Line.ToString(CultureInfo.InvariantCulture));
 
     private static string ProjectRoute(ReviewMapProject project, string file) =>
-        MarkdownReportWriter.FormatCodeSpan((project.Role == ProjectRole.Tests ? "tests" : "production") + "/" + project.Key + "/" + file);
+        MarkdownFormatUtils.FormatCodeSpan((project.Role == ProjectRole.Tests ? "tests" : "production") + "/" + project.Key + "/" + file);
 
     private static string DependencyRoute(ReviewMapProject source) =>
         "../../" + (source.Role == ProjectRole.Tests ? "tests" : "production") + "/" + source.Key + "/dependencies.md";

@@ -8,6 +8,8 @@ public interface IReviewAnalysis
 {
     ReviewAnalysisDescriptor Descriptor { get; }
 
+    IReviewFindingPresenter FindingPresenter => DefaultReviewFindingPresenter.Instance;
+
     Task<ReviewAnalysisResult> ExecuteAsync(
         ReviewContext context,
         ReviewAnalysisOptions options,

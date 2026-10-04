@@ -2,12 +2,11 @@ namespace AiNetReview.Core.Findings;
 
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AiNetReview.Core.Analysis;
-using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Text;
 
 /// <summary>Validates and orders findings against the loaded source snapshot for one run.</summary>
 public sealed class CurrentFindingValidator
@@ -22,61 +21,7 @@ public sealed class CurrentFindingValidator
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(findings);
 
-        var sourceDocuments = new Dictionary<string, List<SourceDocument>>(PathComparer);
-        var projectPaths = new Dictionary<ProjectId, string>();
-        foreach (var project in context.Solution.Projects.Where(static project => project.Language == LanguageNames.CSharp))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (string.IsNullOrWhiteSpace(project.FilePath))
-            {
-                throw Invalid("A C# project has no project file path.");
-            }
-
-            projectPaths.Add(project.Id, context.GetProjectRelativePath(project.FilePath));
-            foreach (var document in project.Documents)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (string.IsNullOrWhiteSpace(document.FilePath) || !document.FilePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                var relativePath = context.GetProjectRelativePath(document.FilePath);
-                var text = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
-                if (!sourceDocuments.TryGetValue(relativePath, out var documents))
-                {
-                    documents = [];
-                    sourceDocuments.Add(relativePath, documents);
-                }
-
-                documents.Add(new SourceDocument(project.Id, text));
-            }
-
-            var generatedDocuments = await project.GetSourceGeneratedDocumentsAsync(cancellationToken).ConfigureAwait(false);
-            foreach (var document in generatedDocuments)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var generatedPath = document.FilePath ?? document.Name;
-                string relativePath;
-                try
-                {
-                    relativePath = context.GetProjectRelativePath(generatedPath);
-                }
-                catch (AnalysisFailedException)
-                {
-                    relativePath = project.Name + "/" + Path.GetFileName(generatedPath);
-                }
-
-                if (!sourceDocuments.TryGetValue(relativePath, out var documents))
-                {
-                    documents = [];
-                    sourceDocuments.Add(relativePath, documents);
-                }
-
-                var text = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
-                documents.Add(new SourceDocument(project.Id, text));
-            }
-        }
+        var sourceIndex = await context.GetFindingSourceIndexAsync(cancellationToken).ConfigureAwait(false);
 
         var uniqueKeys = new HashSet<FindingKey>();
         var validated = new List<FindingDraft>();
@@ -98,12 +43,12 @@ public sealed class CurrentFindingValidator
                 throw Invalid("Finding startLine must be a positive, one-based line number.");
             }
 
-            if (!TryGetProjectOwnedSource(finding.ProjectPath, finding.SourcePath, sourceDocuments, projectPaths, out var source))
+            if (!sourceIndex.TryGetProjectOwnedSource(finding.ProjectPath, finding.SourcePath, out var sourceText))
             {
                 throw Invalid($"Finding source '{finding.SourcePath}' is not a C# document owned by '{finding.ProjectPath}' in the loaded solution.");
             }
 
-            ValidateLine(finding.StartLine, source.Text.Lines.Count, "Finding startLine");
+            ValidateLine(finding.StartLine, sourceText.Text.Lines.Count, "Finding startLine");
             if (finding.Metrics is null || finding.Metrics.Any(static pair => string.IsNullOrWhiteSpace(pair.Key) || !double.IsFinite(pair.Value)))
             {
                 throw Invalid("Finding metrics must have non-empty keys and finite numeric values.");
@@ -126,7 +71,7 @@ public sealed class CurrentFindingValidator
                 RequireText(evidence.Label, "evidence.label");
                 RequireText(evidence.Detail, "evidence.detail");
                 RequireText(evidence.Snippet, "evidence.snippet");
-                if (!TryGetSolutionSources(evidence.SourcePath, sourceDocuments, out var evidenceSources))
+                if (!sourceIndex.TryGetSolutionSources(evidence.SourcePath, out var evidenceSources))
                 {
                     throw Invalid($"Evidence source '{evidence.SourcePath}' is not a C# document in the loaded solution.");
                 }
@@ -134,6 +79,35 @@ public sealed class CurrentFindingValidator
                 if (!evidenceSources.Any(candidate => MatchesEvidence(candidate.Text, evidence)))
                 {
                     throw Invalid("Evidence line or snippet does not match the loaded source snapshot.");
+                }
+
+                if (evidence.SourceRange is { } sourceRange)
+                {
+                    if (!sourceIndex.TryGetProjectOwnedSource(sourceRange.ProjectPath, evidence.SourcePath, out var rangeSource))
+                    {
+                        throw Invalid("Finding evidence source range does not identify a loaded C# document owned by its project.");
+                    }
+
+                    if (!MatchesEvidence(rangeSource.Text, evidence))
+                    {
+                        throw Invalid("Finding evidence snippet does not match the source document named by its source range.");
+                    }
+
+                    ValidateSourceRange(sourceRange, evidence.Line, rangeSource.Text);
+                }
+
+                if (evidence.RelatedSymbol is { } evidenceSymbol)
+                {
+                    if (finding.RelatedSymbols?.Contains(evidenceSymbol) != true
+                        || !PathComparer.Equals(evidenceSymbol.SourcePath, evidence.SourcePath)
+                        || evidenceSymbol.Line != evidence.Line
+                        || string.IsNullOrWhiteSpace(evidenceSymbol.SymbolId)
+                        || !sourceIndex.TryGetProjectOwnedSource(evidenceSymbol.ProjectPath, evidenceSymbol.SourcePath, out var relatedSource))
+                    {
+                        throw Invalid("Finding evidence related symbol must identify a loaded related symbol at the evidence source and line.");
+                    }
+
+                    ValidateLine(evidenceSymbol.Line, relatedSource.Text.Lines.Count, "Finding evidence related symbol line");
                 }
             }
 
@@ -147,7 +121,7 @@ public sealed class CurrentFindingValidator
                 cancellationToken.ThrowIfCancellationRequested();
                 if (symbol is null
                     || string.IsNullOrWhiteSpace(symbol.SymbolId)
-                    || !TryGetProjectOwnedSource(symbol.ProjectPath, symbol.SourcePath, sourceDocuments, projectPaths, out var symbolSource))
+                    || !sourceIndex.TryGetProjectOwnedSource(symbol.ProjectPath, symbol.SourcePath, out var symbolSource))
                 {
                     throw Invalid("Finding related symbols must identify a loaded C# source declaration in their project.");
                 }
@@ -179,51 +153,7 @@ public sealed class CurrentFindingValidator
             .ToArray());
     }
 
-    private static bool TryGetProjectOwnedSource(
-        string projectPath,
-        string sourcePath,
-        IReadOnlyDictionary<string, List<SourceDocument>> sourceDocuments,
-        IReadOnlyDictionary<ProjectId, string> projectPaths,
-        out SourceDocument source)
-    {
-        source = null!;
-        if (!IsCanonicalRelativePath(projectPath) || !IsCanonicalRelativePath(sourcePath)
-            || !sourcePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
-            || !sourceDocuments.TryGetValue(sourcePath, out var documents))
-        {
-            return false;
-        }
-
-        foreach (var document in documents)
-        {
-            if (PathComparer.Equals(projectPaths[document.ProjectId], projectPath))
-            {
-                source = document;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool TryGetSolutionSources(
-        string sourcePath,
-        IReadOnlyDictionary<string, List<SourceDocument>> sourceDocuments,
-        out IReadOnlyList<SourceDocument> sources)
-    {
-        if (IsCanonicalRelativePath(sourcePath)
-            && sourcePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
-            && sourceDocuments.TryGetValue(sourcePath, out var documents))
-        {
-            sources = documents;
-            return true;
-        }
-
-        sources = Array.Empty<SourceDocument>();
-        return false;
-    }
-
-    private static bool MatchesEvidence(Microsoft.CodeAnalysis.Text.SourceText text, FindingEvidence evidence)
+    private static bool MatchesEvidence(SourceText text, FindingEvidence evidence)
     {
         if (evidence.Line < 1 || evidence.Line > text.Lines.Count)
         {
@@ -233,16 +163,33 @@ public sealed class CurrentFindingValidator
         return text.Lines[evidence.Line - 1].ToString().Contains(evidence.Snippet, StringComparison.Ordinal);
     }
 
-    private static bool IsCanonicalRelativePath(string path) =>
-        !Path.IsPathRooted(path)
-        && !path.Contains('\\')
-        && path.Split('/').All(static segment => segment.Length > 0 && segment is not "." and not "..");
-
     private static void ValidateLine(int line, int lineCount, string name)
     {
         if (line < 1 || line > lineCount)
         {
             throw Invalid($"{name} must refer to a line in the loaded source text.");
+        }
+    }
+
+    private static void ValidateSourceRange(FindingSourceRange range, int evidenceLine, SourceText source)
+    {
+        if (range.StartLine != evidenceLine
+            || range.StartLine < 1
+            || range.EndLine < range.StartLine
+            || range.EndLine > source.Lines.Count
+            || range.StartColumn < 1
+            || range.EndColumn < 1)
+        {
+            throw Invalid("Finding evidence source range must use valid one-based lines and columns and begin on its evidence line.");
+        }
+
+        var startLine = source.Lines[range.StartLine - 1];
+        var endLine = source.Lines[range.EndLine - 1];
+        if (range.StartColumn > startLine.Span.Length + 1
+            || range.EndColumn > endLine.Span.Length + 1
+            || (range.StartLine == range.EndLine && range.EndColumn < range.StartColumn))
+        {
+            throw Invalid("Finding evidence source range columns must refer to positions in the loaded source lines.");
         }
     }
 
@@ -261,6 +208,4 @@ public sealed class CurrentFindingValidator
         : StringComparer.Ordinal;
 
     private readonly record struct FindingKey(string AnalysisId, string ProjectPath, string SourcePath, string SubjectId, string Discriminator);
-
-    private sealed record SourceDocument(ProjectId ProjectId, Microsoft.CodeAnalysis.Text.SourceText Text);
 }

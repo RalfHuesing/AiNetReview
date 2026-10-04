@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using AiNetReview.IntegrationTests;
 using AiNetReview.Core.Analysis;
 using AiNetReview.Core.Configuration;
 using AiNetReview.Core.ReviewAnalyses;
@@ -515,7 +516,7 @@ public sealed class SolutionLoaderTests
             Directory.CreateDirectory(outputDirectory);
             await File.WriteAllTextAsync(Path.Combine(outputDirectory, "Included.cs"), "namespace Sample; public sealed class Included { }");
         }
-        await RestoreAsync(projectFile, projectDirectory);
+        await IntegrationTestHelpers.RestoreAsync(projectFile, projectDirectory);
 
         var solutionPath = Path.Combine(root, "Sample" + solutionExtension);
         if (solutionExtension.Equals(".slnx", StringComparison.OrdinalIgnoreCase))
@@ -552,26 +553,6 @@ public sealed class SolutionLoaderTests
         var projectPath = Path.Combine(root, "Sample", "Sample.csproj");
         var project = await File.ReadAllTextAsync(projectPath);
         await File.WriteAllTextAsync(projectPath, project.Replace("</Project>", xml + "</Project>", StringComparison.Ordinal));
-    }
-
-    private static async Task RestoreAsync(string projectFile, string workingDirectory)
-    {
-        var startInfo = new ProcessStartInfo("dotnet")
-        {
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        startInfo.ArgumentList.Add("restore");
-        startInfo.ArgumentList.Add(projectFile);
-        startInfo.ArgumentList.Add("--ignore-failed-sources");
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start dotnet restore.");
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        var output = await stdout + await stderr;
-        Assert.True(process.ExitCode == 0, $"dotnet restore failed: {output}");
     }
 
     private static string SecurityElementEscape(string value) =>

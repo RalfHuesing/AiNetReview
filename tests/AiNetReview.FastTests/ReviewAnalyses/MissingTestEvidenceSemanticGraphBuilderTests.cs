@@ -570,48 +570,6 @@ public sealed class MissingTestEvidenceSemanticGraphBuilderTests
         }
     }
 
-    private static Fixture CreateFixture(
-        IReadOnlyList<(string Name, string Source)> productionSources,
-        string testSource)
-    {
-#pragma warning disable CA2000 // Fixture takes ownership and disposes the workspace returned by this helper.
-        var workspace = new AdhocWorkspace();
-#pragma warning restore CA2000
-        var productionId = ProjectId.CreateNewId();
-        var testId = ProjectId.CreateNewId();
-        var productionPath = Path.Combine(Path.GetTempPath(), "AiNetReview-MissingTestEvidenceGraph", "Example.Core.csproj");
-        var testPath = Path.Combine(Path.GetTempPath(), "AiNetReview-MissingTestEvidenceGraph", "Example.Tests.csproj");
-        var platformReferences = FastTestReferences.CreatePlatformReferences().ToArray();
-
-        workspace.AddProject(ProjectInfo.Create(
-            productionId,
-            VersionStamp.Create(),
-            "Example.Core",
-            "Example.Core",
-            LanguageNames.CSharp,
-            filePath: productionPath,
-            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            metadataReferences: platformReferences));
-        foreach (var (name, source) in productionSources)
-        {
-            AddDocument(workspace, productionId, name, source, Path.Combine(Path.GetDirectoryName(productionPath)!, name));
-        }
-
-        workspace.AddProject(ProjectInfo.Create(
-            testId,
-            VersionStamp.Create(),
-            "Example.Tests",
-            "Example.Tests",
-            LanguageNames.CSharp,
-            filePath: testPath,
-            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            metadataReferences: platformReferences.Append(TestFrameworkReference.Reference),
-            projectReferences: [new ProjectReference(productionId)]));
-        AddDocument(workspace, testId, "Tests.cs", testSource, Path.Combine(Path.GetDirectoryName(testPath)!, "Tests.cs"));
-
-        return new Fixture(workspace);
-    }
-
     private static void AddDocument(AdhocWorkspace workspace, ProjectId projectId, string name, string source, string path) =>
         workspace.AddDocument(DocumentInfo.Create(
             DocumentId.CreateNewId(projectId),
@@ -619,11 +577,39 @@ public sealed class MissingTestEvidenceSemanticGraphBuilderTests
             filePath: path,
             loader: TextLoader.From(TextAndVersion.Create(SourceText.From(source), VersionStamp.Create()))));
 
-    private sealed class Fixture(AdhocWorkspace workspace) : IDisposable
+    private static Fixture CreateFixture(
+        IReadOnlyList<(string Name, string Source)> productionSources,
+        string testSource)
     {
-        public AdhocWorkspace Workspace { get; } = workspace;
+        var workspace = new FastTestWorkspace();
+        var productionPath = Path.Combine(workspace.RootPath, "Example.Core.csproj");
+        var testPath = Path.Combine(workspace.RootPath, "Example.Tests.csproj");
+        var platformReferences = FastTestReferences.CreatePlatformReferences().ToArray();
 
-        public void Dispose() => Workspace.Dispose();
+        var productionId = workspace.AddProject("Example.Core",
+            parseOptions: CSharpParseOptions.Default,
+            projectFilePath: productionPath,
+            metadataReferences: platformReferences);
+        foreach (var (name, source) in productionSources)
+        {
+            workspace.AddDocument(productionId, name, source, Path.Combine(Path.GetDirectoryName(productionPath)!, name));
+        }
+
+        var testId = workspace.AddProject("Example.Tests",
+            parseOptions: CSharpParseOptions.Default,
+            projectFilePath: testPath,
+            metadataReferences: platformReferences.Append(TestFrameworkReference.Reference),
+            projectReferences: [new ProjectReference(productionId)]);
+        workspace.AddDocument(testId, "Tests.cs", testSource, Path.Combine(Path.GetDirectoryName(testPath)!, "Tests.cs"));
+
+        return new Fixture(workspace);
+    }
+
+    private sealed class Fixture(FastTestWorkspace workspace) : IDisposable
+    {
+        public AdhocWorkspace Workspace { get; } = workspace.Workspace;
+
+        public void Dispose() => workspace.Dispose();
     }
 
     private static class TestFrameworkReference

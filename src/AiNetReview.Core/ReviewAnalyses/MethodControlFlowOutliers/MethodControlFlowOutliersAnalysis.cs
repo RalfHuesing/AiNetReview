@@ -15,6 +15,8 @@ using Microsoft.CodeAnalysis.Text;
 /// <summary>Reports methods with unusually high decision counts or decision nesting within their project.</summary>
 public sealed class MethodControlFlowOutliersAnalysis : IReviewAnalysis
 {
+    public IReviewFindingPresenter FindingPresenter { get; } = new MethodControlFlowOutliersFindingPresenter();
+
     private const int DefaultPercentile = 90;
     private static readonly ReviewAnalysisOptionDescriptor PercentileOption = new(
         name: "percentile",

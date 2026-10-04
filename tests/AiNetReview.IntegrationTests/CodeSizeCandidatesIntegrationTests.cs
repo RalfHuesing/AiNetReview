@@ -30,14 +30,14 @@ public sealed class CodeSizeCandidatesIntegrationTests
         const string source = "namespace Sample; public sealed class Cases { public void Run() { var value = 1; value++; } }";
         await File.WriteAllTextAsync(Path.Combine(productionDirectory, "Class1.cs"), source);
         await File.WriteAllTextAsync(Path.Combine(testDirectory, "Class1.cs"), source);
-        await RestoreProjectAsync(productionProject, productionDirectory);
-        await RestoreProjectAsync(testProject, testDirectory);
+        await IntegrationTestHelpers.RestoreAsync(productionProject, productionDirectory);
+        await IntegrationTestHelpers.RestoreAsync(testProject, testDirectory);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
             "<Solution><Project Path=\"Sample/Sample.csproj\" /><Project Path=\"Tests/Sample.Tests.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
         var lowOptionsJson = "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"code-size-candidates\":{\"extremeMemberCodeLines\":1,\"testOptions\":{\"extremeMemberCodeLines\":1}}}}";
         await File.WriteAllTextAsync(configPath, lowOptionsJson);
-        await using var services = BuildServices();
+        await using var services = IntegrationTestHelpers.BuildServices();
 
         var low = await InvokeAsync(["review", projectRoot], services);
         Assert.Equal(0, low.ExitCode);
@@ -107,11 +107,11 @@ public sealed class CodeSizeCandidatesIntegrationTests
             + "{\n"
             + "    public int Other(int value) => value;\n"
             + "}\n");
-        await RestoreProjectAsync(projectFile, projectDirectory);
+        await IntegrationTestHelpers.RestoreAsync(projectFile, projectDirectory);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
             "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         await WriteConfigAsync(projectRoot, "\"code-size-candidates\":{\"percentile\":50,\"minMemberCodeLines\":1,\"extremeMemberCodeLines\":1,\"minTypeCodeLines\":1,\"extremeTypeCodeLines\":1,\"extremeFileLines\":1,\"extremeFileUtf8Bytes\":1,\"testOptions\":{\"percentile\":50,\"minMemberCodeLines\":1,\"extremeMemberCodeLines\":1,\"minTypeCodeLines\":1,\"extremeTypeCodeLines\":1,\"extremeFileLines\":1,\"extremeFileUtf8Bytes\":1}},\"method-control-flow-outliers\":{\"testOptions\":{\"percentile\":90}}");
-        await using var services = BuildServices();
+        await using var services = IntegrationTestHelpers.BuildServices();
 
         var initial = await InvokeAsync(["review", projectRoot], services);
 
@@ -195,7 +195,7 @@ public sealed class CodeSizeCandidatesIntegrationTests
     {
         using var tempDirectory = TestTempDirectory.Create("ainet-code-size-config-");
         var projectRoot = await CreateProjectAsync(tempDirectory.DirectoryPath);
-        await using var services = BuildServices();
+        await using var services = IntegrationTestHelpers.BuildServices();
 
         var generated = await InvokeAsync(["review", projectRoot], services);
 
@@ -231,7 +231,7 @@ public sealed class CodeSizeCandidatesIntegrationTests
         using var tempDirectory = TestTempDirectory.Create("ainet-code-size-empty-");
         var projectRoot = await CreateProjectAsync(tempDirectory.DirectoryPath);
         await WriteConfigAsync(projectRoot, sizeConfiguration);
-        await using var services = BuildServices();
+        await using var services = IntegrationTestHelpers.BuildServices();
 
         var result = await InvokeAsync(["review", projectRoot], services);
 
@@ -255,7 +255,7 @@ public sealed class CodeSizeCandidatesIntegrationTests
         await File.WriteAllTextAsync(projectFile,
             "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
         await File.WriteAllTextAsync(Path.Combine(projectDirectory, "Class1.cs"), "namespace Sample; public sealed class SampleType { public void Run() { } }");
-        await RestoreProjectAsync(projectFile, projectDirectory);
+        await IntegrationTestHelpers.RestoreAsync(projectFile, projectDirectory);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         return projectRoot;
     }
@@ -278,31 +278,4 @@ public sealed class CodeSizeCandidatesIntegrationTests
         return response.RootElement.GetProperty("runId").GetString()!;
     }
 
-    private static ServiceProvider BuildServices()
-    {
-        var services = new ServiceCollection();
-        services.AddAiNetReviewServices();
-        services.AddAiNetReviewAnalyses();
-        services.AddLogging();
-        return services.BuildServiceProvider();
-    }
-
-    private static async Task RestoreProjectAsync(string projectFile, string workingDirectory)
-    {
-        var startInfo = new ProcessStartInfo("dotnet")
-        {
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        startInfo.ArgumentList.Add("restore");
-        startInfo.ArgumentList.Add(projectFile);
-        startInfo.ArgumentList.Add("--ignore-failed-sources");
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start dotnet restore.");
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        Assert.True(process.ExitCode == 0, $"dotnet restore failed: {await stdout}{await stderr}");
-    }
 }

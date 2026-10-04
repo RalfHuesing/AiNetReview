@@ -43,8 +43,8 @@ public sealed class HostAdapterIntegrationTests
         await File.WriteAllTextAsync(bPath, bSource);
         await File.WriteAllTextAsync(cPath, cSource);
         await File.WriteAllTextAsync(testPath, "using Sample; public class CycleTests { public void Read() { _ = new A(); } }");
-        await RestoreProjectAsync(productionProject, productionDirectory);
-        await RestoreProjectAsync(testProject, testDirectory);
+        await IntegrationTestHelpers.RestoreAsync(productionProject, productionDirectory);
+        await IntegrationTestHelpers.RestoreAsync(testProject, testDirectory);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
             "<Solution><Project Path=\"src/Sample/Sample.csproj\" /><Project Path=\"tests/Sample.Tests/Sample.Tests.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
@@ -141,8 +141,8 @@ public sealed class HostAdapterIntegrationTests
                     : $"namespace Sample; public class Dependency{index} {{ }}");
         }
         await File.WriteAllTextAsync(testPath, "namespace Sample.Tests; public class HubTests { public Sample.Hub? Value; }");
-        await RestoreProjectAsync(productionProject, productionDirectory);
-        await RestoreProjectAsync(testProject, testDirectory);
+        await IntegrationTestHelpers.RestoreAsync(productionProject, productionDirectory);
+        await IntegrationTestHelpers.RestoreAsync(testProject, testDirectory);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
             "<Solution><Project Path=\"src/Sample/Sample.csproj\" /><Project Path=\"tests/Sample.Tests/Sample.Tests.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
@@ -252,7 +252,7 @@ public sealed class HostAdapterIntegrationTests
         await File.WriteAllTextAsync(apiPath, apiSource);
         await File.WriteAllTextAsync(servicePath, forwardingServiceSource);
         await File.WriteAllTextAsync(repositoryPath, endpointSource);
-        await RestoreProjectAsync(projectFile, projectDirectory);
+        await IntegrationTestHelpers.RestoreAsync(projectFile, projectDirectory);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
             "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
@@ -326,8 +326,8 @@ public sealed class HostAdapterIntegrationTests
         await File.WriteAllTextAsync(secondSource,
             WrapDuplicateMethod("SecondContainer", "RunSecond", exactBody)
             + WrapDuplicateMethod("NearContainer", "RunNear", nearBody));
-        await RestoreProjectAsync(firstProjectFile, firstProject);
-        await RestoreProjectAsync(secondProjectFile, secondProject);
+        await IntegrationTestHelpers.RestoreAsync(firstProjectFile, firstProject);
+        await IntegrationTestHelpers.RestoreAsync(secondProjectFile, secondProject);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
             "<Solution><Project Path=\"ProductA/ProductA.csproj\" /><Project Path=\"ProductB/ProductB.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
@@ -414,8 +414,8 @@ public sealed class HostAdapterIntegrationTests
         var body = BuildDuplicateBody();
         await File.WriteAllTextAsync(firstSource, WrapDuplicateMethod("FirstContainer", "RunFirst", body));
         await File.WriteAllTextAsync(secondSource, WrapDuplicateMethod("SecondContainer", "RunSecond", body));
-        await RestoreProjectAsync(firstProjectFile, firstProject);
-        await RestoreProjectAsync(secondProjectFile, secondProject);
+        await IntegrationTestHelpers.RestoreAsync(firstProjectFile, firstProject);
+        await IntegrationTestHelpers.RestoreAsync(secondProjectFile, secondProject);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
             "<Solution><Project Path=\"ProductA/ProductA.csproj\" /><Project Path=\"ProductB/ProductB.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
@@ -500,7 +500,7 @@ public sealed class HostAdapterIntegrationTests
         await File.WriteAllTextAsync(projectFile,
             "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
         await File.WriteAllTextAsync(sourcePath, "namespace Sample; internal sealed class UnusedType { public void HiddenMethod() { } } public sealed class PublicApi { public void Entry() { } }");
-        await RestoreProjectAsync(projectFile, projectDirectory);
+        await IntegrationTestHelpers.RestoreAsync(projectFile, projectDirectory);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
         await File.WriteAllTextAsync(configPath,
@@ -568,7 +568,7 @@ public sealed class HostAdapterIntegrationTests
             "namespace Sample; public static class Worker { public static int Run(int value) => value switch { 0 => 0, 1 => 1, 2 => 2, 3 => 3, 4 => 4, _ => 5 }; public static int Uncovered(int value) => value switch { 0 => 0, 1 => 1, 2 => 2, _ => 3 }; }");
         await File.WriteAllTextAsync(Path.Combine(testsDirectory, "ApiTests.cs"),
             "using Xunit; using Sample; public sealed class ApiTests { [Fact] public void CallsApi() => _ = Api.Run(1); }");
-        await RestoreProjectAsync(testProject, testsDirectory);
+        await IntegrationTestHelpers.RestoreAsync(testProject, testsDirectory);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
             "<Solution><Project Path=\"Sample.Core/Sample.Core.csproj\" /><Project Path=\"Sample.Tests/Sample.Tests.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
@@ -657,8 +657,8 @@ public sealed class HostAdapterIntegrationTests
         var secondPartialPath = Path.Combine(testDirectory, "CasesB.cs");
         await File.WriteAllTextAsync(secondPartialPath,
             $"namespace Sample; public partial class Shared {{ public int TestCloneB(int value) {{ {duplicateBody} }} }}");
-        await RestoreProjectAsync(productionProject, productionDirectory);
-        await RestoreProjectAsync(testProject, testDirectory);
+        await IntegrationTestHelpers.RestoreAsync(productionProject, productionDirectory);
+        await IntegrationTestHelpers.RestoreAsync(testProject, testDirectory);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"),
             "<Solution><Project Path=\"src/Sample/Sample.csproj\" /><Project Path=\"tests/Sample.Tests/Sample.Tests.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
@@ -738,7 +738,7 @@ public sealed class HostAdapterIntegrationTests
             "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
         await File.WriteAllTextAsync(sourcePath,
             "namespace Sample; public sealed class Sample { public void FixtureCaseA() { } public void FixtureCaseB() { } }");
-        await RestoreProjectAsync(projectFile, projectDirectory);
+        await IntegrationTestHelpers.RestoreAsync(projectFile, projectDirectory);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
 
@@ -828,7 +828,7 @@ public sealed class HostAdapterIntegrationTests
             "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
         await File.WriteAllTextAsync(Path.Combine(projectDirectory, "Class1.cs"),
             "namespace Sample; public sealed class Sample { public void FixtureCaseA() { } }");
-        await RestoreProjectAsync(projectFile, projectDirectory);
+        await IntegrationTestHelpers.RestoreAsync(projectFile, projectDirectory);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
         await File.WriteAllTextAsync(configPath,
@@ -873,7 +873,7 @@ public sealed class HostAdapterIntegrationTests
             "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
         await File.WriteAllTextAsync(Path.Combine(projectDirectory, "Class1.cs"),
             "namespace Sample; public sealed class Sample { }");
-        await RestoreProjectAsync(projectFile, projectDirectory);
+        await IntegrationTestHelpers.RestoreAsync(projectFile, projectDirectory);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         var markupPath = Path.Combine(projectDirectory, "Locked.razor");
         await File.WriteAllTextAsync(markupPath, "unreadable during snapshot");
@@ -900,25 +900,6 @@ public sealed class HostAdapterIntegrationTests
         using var response = JsonDocument.Parse(error.ToString());
         Assert.Equal("ANALYSIS_FAILED", response.RootElement.GetProperty("code").GetString());
         Assert.Empty(Directory.GetDirectories(Path.Combine(projectRoot, "reports")));
-    }
-
-    private static async Task RestoreProjectAsync(string projectFile, string workingDirectory)
-    {
-        var startInfo = new ProcessStartInfo("dotnet")
-        {
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        startInfo.ArgumentList.Add("restore");
-        startInfo.ArgumentList.Add(projectFile);
-        startInfo.ArgumentList.Add("--ignore-failed-sources");
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start dotnet restore.");
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        Assert.True(process.ExitCode == 0, $"dotnet restore failed: {await stdout}{await stderr}");
     }
 
     private static async Task<(string RunId, int Detected)> RunFixtureAsync(string projectRoot, string configPath, string scenario)

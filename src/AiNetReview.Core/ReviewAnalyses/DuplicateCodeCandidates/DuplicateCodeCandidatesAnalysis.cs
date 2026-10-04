@@ -15,6 +15,8 @@ using Microsoft.CodeAnalysis.Text;
 /// <summary>Reports current clusters of similar executable C# method bodies for human review.</summary>
 public sealed class DuplicateCodeCandidatesAnalysis : IReviewAnalysis
 {
+    public IReviewFindingPresenter FindingPresenter { get; } = new DuplicateCodeCandidatesFindingPresenter();
+
     private const int DefaultMinimumTokens = 30;
     private const string DefaultMinimumSimilarity = "exact";
 
@@ -150,8 +152,9 @@ public sealed class DuplicateCodeCandidatesAnalysis : IReviewAnalysis
             member.SourcePath,
             member.Line,
             "Duplicate method",
-            $"{member.Identity} in project '{member.ProjectPath}' ({member.TokenCount} body tokens).",
-            snippet);
+            $"{member.TokenCount} body tokens",
+            snippet,
+            RelatedSymbol: new FindingSymbol(member.ProjectPath, member.SourcePath, member.Identity, member.Line));
     }
 
     private static double GetThreshold(string minimumSimilarity) => minimumSimilarity switch

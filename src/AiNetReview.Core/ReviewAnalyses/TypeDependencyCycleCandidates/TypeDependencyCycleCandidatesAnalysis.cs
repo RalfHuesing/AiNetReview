@@ -12,6 +12,8 @@ using Microsoft.CodeAnalysis;
 /// <summary>Reports maximal production type groups with mutual direct dependencies.</summary>
 public sealed class TypeDependencyCycleCandidatesAnalysis : IReviewAnalysis
 {
+    public IReviewFindingPresenter FindingPresenter { get; } = new TypeDependencyCycleCandidatesFindingPresenter();
+
     public ReviewAnalysisDescriptor Descriptor { get; } = new(
         analysisId: "type-dependency-cycle-candidates",
         title: "Cyclic Type Dependency Candidates",
@@ -26,7 +28,7 @@ public sealed class TypeDependencyCycleCandidatesAnalysis : IReviewAnalysis
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(options);
         cancellationToken.ThrowIfCancellationRequested();
-        var graph = await TypeDependencyGraphBuilder.BuildAsync(context, cancellationToken).ConfigureAwait(false);
+        var graph = await context.GetTypeDependencyGraphAsync(cancellationToken).ConfigureAwait(false);
         var components = TypeDependencyCycleSelector.Select(graph, cancellationToken);
         if (components.Count == 0)
         {

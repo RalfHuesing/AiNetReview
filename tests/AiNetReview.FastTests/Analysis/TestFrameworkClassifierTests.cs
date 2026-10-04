@@ -278,35 +278,21 @@ public sealed class TestFrameworkClassifierTests
             references.Add(TestFrameworkMetadata.Reference);
         }
 
-        var workspace = new AdhocWorkspace();
-        var projectId = ProjectId.CreateNewId();
+        var workspace = new FastTestWorkspace();
         var projectPath = Path.Combine(Path.GetTempPath(), "AiNetReview", projectName + ".csproj");
-        workspace.AddProject(ProjectInfo.Create(
-            projectId,
-            VersionStamp.Create(),
-            projectName,
-            projectName,
-            LanguageNames.CSharp,
-            filePath: projectPath,
-            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            metadataReferences: references));
-        var documentId = DocumentId.CreateNewId(projectId);
-        workspace.AddDocument(DocumentInfo.Create(
-            documentId,
-            "Tests.cs",
-            filePath: Path.Combine(Path.GetDirectoryName(projectPath)!, "Tests.cs"),
-            loader: TextLoader.From(TextAndVersion.Create(
-                SourceText.From(source),
-                VersionStamp.Create()))));
+        var projectId = workspace.AddProject(projectName, parseOptions: CSharpParseOptions.Default,
+            projectFilePath: projectPath, metadataReferences: references);
+        var documentId = workspace.AddDocument(projectId, "Tests.cs", source,
+            Path.Combine(Path.GetDirectoryName(projectPath)!, "Tests.cs"));
 
-        var project = workspace.CurrentSolution.GetProject(projectId)!;
+        var project = workspace.Solution.GetProject(projectId)!;
         var compilation = project.GetCompilationAsync().GetAwaiter().GetResult()!;
         var errors = compilation.GetDiagnostics().Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).ToArray();
         Assert.Empty(errors);
         return new CompilationFixture(workspace, project, project.GetDocument(documentId)!);
     }
 
-    private sealed class CompilationFixture(AdhocWorkspace workspace, Project project, Document document) : IDisposable
+    private sealed class CompilationFixture(FastTestWorkspace workspace, Project project, Document document) : IDisposable
     {
         public Project Project { get; } = project;
 

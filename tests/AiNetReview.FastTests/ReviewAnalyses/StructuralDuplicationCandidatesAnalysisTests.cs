@@ -52,8 +52,12 @@ public sealed class StructuralDuplicationCandidatesAnalysisTests
         Assert.Equal(new[] { "executableCount", "memberCount", "statementCount", "tokenCount" }, finding.Metrics.Keys.Order(StringComparer.Ordinal));
         Assert.Equal(2, finding.Evidence.Count);
         Assert.Equal(2, finding.RelatedSymbols.Count);
-        Assert.Contains("project=\"Product Two.csproj\";start=", finding.Evidence[0].Detail, StringComparison.Ordinal);
-        Assert.Contains(";end=", finding.Evidence[0].Detail, StringComparison.Ordinal);
+        Assert.Equal("Repeated statement fragment.", finding.Evidence[0].Detail);
+        var range = Assert.IsType<FindingSourceRange>(finding.Evidence[0].SourceRange);
+        Assert.Equal("Product Two.csproj", range.ProjectPath);
+        Assert.Equal(finding.Evidence[0].Line, range.StartLine);
+        Assert.True(range.StartColumn > 0);
+        Assert.True(range.EndLine > range.StartLine || range.EndLine == range.StartLine && range.EndColumn > range.StartColumn);
         Assert.Equal(Wrap("Second", BuildListBody("items", "copy", "entry", "mapped", "beforeB", 2), "items").Trim(), finding.Evidence[0].Snippet);
 
         var validated = await new CurrentFindingValidator().ValidateAndSortAsync(
@@ -203,7 +207,14 @@ public sealed class StructuralDuplicationCandidatesAnalysisTests
         Assert.Equal($"structural-duplicate:{firstToken.SpanStart}:{lastToken.Span.End - firstToken.SpanStart}", finding.Discriminator);
         Assert.Equal(start.Line + 1, finding.StartLine);
         Assert.Equal(2, finding.Evidence.Count);
-        Assert.Equal($"project=\"Product.csproj\";start={start.Line + 1}:{start.Character + 1};end={end.Line + 1}:{end.Character + 1}", finding.Evidence[0].Detail);
+        var occurrence = finding.Evidence[0];
+        Assert.Equal("Repeated statement fragment.", occurrence.Detail);
+        var sourceRange = Assert.IsType<FindingSourceRange>(occurrence.SourceRange);
+        Assert.Equal("Product.csproj", sourceRange.ProjectPath);
+        Assert.Equal(start.Line + 1, sourceRange.StartLine);
+        Assert.Equal(start.Character + 1, sourceRange.StartColumn);
+        Assert.Equal(end.Line + 1, sourceRange.EndLine);
+        Assert.Equal(end.Character + 1, sourceRange.EndColumn);
         Assert.Equal("Product.csproj", finding.ProjectPath);
         Assert.Equal("Positions.cs", finding.SourcePath);
     }
@@ -722,49 +733,29 @@ public sealed class StructuralDuplicationCandidatesAnalysisTests
         CSharpCompilationOptions compilationOptions,
         params (string Project, string File, string Source)[] documents)
     {
-        var workspace = new AdhocWorkspace();
-        var root = TestTempDirectory.Create();
+        var workspace = new FastTestWorkspace();
         var groups = documents.GroupBy(static document => document.Project, StringComparer.Ordinal).ToArray();
-        var projectIds = groups.ToDictionary(static group => group.Key, static _ => ProjectId.CreateNewId(), StringComparer.Ordinal);
+        var projectIds = new Dictionary<string, ProjectId>(StringComparer.Ordinal);
         foreach (var group in groups)
         {
-            workspace.AddProject(ProjectInfo.Create(
-                projectIds[group.Key],
-                VersionStamp.Create(),
-                group.Key,
-                group.Key,
-                LanguageNames.CSharp,
-                filePath: Path.Combine(root.DirectoryPath, group.Key + ".csproj"),
-                compilationOptions: compilationOptions,
-                parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
-                metadataReferences: FastTestReferences.CreatePlatformReferences()));
+            projectIds.Add(group.Key, workspace.AddProject(group.Key, compilationOptions: compilationOptions));
         }
 
         foreach (var document in documents)
         {
-            workspace.AddDocument(DocumentInfo.Create(
-                DocumentId.CreateNewId(projectIds[document.Project]),
-                document.File,
-                filePath: Path.Combine(root.DirectoryPath, document.File),
-                loader: TextLoader.From(TextAndVersion.Create(SourceText.From(document.Source), VersionStamp.Create()))));
+            workspace.AddDocument(projectIds[document.Project], document.File, document.Source);
         }
 
-        if (!workspace.TryApplyChanges(workspace.CurrentSolution))
-        {
-            throw new InvalidOperationException("Could not initialize Roslyn test workspace.");
-        }
-
-        return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root.DirectoryPath), root);
+        return new AnalysisFixture(workspace, workspace.CreateReviewContext());
     }
 
-    private sealed class AnalysisFixture(AdhocWorkspace workspace, ReviewContext context, IDisposable root) : IDisposable
+    private sealed class AnalysisFixture(FastTestWorkspace workspace, ReviewContext context) : IDisposable
     {
         public ReviewContext Context { get; } = context;
 
         public void Dispose()
         {
             workspace.Dispose();
-            root.Dispose();
         }
     }
 }

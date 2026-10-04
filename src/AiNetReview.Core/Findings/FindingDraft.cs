@@ -69,7 +69,18 @@ public sealed class FindingDraft
 
 }
 
-public sealed record FindingEvidence(string SourcePath, int Line, string Label, string Detail, string Snippet);
+public sealed record FindingEvidence(
+    string SourcePath,
+    int Line,
+    string Label,
+    string Detail,
+    string Snippet,
+    FindingSymbol? RelatedSymbol = null,
+    FindingSourceRange? SourceRange = null,
+    bool OmitWhenRedundantWithSubject = false);
+
+/// <summary>A one-based, end-exclusive source range associated with evidence.</summary>
+public sealed record FindingSourceRange(string ProjectPath, int StartLine, int StartColumn, int EndLine, int EndColumn);
 
 /// <param name="OccurrenceId">Optional range identity for multiple occurrences of one symbol; it does not change symbol identity.</param>
 public sealed record FindingSymbol(string ProjectPath, string SourcePath, string SymbolId, int Line, string? OccurrenceId = null);

@@ -13,6 +13,8 @@ using Microsoft.CodeAnalysis;
 /// <summary>Reports production types with broad direct production neighborhoods in both directions.</summary>
 public sealed class TypeDependencyHubCandidatesAnalysis : IReviewAnalysis
 {
+    public IReviewFindingPresenter FindingPresenter { get; } = new TypeDependencyHubCandidatesFindingPresenter();
+
     private static readonly ReviewAnalysisOptionDescriptor MinFanInOption = PositiveIntegerOption(
         "minFanIn", "Minimum distinct production consumer types for a dependency hub.", 10);
     private static readonly ReviewAnalysisOptionDescriptor MinFanOutOption = PositiveIntegerOption(
@@ -42,7 +44,7 @@ public sealed class TypeDependencyHubCandidatesAnalysis : IReviewAnalysis
         cancellationToken.ThrowIfCancellationRequested();
         var minFanIn = options["minFanIn"].GetInt32();
         var minFanOut = options["minFanOut"].GetInt32();
-        var graph = await TypeDependencyGraphBuilder.BuildAsync(context, cancellationToken).ConfigureAwait(false);
+        var graph = await context.GetTypeDependencyGraphAsync(cancellationToken).ConfigureAwait(false);
         var candidates = Select(graph, minFanIn, minFanOut, cancellationToken);
         if (candidates.Count == 0)
         {

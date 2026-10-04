@@ -40,12 +40,12 @@ public sealed class MissingTestEvidenceCandidateSelectorTests
                 }
             }
             """;
-        using var workspace = new AdhocWorkspace();
+        using var workspace = new FastTestWorkspace();
         var project = AddProjectWithDocument(workspace, "Example", source);
         Assert.False(ReviewSourceClassifier.IsTestProject(project), project.FilePath);
         Assert.Single(project.Documents);
 
-        var candidates = await SelectAsync(workspace.CurrentSolution, minDecisionCount: 1, minDecisionNesting: 1);
+        var candidates = await SelectAsync(workspace.Solution, minDecisionCount: 1, minDecisionNesting: 1);
         var methods = candidates.Select(static candidate => candidate.Method).ToArray();
 
         Assert.Contains(methods, static method => method.Name == "Method" && method.MethodKind == MethodKind.Ordinary);
@@ -69,10 +69,10 @@ public sealed class MissingTestEvidenceCandidateSelectorTests
     [Fact]
     public async Task SelectAsync_IncludesExpressionBodiedIndexerGetter()
     {
-        using var workspace = new AdhocWorkspace();
+        using var workspace = new FastTestWorkspace();
         AddProjectWithDocument(workspace, "Example", "public sealed class Example { public int this[int index] => index > 0 ? index : 0; }");
 
-        var candidates = await SelectAsync(workspace.CurrentSolution, minDecisionCount: 1, minDecisionNesting: 1);
+        var candidates = await SelectAsync(workspace.Solution, minDecisionCount: 1, minDecisionNesting: 1);
 
         var getter = Assert.Single(candidates);
         Assert.Equal("get_Item", getter.Method.Name);
@@ -136,11 +136,11 @@ public sealed class MissingTestEvidenceCandidateSelectorTests
                 }
             }
             """;
-        using var workspace = new AdhocWorkspace();
+        using var workspace = new FastTestWorkspace();
         AddProjectWithDocument(workspace, "Example", source);
 
         var candidates = await MissingTestEvidenceCandidateSelector.SelectAsync(
-            workspace.CurrentSolution,
+            workspace.Solution,
             minDecisionCount: 5,
             minDecisionNesting: 3,
             minIndirectDecisionCount: 6,
@@ -159,7 +159,7 @@ public sealed class MissingTestEvidenceCandidateSelectorTests
         Assert.DoesNotContain(byName.Keys, static name => name == "BelowNontrivialButAboveIndirect");
 
         var reversedThresholdCandidates = await MissingTestEvidenceCandidateSelector.SelectAsync(
-            workspace.CurrentSolution,
+            workspace.Solution,
             minDecisionCount: 5,
             minDecisionNesting: 4,
             minIndirectDecisionCount: 1,
@@ -171,7 +171,7 @@ public sealed class MissingTestEvidenceCandidateSelectorTests
     [Fact]
     public async Task SelectAsync_ExcludesGeneratedDocumentsSymbolsAndTestProjects()
     {
-        using var workspace = new AdhocWorkspace();
+        using var workspace = new FastTestWorkspace();
         var project = AddProjectWithDocument(
             workspace,
             "Example",
@@ -179,7 +179,7 @@ public sealed class MissingTestEvidenceCandidateSelectorTests
         AddDocument(workspace, project.Id, "Generated.g.cs", "public class GeneratedDocument { public void GeneratedDocumentMethod() { if (true) { } } }");
         AddProjectWithDocument(workspace, "Example.Tests", "public class TestProject { public void Excluded() { if (true) { } } }");
 
-        var candidates = await SelectAsync(workspace.CurrentSolution, minDecisionCount: 1, minDecisionNesting: 1);
+        var candidates = await SelectAsync(workspace.Solution, minDecisionCount: 1, minDecisionNesting: 1);
 
         Assert.Equal(["Included"], candidates.Select(static candidate => candidate.Method.Name));
     }
@@ -195,29 +195,16 @@ public sealed class MissingTestEvidenceCandidateSelectorTests
             minIndirectDecisionNesting: 3,
             CancellationToken.None);
 
-    private static Project AddProjectWithDocument(AdhocWorkspace workspace, string name, string source)
+    private static Project AddProjectWithDocument(FastTestWorkspace workspace, string name, string source)
     {
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-MissingTestEvidence-" + Guid.NewGuid().ToString("N"));
-        var projectId = ProjectId.CreateNewId();
-        var references = FastTestReferences.CreatePlatformReferences();
-        workspace.AddProject(ProjectInfo.Create(
-            projectId,
-            VersionStamp.Create(),
-            name,
-            name,
-            LanguageNames.CSharp,
-            filePath: Path.Combine(root, name + ".csproj"),
-            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            metadataReferences: references));
-        AddDocument(workspace, projectId, "Source.cs", source, Path.Combine(root, "Source.cs"));
-        return workspace.CurrentSolution.GetProject(projectId)!;
+        var projectId = workspace.AddProject(name, parseOptions: CSharpParseOptions.Default);
+        workspace.AddDocument(projectId, "Source.cs", source,
+            Path.Combine(workspace.RootPath, name, "Source.cs"));
+        return workspace.Solution.GetProject(projectId)!;
     }
 
-    private static void AddDocument(AdhocWorkspace workspace, ProjectId projectId, string name, string source, string? path = null) =>
-        workspace.AddDocument(DocumentInfo.Create(
-            DocumentId.CreateNewId(projectId),
-            name,
-            filePath: path ?? Path.Combine(Path.GetTempPath(), "AiNetReview-MissingTestEvidence", name),
-            loader: TextLoader.From(TextAndVersion.Create(SourceText.From(source), VersionStamp.Create()))));
+    private static void AddDocument(FastTestWorkspace workspace, ProjectId projectId, string name, string source, string? path = null) =>
+        workspace.AddDocument(projectId, name, source, path ?? Path.Combine(
+            workspace.RootPath, workspace.Solution.GetProject(projectId)!.Name, name));
 
 }

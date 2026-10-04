@@ -54,7 +54,8 @@ internal static class MemberSizeFindingFactory
                 member.Evidence.Line,
                 "Executable member declaration",
                 "This loaded source line identifies the measured member declaration.",
-                member.Evidence.Snippet)]);
+                member.Evidence.Snippet,
+                OmitWhenRedundantWithSubject: true)]);
     }
 
     private static string Append(string existing, string addition) =>

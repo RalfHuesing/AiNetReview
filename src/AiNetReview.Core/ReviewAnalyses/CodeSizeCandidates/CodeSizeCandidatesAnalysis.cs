@@ -13,6 +13,8 @@ using Microsoft.CodeAnalysis;
 /// <summary>Measures member, class, and file size candidates for focused review.</summary>
 public sealed class CodeSizeCandidatesAnalysis : IReviewAnalysis
 {
+    public IReviewFindingPresenter FindingPresenter { get; } = new CodeSizeCandidatesFindingPresenter();
+
     private static readonly ReviewAnalysisOptionDescriptor[] AnalysisOptions =
     [
         IntegerOption("percentile", "Nearest-rank percentile for member and type size groups (50 through 99).", 90, 50, 99),

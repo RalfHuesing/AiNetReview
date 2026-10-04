@@ -328,9 +328,8 @@ public sealed class DeadCodeCandidatesAnalysisTests
         var analysis = new DeadCodeCandidatesAnalysis();
 
         var localResult = await analysis.ExecuteAsync(fixture.Context, analysis.Descriptor.ResolveOptions(), CancellationToken.None);
-        using var emptyWorkspace = new AdhocWorkspace();
-        using var root = TestTempDirectory.Create();
-        var noCoverage = new ReviewContext(emptyWorkspace.CurrentSolution, root.DirectoryPath);
+        using var emptyWorkspace = new FastTestWorkspace();
+        var noCoverage = emptyWorkspace.CreateReviewContext();
 
         await Assert.ThrowsAsync<AnalysisFailedException>(() =>
             analysis.ExecuteAsync(noCoverage, analysis.Descriptor.ResolveOptions(), CancellationToken.None));
@@ -390,7 +389,8 @@ public sealed class DeadCodeCandidatesAnalysisTests
     [Fact]
     public async Task ExecuteAsync_UsesSnapshotRazorBindingsAndFailsOnUnevaluableXaml()
     {
-        using var fixture = CreateFixture(("Product", "Product", """
+        using var temp = TestTempDirectory.Create();
+        using var fixture = CreateFixtureAtRoot(temp.DirectoryPath, ("Product", "Product", """
             namespace Ui;
             internal sealed class Widget
             {
@@ -931,45 +931,50 @@ public sealed class DeadCodeCandidatesAnalysisTests
         string? mainTypeName,
         IEnumerable<MetadataReference>? additionalReferences,
         params (string Name, string Assembly, string Source, string? FileName)[] projects)
+        => CreateFixtureAtRoot(null, outputKind, mainTypeName, additionalReferences, projects);
+
+    private static AnalysisFixture CreateFixtureAtRoot(
+        string rootPath,
+        params (string Name, string Assembly, string Source, string? FileName)[] projects)
+        => CreateFixtureAtRoot(rootPath, OutputKind.DynamicallyLinkedLibrary, mainTypeName: null, additionalReferences: null, projects);
+
+    private static AnalysisFixture CreateFixtureAtRoot(
+        string? rootPath,
+        OutputKind outputKind,
+        string? mainTypeName,
+        IEnumerable<MetadataReference>? additionalReferences,
+        params (string Name, string Assembly, string Source, string? FileName)[] projects)
     {
-        var workspace = new AdhocWorkspace();
-        var root = TestTempDirectory.Create();
+        var workspace = new FastTestWorkspace(rootPath);
+        var root = workspace.RootPath;
         var projectIds = projects.ToDictionary(static project => project.Name, static _ => ProjectId.CreateNewId(), StringComparer.Ordinal);
         foreach (var spec in projects)
         {
-            workspace.AddProject(ProjectInfo.Create(
-                projectIds[spec.Name],
-                VersionStamp.Create(),
+            workspace.AddProject(
                 spec.Name,
-                spec.Assembly,
-                LanguageNames.CSharp,
-                filePath: Path.Combine(root.DirectoryPath, spec.Name + ".csproj"),
-                compilationOptions: new CSharpCompilationOptions(outputKind, mainTypeName: mainTypeName),
                 parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
+                compilationOptions: new CSharpCompilationOptions(outputKind, mainTypeName: mainTypeName),
+                projectFilePath: Path.Combine(root, spec.Name + ".csproj"),
+                assemblyName: spec.Assembly,
                 metadataReferences: FastTestReferences.CreatePlatformReferences().Append(
                     MetadataReference.CreateFromFile(typeof(Microsoft.JSInterop.JSInvokableAttribute).Assembly.Location))
-                    .Concat(additionalReferences ?? Array.Empty<MetadataReference>())));
+                    .Concat(additionalReferences ?? Array.Empty<MetadataReference>()),
+                projectId: projectIds[spec.Name]);
         }
 
         foreach (var spec in projects)
         {
             var name = spec.FileName ?? spec.Name + ".cs";
-            workspace.AddDocument(DocumentInfo.Create(
-                DocumentId.CreateNewId(projectIds[spec.Name]),
-                name,
-                filePath: Path.Combine(root.DirectoryPath, name),
-                loader: TextLoader.From(TextAndVersion.Create(SourceText.From(spec.Source), VersionStamp.Create()))));
+            workspace.AddDocument(projectIds[spec.Name], name, spec.Source, Path.Combine(root, name));
         }
 
-        var solution = workspace.CurrentSolution;
         var productionId = projectIds[projects[0].Name];
         foreach (var referencedProject in projects.Skip(1))
         {
-            solution = solution.AddProjectReference(projectIds[referencedProject.Name], new ProjectReference(productionId));
+            workspace.AddProjectReference(projectIds[referencedProject.Name], new ProjectReference(productionId));
         }
 
-        Assert.True(workspace.TryApplyChanges(solution));
-        return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root.DirectoryPath), root);
+        return new AnalysisFixture(workspace, workspace.CreateReviewContext());
     }
 
     private static MetadataReference CreateMetadataReference(string assemblyName, string source)
@@ -1090,14 +1095,13 @@ public sealed class DeadCodeCandidatesAnalysisTests
         }
         """;
 
-    private sealed class AnalysisFixture(AdhocWorkspace workspace, ReviewContext context, IDisposable root) : IDisposable
+    private sealed class AnalysisFixture(FastTestWorkspace workspace, ReviewContext context) : IDisposable
     {
         public ReviewContext Context { get; } = context;
 
         public void Dispose()
         {
             workspace.Dispose();
-            root.Dispose();
         }
     }
 }

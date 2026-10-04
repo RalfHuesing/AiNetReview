@@ -31,7 +31,7 @@ public sealed class ZeroConfigIntegrationTests
         using var tempDirectory = TestTempDirectory.Create("ainet-zero-config-");
         var projectRoot = await CreateProjectAsync(tempDirectory.DirectoryPath);
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
-        await using var services = BuildServices();
+        await using var services = IntegrationTestHelpers.BuildServices();
 
         var defaultCommand = await InvokeAsync(["review", projectRoot], services);
         AssertSuccessfulReview(projectRoot, defaultCommand);
@@ -88,7 +88,7 @@ public sealed class ZeroConfigIntegrationTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => bootstrapTask);
         Assert.False(File.Exists(configPath));
 
-        await using var services = BuildServices();
+        await using var services = IntegrationTestHelpers.BuildServices();
         var retry = await InvokeAsync(["review", projectRoot], services);
 
         AssertSuccessfulReview(projectRoot, retry);
@@ -112,7 +112,7 @@ public sealed class ZeroConfigIntegrationTests
     [InlineData("review", "--config", "ainetreview.json")]
     public async Task ReviewCommand_RejectsMissingOrUnknownSubcommandAndLegacyOptions(params string[] args)
     {
-        await using var services = BuildServices();
+        await using var services = IntegrationTestHelpers.BuildServices();
 
         var result = await InvokeAsync(args, services);
 
@@ -126,7 +126,7 @@ public sealed class ZeroConfigIntegrationTests
     [Fact]
     public async Task ReviewCommand_WithoutArguments_DisplaysHelp()
     {
-        await using var services = BuildServices();
+        await using var services = IntegrationTestHelpers.BuildServices();
 
         var result = await InvokeAsync([], services);
 
@@ -142,7 +142,7 @@ public sealed class ZeroConfigIntegrationTests
     [InlineData("-?")]
     public async Task ReviewCommand_WithHelpFlag_DisplaysHelp(string helpFlag)
     {
-        await using var services = BuildServices();
+        await using var services = IntegrationTestHelpers.BuildServices();
 
         var result = await InvokeAsync([helpFlag], services);
 
@@ -155,7 +155,7 @@ public sealed class ZeroConfigIntegrationTests
     [Fact]
     public async Task ReviewCommand_SubcommandHelp_DisplaysSubcommandHelp()
     {
-        await using var services = BuildServices();
+        await using var services = IntegrationTestHelpers.BuildServices();
 
         var result = await InvokeAsync(["review", "--help"], services);
 
@@ -173,7 +173,7 @@ public sealed class ZeroConfigIntegrationTests
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
         const string userConfiguration = "{\"schemaVersion\":1,\"solution\":\"Sample.slnx\",\"outputDirectory\":\"audit-reporting\",\"analyses\":{\"code-size-candidates\":{\"enabled\":false,\"testOptions\":{\"percentile\":75}}}}";
         await File.WriteAllTextAsync(configPath, userConfiguration);
-        await using var services = BuildServices();
+        await using var services = IntegrationTestHelpers.BuildServices();
 
         var review = await InvokeAsync(["review", projectRoot], services);
         AssertSuccessfulReview(projectRoot, review);
@@ -190,7 +190,7 @@ public sealed class ZeroConfigIntegrationTests
     {
         using var tempDirectory = TestTempDirectory.Create("ainet-zero-config-no-solution-");
         var projectRoot = tempDirectory.CreateSubdirectory("empty-project");
-        await using var services = BuildServices();
+        await using var services = IntegrationTestHelpers.BuildServices();
         using var output = new StringWriter();
         using var error = new StringWriter();
 
@@ -235,36 +235,9 @@ public sealed class ZeroConfigIntegrationTests
         await File.WriteAllTextAsync(projectFile,
             "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup></Project>");
         await File.WriteAllTextAsync(Path.Combine(projectDirectory, "Class1.cs"), "namespace Sample; public sealed class SampleType { public void Run() { } }");
-        await RestoreProjectAsync(projectFile, projectDirectory);
+        await IntegrationTestHelpers.RestoreAsync(projectFile, projectDirectory);
         await File.WriteAllTextAsync(Path.Combine(projectRoot, "Sample.slnx"), "<Solution><Project Path=\"Sample/Sample.csproj\" /></Solution>");
         return projectRoot;
     }
 
-    private static async Task RestoreProjectAsync(string projectFile, string workingDirectory)
-    {
-        var startInfo = new ProcessStartInfo("dotnet")
-        {
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        startInfo.ArgumentList.Add("restore");
-        startInfo.ArgumentList.Add(projectFile);
-        startInfo.ArgumentList.Add("--ignore-failed-sources");
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start dotnet restore.");
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        Assert.True(process.ExitCode == 0, $"dotnet restore failed: {await stdout}{await stderr}");
-    }
-
-    private static ServiceProvider BuildServices()
-    {
-        var services = new ServiceCollection();
-        services.AddAiNetReviewServices();
-        services.AddAiNetReviewAnalyses();
-        services.AddLogging();
-        return services.BuildServiceProvider();
-    }
 }

@@ -27,7 +27,7 @@ internal static class AuditMapReportWriter
         var indexPath = Path.Combine(directory, "index.md");
         var builder = new StringBuilder()
             .Append("# Audit map\n\n")
-            .Append("Run: ").Append(MarkdownReportWriter.FormatCodeSpan(runId)).Append(". Maps home: `../index.md`.\n\n")
+            .Append("Run: ").Append(MarkdownFormatUtils.FormatCodeSpan(runId)).Append(". Maps home: `../index.md`.\n\n")
             .Append("All current findings from the configured analyses.\n\n")
             .Append("A finding is listed once, under its representative project and source file. To find every finding involving a file, search the full repository-relative path in canonical analysis details across `../../production/`, `../../tests/`, and `../../mixed/`, including secondary occurrences, witnesses, and partial declarations.\n\n")
             .Append("Findings: **").Append(findings.Count.ToString(CultureInfo.InvariantCulture)).Append("**. IDs route to canonical analysis details.\n\n");
@@ -51,26 +51,26 @@ internal static class AuditMapReportWriter
                 var sourcePath = first.Finding.SourcePath;
                 if (!string.Equals(previousProject, projectPath, StringComparison.Ordinal))
                 {
-                    builder.Append("## Project: ").Append(MarkdownReportWriter.FormatCodeSpan(projectPath)).Append("\n\n");
+                    builder.Append("## Project: ").Append(MarkdownFormatUtils.FormatCodeSpan(projectPath)).Append("\n\n");
                     previousProject = projectPath;
                 }
 
-                builder.Append("### File: ").Append(MarkdownReportWriter.FormatCodeSpan(sourcePath)).Append("\n\n");
+                builder.Append("### File: ").Append(MarkdownFormatUtils.FormatCodeSpan(sourcePath)).Append("\n\n");
                 var routes = group.Select(finding =>
                 {
-                    var area = MarkdownReportWriter.GetFindingArea(finding);
+                    var area = FindingReportUtilities.GetFindingArea(finding);
                     return new
                     {
                         Path = "../../" + area + "/"
-                            + MarkdownReportWriter.EncodePathSegment(finding.AnalysisId) + ".md",
-                        Id = MarkdownReportWriter.GetFindingId(finding),
+                            + FindingReportUtilities.EncodePathSegment(finding.AnalysisId) + ".md",
+                        Id = FindingReportUtilities.GetFindingId(finding),
                     };
                 });
                 foreach (var routeGroup in routes.GroupBy(static route => route.Path, StringComparer.Ordinal)
                              .OrderBy(static routeGroup => routeGroup.Key, StringComparer.Ordinal))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    builder.Append("- ").Append(MarkdownReportWriter.FormatCodeSpan(routeGroup.Key)).Append(": ")
+                    builder.Append("- ").Append(MarkdownFormatUtils.FormatCodeSpan(routeGroup.Key)).Append(": ")
                         .Append(string.Join(", ", routeGroup.Select(static route => route.Id).Order(StringComparer.Ordinal))).Append('\n');
                 }
 
@@ -78,6 +78,6 @@ internal static class AuditMapReportWriter
             }
         }
 
-        await MarkdownReportWriter.WriteUtf8Async(indexPath, builder.ToString(), cancellationToken).ConfigureAwait(false);
+        await ReportIoUtils.WriteUtf8Async(indexPath, builder.ToString(), cancellationToken).ConfigureAwait(false);
     }
 }

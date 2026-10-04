@@ -14,6 +14,8 @@ using Microsoft.CodeAnalysis.Text;
 /// <summary>Reports structurally nontrivial production functions without a direct static test path.</summary>
 public sealed class MissingTestEvidenceCandidatesAnalysis : IReviewAnalysis
 {
+    public IReviewFindingPresenter FindingPresenter { get; } = new MissingTestEvidenceCandidatesFindingPresenter();
+
     private const string NoPathCategory = "no-static-test-path";
     private const string IndirectOnlyCategory = "indirect-test-path-only";
 

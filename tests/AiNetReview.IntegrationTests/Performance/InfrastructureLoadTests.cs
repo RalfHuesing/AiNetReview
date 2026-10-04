@@ -11,6 +11,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
+using AiNetReview.IntegrationTests;
 
 public sealed class InfrastructureLoadTests(ITestOutputHelper output)
 {
@@ -62,7 +63,7 @@ public sealed class InfrastructureLoadTests(ITestOutputHelper output)
         var configPath = Path.Combine(projectRoot, "ainetreview.json");
         await File.WriteAllTextAsync(configPath,
             "{\"schemaVersion\":1,\"solution\":\"AiNetReview.slnx\",\"outputDirectory\":\"reports\",\"analyses\":{\"method-control-flow-outliers\":{}}}");
-        await RestoreAsync(solutionPath, projectRoot);
+        await IntegrationTestHelpers.RestoreAsync(solutionPath, projectRoot, disableParallel: true, disableNodeReuse: true);
 
         using var host = IsolatedHost.Create();
         using var process = host.Start(host.CreateWorkingDirectory(), "review", Path.GetDirectoryName(configPath)!);
@@ -128,27 +129,6 @@ public sealed class InfrastructureLoadTests(ITestOutputHelper output)
     [DllImport("psapi.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetProcessMemoryInfo(IntPtr process, ref ProcessMemoryCountersEx counters, uint size);
-
-    private static async Task RestoreAsync(string solutionPath, string workingDirectory)
-    {
-        var startInfo = new ProcessStartInfo("dotnet")
-        {
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        startInfo.Environment["MSBUILDDISABLENODEREUSE"] = "1";
-        startInfo.ArgumentList.Add("restore");
-        startInfo.ArgumentList.Add(solutionPath);
-        startInfo.ArgumentList.Add("--ignore-failed-sources");
-        startInfo.ArgumentList.Add("--disable-parallel");
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Could not start dotnet restore.");
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        Assert.True(process.ExitCode == 0, $"dotnet restore failed: {await stdout}{await stderr}");
-    }
 
     private static async Task<int> CountCodeLinesAsync(IEnumerable<string> sourcePaths)
     {

@@ -151,47 +151,23 @@ public sealed class IndirectionDriftCandidatesAnalysisTests
 
     private static AnalysisFixture CreateFixture(string projectName, params (string File, string Source)[] documents)
     {
-        var workspace = new AdhocWorkspace();
-        var root = Path.Combine(Path.GetTempPath(), "AiNetReview-Indirection-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        var projectId = ProjectId.CreateNewId();
-        workspace.AddProject(ProjectInfo.Create(
-            projectId,
-            VersionStamp.Create(),
-            projectName,
-            projectName,
-            LanguageNames.CSharp,
-            filePath: Path.Combine(root, projectName + ".csproj"),
-            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            parseOptions: new CSharpParseOptions(LanguageVersion.Preview),
-            metadataReferences: FastTestReferences.CreatePlatformReferences()));
+        var workspace = new FastTestWorkspace();
+        var projectId = workspace.AddProject(projectName);
         foreach (var document in documents)
         {
-            workspace.AddDocument(DocumentInfo.Create(
-                DocumentId.CreateNewId(projectId),
-                document.File,
-                filePath: Path.Combine(root, document.File),
-                loader: TextLoader.From(TextAndVersion.Create(SourceText.From(document.Source), VersionStamp.Create()))));
+            workspace.AddDocument(projectId, document.File, document.Source);
         }
 
-        if (!workspace.TryApplyChanges(workspace.CurrentSolution))
-        {
-            workspace.Dispose();
-            Directory.Delete(root, recursive: true);
-            throw new InvalidOperationException("Could not initialize Roslyn test workspace.");
-        }
-
-        return new AnalysisFixture(workspace, new ReviewContext(workspace.CurrentSolution, root), root);
+        return new AnalysisFixture(workspace, workspace.CreateReviewContext());
     }
 
-    private sealed class AnalysisFixture(AdhocWorkspace workspace, ReviewContext context, string root) : IDisposable
+    private sealed class AnalysisFixture(FastTestWorkspace workspace, ReviewContext context) : IDisposable
     {
         public ReviewContext Context { get; } = context;
 
         public void Dispose()
         {
             workspace.Dispose();
-            Directory.Delete(root, recursive: true);
         }
     }
 }
