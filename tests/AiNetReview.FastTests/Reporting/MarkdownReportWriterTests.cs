@@ -155,10 +155,22 @@ public sealed class MarkdownReportWriterTests
         var auditMapFiles = Directory.GetFiles(Path.Combine(runDirectory, "maps", "audit"), "*.md", SearchOption.AllDirectories);
         Assert.Single(auditMapFiles);
 
-        var allMap = await File.ReadAllTextAsync(Path.Combine(runDirectory, "maps", "audit", "index.md"));
+        var auditMapPath = Path.Combine(runDirectory, "maps", "audit", "index.md");
+        var auditMapDirectory = Path.GetDirectoryName(auditMapPath)!;
+        var allMap = await File.ReadAllTextAsync(auditMapPath);
         Assert.Equal(40, Regex.Matches(allMap, "finding-[a-f0-9]{24}", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)).Count);
         Assert.Contains("src/Area0/Signal0.cs", allMap, StringComparison.Ordinal);
         Assert.Contains("../../production/fixture-analysis.md", allMap, StringComparison.Ordinal);
+        Assert.Contains("representative project and source file", allMap, StringComparison.Ordinal);
+        Assert.Contains("search the full repository-relative path", allMap, StringComparison.Ordinal);
+        Assert.Contains("secondary occurrences, witnesses, and partial declarations", allMap, StringComparison.Ordinal);
+        foreach (var area in new[] { "production", "tests", "mixed" })
+        {
+            var route = $"../../{area}/";
+            Assert.Contains($"`{route}`", allMap, StringComparison.Ordinal);
+            Assert.True(Directory.Exists(Path.GetFullPath(Path.Combine(auditMapDirectory, route))),
+                $"The audit map's {route} route must resolve to a published analysis area.");
+        }
         Assert.DoesNotContain("tests/Shared/OtherOccurrence.cs:17", allMap, StringComparison.Ordinal);
         Assert.DoesNotContain("Original rationale for signal 0", allMap, StringComparison.Ordinal);
         Assert.Contains("finding-d11ec9a27bbc3347f9bd09b3", allMap, StringComparison.Ordinal);
@@ -444,6 +456,19 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("false positive", index, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("evidence", index, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("## Audit scope", index, StringComparison.Ordinal);
+        Assert.Contains("## Quick start", index, StringComparison.Ordinal);
+        Assert.Contains("production/index.md", index, StringComparison.Ordinal);
+        Assert.Contains("tests/index.md", index, StringComparison.Ordinal);
+        Assert.Contains("mixed/index.md", index, StringComparison.Ordinal);
+        Assert.Contains("maps/audit/index.md", index, StringComparison.Ordinal);
+        Assert.Contains("maps/projects.md", index, StringComparison.Ordinal);
+        Assert.Contains("Read the canonical analysis report's header first", index, StringComparison.Ordinal);
+        Assert.Contains("its path legend, scope, and uncertainty notes apply to the excerpts", index, StringComparison.Ordinal);
+        Assert.Contains("dependencies.md", index, StringComparison.Ordinal);
+        Assert.True(index.IndexOf("## Audit scope", StringComparison.Ordinal)
+            < index.IndexOf("## Quick start", StringComparison.Ordinal));
+        Assert.True(index.IndexOf("## Quick start", StringComparison.Ordinal)
+            < index.IndexOf("## Analyses and effective options", StringComparison.Ordinal));
         Assert.DoesNotContain("baseline", index, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("--cmd", index, StringComparison.Ordinal);
     }
@@ -613,6 +638,11 @@ public sealed class MarkdownReportWriterTests
         Assert.Contains("Tests`1.CallsApi", detail, StringComparison.Ordinal);
         Assert.Contains("Sample/Generated/Worker.g.cs:2", detail, StringComparison.Ordinal);
         Assert.Contains("Reflection, dependency injection, external test projects, dynamic dispatch, branch execution, and custom test discovery", detail, StringComparison.Ordinal);
+        Assert.Contains("The report does not identify which specific input caused a marker; markers on every finding do not by themselves prove a global uncertainty input.", detail, StringComparison.Ordinal);
+        Assert.True(detail.IndexOf("Source paths are repository-relative", StringComparison.Ordinal)
+            < detail.IndexOf("## Summary", StringComparison.Ordinal));
+        Assert.True(detail.IndexOf("This is static test-path evidence from the loaded snapshot", StringComparison.Ordinal)
+            < detail.IndexOf("## Summary", StringComparison.Ordinal));
         Assert.Contains("Findings: **3**", auditMap, StringComparison.Ordinal);
         Assert.Contains("production/index.md", rootIndex, StringComparison.Ordinal);
         Assert.Contains("other-analysis.md", areaIndex, StringComparison.Ordinal);

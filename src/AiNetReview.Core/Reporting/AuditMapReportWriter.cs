@@ -27,8 +27,9 @@ internal static class AuditMapReportWriter
         var indexPath = Path.Combine(directory, "index.md");
         var builder = new StringBuilder()
             .Append("# Audit map\n\n")
-            .Append("Run: ").Append(MarkdownReportWriter.FormatCodeSpan(runId)).Append(". Maps home: `../index.md`. Grouped by representative project and source file.\n\n")
+            .Append("Run: ").Append(MarkdownReportWriter.FormatCodeSpan(runId)).Append(". Maps home: `../index.md`.\n\n")
             .Append("All current findings from the configured analyses.\n\n")
+            .Append("A finding is listed once, under its representative project and source file. To find every finding involving a file, search the full repository-relative path in canonical analysis details across `../../production/`, `../../tests/`, and `../../mixed/`, including secondary occurrences, witnesses, and partial declarations.\n\n")
             .Append("Findings: **").Append(findings.Count.ToString(CultureInfo.InvariantCulture)).Append("**. IDs route to canonical analysis details.\n\n");
 
         if (findings.Count == 0)

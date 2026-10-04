@@ -57,12 +57,17 @@ internal static class MapsReportWriter
             var projectEdges = maps.TypeEdges.Where(edge => string.Equals(typesById[edge.FromTypeId].ProjectKey, project.Key, StringComparison.Ordinal)
                     || string.Equals(typesById[edge.ToTypeId].ProjectKey, project.Key, StringComparison.Ordinal))
                 .OrderBy(edge => edge.FromTypeId, StringComparer.Ordinal).ThenBy(edge => edge.ToTypeId, StringComparer.Ordinal).ToArray();
+            var displayedNames = CreateTypeNames(projectTypes, projectEdges, typesById, projectByKey);
             var projectDirectory = GetProjectDirectory(directory, project);
             Directory.CreateDirectory(projectDirectory);
             await MarkdownReportWriter.WriteUtf8Async(Path.Combine(projectDirectory, "structure.md"),
                 FormatStructure(project, projectFiles, projectTypes, cancellationToken), cancellationToken).ConfigureAwait(false);
             await MarkdownReportWriter.WriteUtf8Async(Path.Combine(projectDirectory, "dependencies.md"),
-                FormatDependencies(project, projectTypes, projectEdges, typesById, projectByKey, cancellationToken), cancellationToken).ConfigureAwait(false);
+                FormatDependencyHub(project, projectEdges, typesById, projectByKey, cancellationToken), cancellationToken).ConfigureAwait(false);
+            await MarkdownReportWriter.WriteUtf8Async(Path.Combine(projectDirectory, "dependencies-outgoing.md"),
+                FormatDependencyOutgoing(project, projectEdges, displayedNames, typesById, projectByKey, cancellationToken), cancellationToken).ConfigureAwait(false);
+            await MarkdownReportWriter.WriteUtf8Async(Path.Combine(projectDirectory, "dependencies-incoming.md"),
+                FormatDependencyIncoming(project, projectEdges, displayedNames, typesById, projectByKey, cancellationToken), cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -81,7 +86,7 @@ internal static class MapsReportWriter
             .Append("Choose a map: `projects.md` for project roles and references; `audit/index.md` for findings.\n\n")
             .Append("Type dependencies are direct statically bound source-type edges. Production pages show production-to-production outgoing edges; incoming edges can include production sources and test consumers. Test pages show test-to-production consumer edges. Test-to-test and production-to-test edges are outside this graph. Generated code, metadata, dynamic targets, and runtime dispatch are not inferred.\n\n")
             .Append("File counts and UTF-8 byte totals are per-project; linked files can be listed in more than one project. Folder totals count descendant files recursively. Byte values encode loaded source text as UTF-8 without a BOM. Navigation paths are relative to the containing map; source, project, and witness paths are project-root-relative.\n\n")
-            .Append("From `projects.md`, open each project's `structure.md` or `dependencies.md` route.\n");
+            .Append("From `projects.md`, open each project's `structure.md` or `dependencies.md` hub. The hub links to separate `dependencies-outgoing.md` witness maps and `dependencies-incoming.md` consumer maps.\n");
         return builder.ToString();
     }
 
@@ -204,9 +209,8 @@ internal static class MapsReportWriter
         return builder.ToString();
     }
 
-    private static string FormatDependencies(
+    private static string FormatDependencyHub(
         ReviewMapProject project,
-        IReadOnlyList<ReviewMapType> projectTypes,
         IReadOnlyList<ReviewMapTypeEdge> edges,
         IReadOnlyDictionary<string, ReviewMapType> typesById,
         IReadOnlyDictionary<string, ReviewMapProject> projectByKey,
@@ -220,18 +224,38 @@ internal static class MapsReportWriter
         var incoming = edges.Where(edge => string.Equals(typesById[edge.ToTypeId].ProjectKey, project.Key, StringComparison.Ordinal)).ToArray();
         builder.Append("Outgoing: ").Append(outgoing.Length.ToString(CultureInfo.InvariantCulture))
             .Append("; incoming: ").Append(incoming.Length.ToString(CultureInfo.InvariantCulture)).Append(".\n\n");
-        var displayedNames = CreateTypeNames(projectTypes, edges, typesById, projectByKey);
         AppendProjectRoutes(builder, project, edges, typesById, projectByKey, cancellationToken);
         if (outgoing.Length == 0 && incoming.Length == 0)
         {
-            builder.Append("No in-scope direct type edges were prepared for this project.\n");
-            return builder.ToString();
+            builder.Append("No in-scope direct type edges were prepared for this project.\n\n");
         }
 
-        builder.Append("## Outgoing edges\n\nEach file heading applies to its line locations.\n\n");
+        builder.Append("\n## Detail maps\n\n")
+            .Append("Outgoing witnesses: ").Append(MarkdownReportWriter.FormatCodeSpan("dependencies-outgoing.md"))
+            .Append(" — search for an exact type name or source path, then read the file heading for its `Lnn` witnesses.\n\n")
+            .Append("Incoming consumers: ").Append(MarkdownReportWriter.FormatCodeSpan("dependencies-incoming.md"))
+            .Append(" — search for the exact target type name to identify its consumers; consult Consumer declarations for their locations, then follow the source project's outgoing route in Project routes to the canonical witness.\n");
+        return builder.ToString();
+    }
+
+    private static string FormatDependencyOutgoing(
+        ReviewMapProject project,
+        IReadOnlyList<ReviewMapTypeEdge> edges,
+        IReadOnlyDictionary<string, string> displayedNames,
+        IReadOnlyDictionary<string, ReviewMapType> typesById,
+        IReadOnlyDictionary<string, ReviewMapProject> projectByKey,
+        CancellationToken cancellationToken)
+    {
+        var builder = new StringBuilder()
+            .Append("# Outgoing type dependencies — ").Append(MarkdownReportWriter.FormatCodeSpan(project.ProjectPath)).Append("\n\n")
+            .Append("Project: ").Append(MarkdownReportWriter.FormatCodeSpan(project.ProjectPath)).Append("; hub: ")
+            .Append(MarkdownReportWriter.FormatCodeSpan("dependencies.md")).Append("; structure: ")
+            .Append(MarkdownReportWriter.FormatCodeSpan("structure.md")).Append(". This is a static graph of direct source-type dependencies; generated code, metadata, dynamic targets, and runtime dispatch are not inferred. Source and witness paths are project-root-relative; `Lnn` is a one-based source line.\n\n")
+            .Append("## Outgoing edges\n\nEach file heading applies to the locations listed below it.\n\n");
+        var outgoing = edges.Where(edge => string.Equals(typesById[edge.FromTypeId].ProjectKey, project.Key, StringComparison.Ordinal)).ToArray();
         if (outgoing.Length == 0)
         {
-            builder.Append("None.\n\n");
+            builder.Append("No in-scope outgoing direct type edges were prepared for this project.\n\n");
         }
         var witnessedOutgoing = outgoing.SelectMany(edge => edge.Witnesses.Select(witness => (Edge: edge, Witness: witness)))
             .GroupBy(static item => (item.Witness.ProjectKey, item.Witness.SourcePath))
@@ -278,6 +302,23 @@ internal static class MapsReportWriter
             builder.Append('\n');
         }
 
+        return builder.ToString();
+    }
+
+    private static string FormatDependencyIncoming(
+        ReviewMapProject project,
+        IReadOnlyList<ReviewMapTypeEdge> edges,
+        IReadOnlyDictionary<string, string> displayedNames,
+        IReadOnlyDictionary<string, ReviewMapType> typesById,
+        IReadOnlyDictionary<string, ReviewMapProject> projectByKey,
+        CancellationToken cancellationToken)
+    {
+        var incoming = edges.Where(edge => string.Equals(typesById[edge.ToTypeId].ProjectKey, project.Key, StringComparison.Ordinal)).ToArray();
+        var builder = new StringBuilder()
+            .Append("# Incoming type dependencies — ").Append(MarkdownReportWriter.FormatCodeSpan(project.ProjectPath)).Append("\n\n")
+            .Append("Project: ").Append(MarkdownReportWriter.FormatCodeSpan(project.ProjectPath)).Append("; hub: ")
+            .Append(MarkdownReportWriter.FormatCodeSpan("dependencies.md")).Append("; structure: ")
+            .Append(MarkdownReportWriter.FormatCodeSpan("structure.md")).Append(". This is a static graph of direct source-type dependencies; generated code, metadata, dynamic targets, and runtime dispatch are not inferred. Source and declaration paths are project-root-relative; `Lnn` is a one-based source line.\n\n");
         AppendConsumerDeclarations(builder, incoming, displayedNames, typesById, projectByKey, cancellationToken);
         AppendIncomingEdges(builder, incoming, displayedNames, typesById, projectByKey, cancellationToken);
         return builder.ToString();
@@ -328,10 +369,10 @@ internal static class MapsReportWriter
         CancellationToken cancellationToken)
     {
         builder.Append("## Incoming edges\n\n")
-            .Append("Only non-empty consumer groups are shown. Declaration locations appear in Consumer declarations; edge witnesses are in the source project's outgoing map listed under Project routes.\n\n");
+            .Append("Only non-empty consumer groups are shown. Declaration locations appear in Consumer declarations; edge witnesses are in the source project's outgoing map listed in the `dependencies.md` Project routes table.\n\n");
         if (incoming.Count == 0)
         {
-            builder.Append("None.\n");
+            builder.Append("No in-scope incoming direct type edges were prepared for this project.\n");
             return;
         }
 
@@ -405,14 +446,15 @@ internal static class MapsReportWriter
             .OrderBy(static item => item.ProjectPath, StringComparer.Ordinal)
             .ToArray();
 
-        builder.Append("## Project routes\n\n| Project path | Role | Structure route | Dependency route |\n| --- | --- | --- | --- |\n");
+        builder.Append("## Project routes\n\n| Project path | Role | Structure route | Dependency route | Outgoing route |\n| --- | --- | --- | --- | --- |\n");
         foreach (var relatedProject in projectKeys)
         {
             cancellationToken.ThrowIfCancellationRequested();
             builder.Append("| ").Append(MarkdownReportWriter.FormatCodeSpan(relatedProject.ProjectPath)).Append(" | ")
                 .Append(relatedProject.Role == ProjectRole.Tests ? "tests" : "production")
                 .Append(" | ").Append(MarkdownReportWriter.FormatCodeSpan(StructureRoute(relatedProject)))
-                .Append(" | ").Append(MarkdownReportWriter.FormatCodeSpan(DependencyRoute(relatedProject))).Append(" |\n");
+                .Append(" | ").Append(MarkdownReportWriter.FormatCodeSpan(DependencyRoute(relatedProject)))
+                .Append(" | ").Append(MarkdownReportWriter.FormatCodeSpan(OutgoingRoute(relatedProject))).Append(" |\n");
         }
         builder.Append('\n');
     }
@@ -425,6 +467,9 @@ internal static class MapsReportWriter
 
     private static string DependencyRoute(ReviewMapProject source) =>
         "../../" + (source.Role == ProjectRole.Tests ? "tests" : "production") + "/" + source.Key + "/dependencies.md";
+
+    private static string OutgoingRoute(ReviewMapProject source) =>
+        "../../" + (source.Role == ProjectRole.Tests ? "tests" : "production") + "/" + source.Key + "/dependencies-outgoing.md";
 
     private static string StructureRoute(ReviewMapProject owner) =>
         "../../" + (owner.Role == ProjectRole.Tests ? "tests" : "production") + "/" + owner.Key + "/structure.md";

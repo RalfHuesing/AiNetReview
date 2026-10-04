@@ -242,6 +242,16 @@ public sealed class MarkdownReportWriter
         }
         builder.Append("- ").Append(FormatCodeSpan("maps/index.md")).Append('\n');
 
+        builder.Append("\n## Quick start\n\n")
+            .Append("| Task | Route |\n| --- | --- |\n")
+            .Append("| Check this run's scope, configured analyses, and totals | `index.md` |\n")
+            .Append("| Review findings by area | `production/index.md`, `tests/index.md`, or `mixed/index.md` |\n")
+            .Append("| Open a finding by ID | `maps/audit/index.md` → canonical analysis detail |\n")
+            .Append("| Find all findings involving a source file | Search its full repository-relative path in canonical analysis details under `production/`, `tests/`, and `mixed/`; the audit map indexes representative files |\n")
+            .Append("| Interpret a finding or source excerpt | Read the canonical analysis report's header first; its path legend, scope, and uncertainty notes apply to the excerpts |\n")
+            .Append("| Find a type declaration | `maps/projects.md` → the selected project's `structure.md` |\n")
+            .Append("| Trace type dependencies | `maps/projects.md` → the selected project's `dependencies.md` hub → its `dependencies-outgoing.md` or `dependencies-incoming.md` detail |\n");
+
         builder.Append("\n## Analyses and effective options\n\n| Analysis | Enabled | Subject scope | Effective options |\n| --- | --- | --- | --- |\n");
         foreach (var analysis in analyses)
         {
@@ -440,7 +450,7 @@ public sealed class MarkdownReportWriter
         if (configuredAnalysis.AnalysisId == "missing-test-evidence-candidates")
         {
             builder.Append("\nSelection: A production function meets the nontrivial gate when `decisionCount >= minDecisionCount OR maxDecisionNesting >= minDecisionNesting`. A direct resolved static test path suppresses a finding. A function with no resolved static test path is reported at the nontrivial gate; an indirect-path-only function must also meet `decisionCount >= minIndirectDecisionCount OR maxDecisionNesting >= minIndirectDecisionNesting`.\n\n")
-                .Append("This is static test-path evidence from the loaded snapshot, not runtime coverage. The `attribution uncertain` marker means the static test association may be incomplete; it can result from reachable unresolved bindings, method groups, or virtual/interface dispatch, and may propagate to downstream methods over known calls. A reachable global uncertainty input can mark every function, so the marker alone neither means a test is missing nor that the marked function itself has an unresolved binding. It does not assess test assertion quality. Reflection, dependency injection, external test projects, dynamic dispatch, branch execution, and custom test discovery can hide associations.\n");
+                .Append("This is static test-path evidence from the loaded snapshot, not runtime coverage. The `attribution uncertain` marker means the static test association may be incomplete; it can result from reachable unresolved bindings, method groups, or virtual/interface dispatch, and may propagate to downstream methods over known calls. A reachable global uncertainty input can mark every function, so the marker alone neither means a test is missing nor that the marked function itself has an unresolved binding. The report does not identify which specific input caused a marker; markers on every finding do not by themselves prove a global uncertainty input. It does not assess test assertion quality. Reflection, dependency injection, external test projects, dynamic dispatch, branch execution, and custom test discovery can hide associations.\n");
         }
 
         if (configuredAnalysis.AnalysisId == "type-dependency-cycle-candidates")

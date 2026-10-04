@@ -10,7 +10,7 @@ using AiNetReview.Core.Reporting;
 public sealed class MapsReportWriterTests
 {
     [Fact]
-    public async Task WriteMapsAsync_RendersNamedEdgesWithCompleteWitnessesAndRoleSpecificIncomingConsumers()
+    public async Task WriteMapsAsync_PublishesCompactHubAndSeparateCompleteEdgeMaps()
     {
         using var temp = TestTempDirectory.Create();
         var maps = CreateMaps();
@@ -18,35 +18,49 @@ public sealed class MapsReportWriterTests
         await MapsReportWriter.WriteMapsAsync(temp.DirectoryPath, maps, CancellationToken.None);
 
         var production = await ReadDependenciesAsync(temp.DirectoryPath, "production", "p-production");
-        Assert.Contains("# Type dependencies", production, StringComparison.Ordinal);
+        var productionOutgoing = await ReadDependencyPartAsync(temp.DirectoryPath, "production", "p-production", "dependencies-outgoing.md");
+        var productionIncoming = await ReadDependencyPartAsync(temp.DirectoryPath, "production", "p-production", "dependencies-incoming.md");
+        Assert.Contains("# Type dependencies — `src/Domain/Domain.csproj`", production, StringComparison.Ordinal);
+        Assert.Contains("Outgoing: 5; incoming: 8.", production, StringComparison.Ordinal);
+        Assert.Contains("`dependencies-outgoing.md`", production, StringComparison.Ordinal);
+        Assert.Contains("`dependencies-incoming.md`", production, StringComparison.Ordinal);
         Assert.Contains("## Project routes", production, StringComparison.Ordinal);
-        Assert.Contains("| Project path | Role | Structure route | Dependency route |", production, StringComparison.Ordinal);
-        Assert.Contains("## Outgoing edges", production, StringComparison.Ordinal);
-        Assert.Contains("## Incoming edges", production, StringComparison.Ordinal);
-        Assert.Contains("| `tests/Domain.Tests/Domain.Tests.csproj` | tests | `../../tests/p-tests-one/structure.md` | `../../tests/p-tests-one/dependencies.md` |", production, StringComparison.Ordinal);
-        Assert.Contains("| `src/Shared/Shared.csproj` | production | `../../production/p-shared/structure.md` | `../../production/p-shared/dependencies.md` |", production, StringComparison.Ordinal);
-        Assert.Contains("`global::App.Domain.Widget`", production, StringComparison.Ordinal);
-        Assert.Contains("`global::App.Domain.Cache`", production, StringComparison.Ordinal);
-        Assert.Contains("`global::Infrastructure.Cache`", production, StringComparison.Ordinal);
-        Assert.Contains("Outer<T>.Inner<U>", production, StringComparison.Ordinal);
-        Assert.Contains("global::Shared.Token (ProjectPath: src/Shared/Shared.csproj)", production, StringComparison.Ordinal);
-        Assert.Contains("tests/Domain.Tests/Domain.Tests.csproj", production, StringComparison.Ordinal);
-        Assert.Contains("src/Domain/Domain.csproj", production, StringComparison.Ordinal);
-        Assert.Contains("tests", production, StringComparison.Ordinal);
-        Assert.Contains("production", production, StringComparison.Ordinal);
-        Assert.Contains("src/Domain/Runner.Part1.cs:10", production, StringComparison.Ordinal);
-        Assert.Contains("src/Domain/Runner.Part2.cs:30", production, StringComparison.Ordinal);
-        Assert.Contains("src/Domain/Runner.Part1.cs", production, StringComparison.Ordinal);
-        Assert.Contains("src/Domain/Runner.Part2.cs", production, StringComparison.Ordinal);
-        Assert.Equal(1, CountOccurrences(production, "### `src/Domain/Runner.Part1.cs`"));
-        Assert.Equal(1, CountOccurrences(production, "### `src/Domain/Runner.Part2.cs`"));
-        Assert.Contains("- `Runner` → `global::App.Domain.Widget`: L10 ExplicitTypeUse, L10 MemberUse, L11 MemberUse", production, StringComparison.Ordinal);
-        Assert.Contains("- `Runner` → `global::App.Domain.Cache`: L15 Inheritance", production, StringComparison.Ordinal);
-        Assert.Contains("- `Runner` → `global::Infrastructure.Cache`: L30 MemberUse, L31 MemberUse", production, StringComparison.Ordinal);
-        Assert.Contains("- `Runner` → `Outer<T>.Inner<U>`: L42 Inheritance", production, StringComparison.Ordinal);
-        Assert.Contains("- `Runner` → `global::Shared.Token (ProjectPath: src/Shared/Shared.csproj)`: L44 MemberUse", production, StringComparison.Ordinal);
-        var consumerDeclarations = ExtractSection(production, "## Consumer declarations", "## Incoming edges");
-        var incomingEdges = ExtractSection(production, "## Incoming edges", null);
+        Assert.Contains("| Project path | Role | Structure route | Dependency route | Outgoing route |", production, StringComparison.Ordinal);
+        Assert.Contains("| `tests/Domain.Tests/Domain.Tests.csproj` | tests | `../../tests/p-tests-one/structure.md` | `../../tests/p-tests-one/dependencies.md` | `../../tests/p-tests-one/dependencies-outgoing.md` |", production, StringComparison.Ordinal);
+        Assert.Contains("| `src/Shared/Shared.csproj` | production | `../../production/p-shared/structure.md` | `../../production/p-shared/dependencies.md` | `../../production/p-shared/dependencies-outgoing.md` |", production, StringComparison.Ordinal);
+        Assert.DoesNotContain("Runner` →", production, StringComparison.Ordinal);
+        Assert.DoesNotContain("Shared.cs:12", production, StringComparison.Ordinal);
+
+        Assert.Contains("# Outgoing type dependencies — `src/Domain/Domain.csproj`", productionOutgoing, StringComparison.Ordinal);
+        Assert.Contains("`dependencies.md`", productionOutgoing, StringComparison.Ordinal);
+        Assert.Contains("`structure.md`", productionOutgoing, StringComparison.Ordinal);
+        Assert.Contains("project-root-relative", productionOutgoing, StringComparison.Ordinal);
+        Assert.Contains("Lnn", productionOutgoing, StringComparison.Ordinal);
+        Assert.Contains("`global::App.Domain.Widget`", productionOutgoing, StringComparison.Ordinal);
+        Assert.Contains("`global::App.Domain.Cache`", productionOutgoing, StringComparison.Ordinal);
+        Assert.Contains("`global::Infrastructure.Cache`", productionOutgoing, StringComparison.Ordinal);
+        Assert.Contains("Outer<T>.Inner<U>", productionOutgoing, StringComparison.Ordinal);
+        Assert.Contains("global::Shared.Token (ProjectPath: src/Shared/Shared.csproj)", productionOutgoing, StringComparison.Ordinal);
+        Assert.Contains("src/Domain/Runner.Part1.cs", productionOutgoing, StringComparison.Ordinal);
+        Assert.Contains("src/Domain/Runner.Part2.cs", productionOutgoing, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(productionOutgoing, "### `src/Domain/Runner.Part1.cs`"));
+        Assert.Equal(1, CountOccurrences(productionOutgoing, "### `src/Domain/Runner.Part2.cs`"));
+        Assert.Contains("- `Runner` → `global::App.Domain.Widget`: L10 ExplicitTypeUse, L10 MemberUse, L11 MemberUse", productionOutgoing, StringComparison.Ordinal);
+        Assert.Contains("- `Runner` → `global::App.Domain.Cache`: L15 Inheritance", productionOutgoing, StringComparison.Ordinal);
+        Assert.Contains("- `Runner` → `global::Infrastructure.Cache`: L30 MemberUse, L31 MemberUse", productionOutgoing, StringComparison.Ordinal);
+        Assert.Contains("- `Runner` → `Outer<T>.Inner<U>`: L42 Inheritance", productionOutgoing, StringComparison.Ordinal);
+        Assert.Contains("- `Runner` → `global::Shared.Token (ProjectPath: src/Shared/Shared.csproj)`: L44 MemberUse", productionOutgoing, StringComparison.Ordinal);
+        Assert.DoesNotContain("OtherConsumer", productionOutgoing, StringComparison.Ordinal);
+        Assert.DoesNotContain("WidgetTests", productionOutgoing, StringComparison.Ordinal);
+
+        Assert.Contains("# Incoming type dependencies — `src/Domain/Domain.csproj`", productionIncoming, StringComparison.Ordinal);
+        Assert.Contains("`dependencies.md`", productionIncoming, StringComparison.Ordinal);
+        Assert.Contains("`structure.md`", productionIncoming, StringComparison.Ordinal);
+        Assert.Contains("project-root-relative", productionIncoming, StringComparison.Ordinal);
+        Assert.Contains("Lnn", productionIncoming, StringComparison.Ordinal);
+        Assert.DoesNotContain("Runner` →", productionIncoming, StringComparison.Ordinal);
+        var consumerDeclarations = ExtractSection(productionIncoming, "## Consumer declarations", "## Incoming edges");
+        var incomingEdges = ExtractSection(productionIncoming, "## Incoming edges", null);
         var cacheIncoming = ExtractSection(incomingEdges, "### `global::App.Domain.Cache`", "### `global::App.Domain.Widget`");
         Assert.Contains("### `src/Shared/Shared.csproj`", consumerDeclarations, StringComparison.Ordinal);
         Assert.Contains("### `tests/Domain.Tests/Domain.Tests.csproj`", consumerDeclarations, StringComparison.Ordinal);
@@ -61,31 +75,39 @@ public sealed class MapsReportWriterTests
         Assert.Contains("- Test consumers (`tests/Other.Tests/Other.Tests.csproj`): `OtherWidgetTests`", incomingEdges, StringComparison.Ordinal);
         Assert.Contains("### `global::App.Domain.Cache`", incomingEdges, StringComparison.Ordinal);
         Assert.Contains("- Test consumers (`tests/Domain.Tests/Domain.Tests.csproj`): `WidgetTests`", cacheIncoming, StringComparison.Ordinal);
-        Assert.DoesNotContain("#### Production consumers", production, StringComparison.Ordinal);
-        Assert.DoesNotContain("##### `src/Shared/Shared.csproj`", production, StringComparison.Ordinal);
+        Assert.DoesNotContain("#### Production consumers", productionIncoming, StringComparison.Ordinal);
+        Assert.DoesNotContain("##### `src/Shared/Shared.csproj`", productionIncoming, StringComparison.Ordinal);
         Assert.DoesNotContain("None.", incomingEdges, StringComparison.Ordinal);
 
-        Assert.DoesNotContain("t-runner", production, StringComparison.Ordinal);
-        Assert.DoesNotContain("t-widget", production, StringComparison.Ordinal);
-        Assert.DoesNotContain("t-cache-domain", production, StringComparison.Ordinal);
-        Assert.DoesNotContain("t-cache-infra", production, StringComparison.Ordinal);
-        Assert.DoesNotContain("t-inner", production, StringComparison.Ordinal);
-        Assert.DoesNotContain("t-token-local", production, StringComparison.Ordinal);
-        Assert.DoesNotContain("t-test-one", production, StringComparison.Ordinal);
-        Assert.DoesNotContain("t-test-two", production, StringComparison.Ordinal);
-        Assert.DoesNotContain("Foreign type IDs", production, StringComparison.Ordinal);
-        Assert.DoesNotContain("<a ", production, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("<table", production, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("{\"", production, StringComparison.Ordinal);
+        foreach (var document in new[] { production, productionOutgoing, productionIncoming })
+        {
+            Assert.DoesNotContain("t-runner", document, StringComparison.Ordinal);
+            Assert.DoesNotContain("t-widget", document, StringComparison.Ordinal);
+            Assert.DoesNotContain("t-cache-domain", document, StringComparison.Ordinal);
+            Assert.DoesNotContain("t-cache-infra", document, StringComparison.Ordinal);
+            Assert.DoesNotContain("t-inner", document, StringComparison.Ordinal);
+            Assert.DoesNotContain("t-token-local", document, StringComparison.Ordinal);
+            Assert.DoesNotContain("t-test-one", document, StringComparison.Ordinal);
+            Assert.DoesNotContain("t-test-two", document, StringComparison.Ordinal);
+            Assert.DoesNotContain("<a ", document, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("<table", document, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("{\"", document, StringComparison.Ordinal);
+        }
+        Assert.DoesNotContain("Foreign type IDs", productionOutgoing, StringComparison.Ordinal);
 
         Assert.Equal(1, CountOccurrences(production, "`../../tests/p-tests-one/dependencies.md`"));
         Assert.Equal(1, CountOccurrences(production, "`../../tests/p-tests-two/dependencies.md`"));
 
         var tests = await ReadDependenciesAsync(temp.DirectoryPath, "tests", "p-tests-one");
-        Assert.Contains("WidgetTests", tests, StringComparison.Ordinal);
-        Assert.Contains("- `WidgetTests` → `Widget`: L7 ExplicitTypeUse", tests, StringComparison.Ordinal);
+        var testsOutgoing = await ReadDependencyPartAsync(temp.DirectoryPath, "tests", "p-tests-one", "dependencies-outgoing.md");
+        var testsIncoming = await ReadDependencyPartAsync(temp.DirectoryPath, "tests", "p-tests-one", "dependencies-incoming.md");
+        Assert.Contains("Outgoing: 2; incoming: 0.", tests, StringComparison.Ordinal);
+        Assert.Contains("WidgetTests", testsOutgoing, StringComparison.Ordinal);
+        Assert.Contains("- `WidgetTests` → `Widget`: L7 ExplicitTypeUse", testsOutgoing, StringComparison.Ordinal);
+        Assert.Contains("No in-scope incoming direct type edges", testsIncoming, StringComparison.Ordinal);
         Assert.DoesNotContain("t-test-one", tests, StringComparison.Ordinal);
-        Assert.DoesNotContain("t-widget", tests, StringComparison.Ordinal);
+        Assert.DoesNotContain("t-widget", testsOutgoing, StringComparison.Ordinal);
+        Assert.DoesNotContain("t-widget", testsIncoming, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -96,12 +118,18 @@ public sealed class MapsReportWriterTests
 
         var production = await ReadDependenciesAsync(temp.DirectoryPath, "production", "p-production");
 
-        Assert.Contains("`global::App.Domain.Widget`", production, StringComparison.Ordinal);
-        Assert.Contains("`global::App.Domain.Cache`", production, StringComparison.Ordinal);
-        Assert.Contains("`global::Infrastructure.Cache`", production, StringComparison.Ordinal);
+        var outgoing = await ReadDependencyPartAsync(temp.DirectoryPath, "production", "p-production", "dependencies-outgoing.md");
+        var incoming = await ReadDependencyPartAsync(temp.DirectoryPath, "production", "p-production", "dependencies-incoming.md");
+        Assert.Contains("`global::App.Domain.Widget`", outgoing, StringComparison.Ordinal);
+        Assert.Contains("`global::App.Domain.Cache`", outgoing, StringComparison.Ordinal);
+        Assert.Contains("`global::Infrastructure.Cache`", outgoing, StringComparison.Ordinal);
+        Assert.Contains("`global::App.Domain.Widget`", incoming, StringComparison.Ordinal);
         Assert.Contains("src/Domain/Domain.csproj", production, StringComparison.Ordinal);
         Assert.Contains("tests/Domain.Tests/Domain.Tests.csproj", production, StringComparison.Ordinal);
-        Assert.DoesNotContain("t-", production, StringComparison.Ordinal);
+        foreach (var id in new[] { "t-runner", "t-widget", "t-cache-domain", "t-cache-infra", "t-inner", "t-token-local", "t-token-foreign", "t-unused-widget", "t-other-consumer", "t-test-one", "t-test-two" })
+        {
+            Assert.DoesNotContain(id, production + outgoing + incoming, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
@@ -128,12 +156,12 @@ public sealed class MapsReportWriterTests
 
         foreach (var (role, key) in new[] { ("production", "p-production"), ("production", "p-shared"), ("tests", "p-tests-one"), ("tests", "p-tests-two") })
         {
-            Assert.Equal(
-                await ReadDependenciesAsync(first.DirectoryPath, role, key),
-                await ReadDependenciesAsync(second.DirectoryPath, role, key));
-            Assert.Equal(
-                await ReadStructureAsync(first.DirectoryPath, role, key),
-                await ReadStructureAsync(second.DirectoryPath, role, key));
+            foreach (var fileName in new[] { "dependencies.md", "dependencies-outgoing.md", "dependencies-incoming.md", "structure.md" })
+            {
+                Assert.Equal(
+                    await ReadMapFileAsync(first.DirectoryPath, role, key, fileName),
+                    await ReadMapFileAsync(second.DirectoryPath, role, key, fileName));
+            }
         }
     }
 
@@ -158,11 +186,20 @@ public sealed class MapsReportWriterTests
 
         var empty = await ReadDependenciesAsync(temp.DirectoryPath, "production", "p-empty");
         var connected = await ReadDependenciesAsync(temp.DirectoryPath, "production", "p-connected");
+        var emptyOutgoing = await ReadDependencyPartAsync(temp.DirectoryPath, "production", "p-empty", "dependencies-outgoing.md");
+        var emptyIncoming = await ReadDependencyPartAsync(temp.DirectoryPath, "production", "p-empty", "dependencies-incoming.md");
+        var connectedOutgoing = await ReadDependencyPartAsync(temp.DirectoryPath, "production", "p-connected", "dependencies-outgoing.md");
+        var connectedIncoming = await ReadDependencyPartAsync(temp.DirectoryPath, "production", "p-connected", "dependencies-incoming.md");
         Assert.Contains("No in-scope direct type edges", empty, StringComparison.Ordinal);
-        Assert.Contains("`Source` → `Target`", connected, StringComparison.Ordinal);
-        Assert.Contains("without retained witnesses", connected, StringComparison.Ordinal);
-        Assert.DoesNotContain("t-source", connected, StringComparison.Ordinal);
-        Assert.DoesNotContain("t-target", connected, StringComparison.Ordinal);
+        Assert.Contains("No in-scope outgoing direct type edges", emptyOutgoing, StringComparison.Ordinal);
+        Assert.Contains("No in-scope incoming direct type edges", emptyIncoming, StringComparison.Ordinal);
+        Assert.Contains("`Source` → `Target`", connectedOutgoing, StringComparison.Ordinal);
+        Assert.Contains("without retained witnesses", connectedOutgoing, StringComparison.Ordinal);
+        Assert.Contains("### `Target`", connectedIncoming, StringComparison.Ordinal);
+        Assert.Contains("- Production consumers (`src/Connected/Connected.csproj`): `Source`", connectedIncoming, StringComparison.Ordinal);
+        Assert.DoesNotContain("Source` →", connectedIncoming, StringComparison.Ordinal);
+        Assert.DoesNotContain("t-source", connected + connectedOutgoing + connectedIncoming, StringComparison.Ordinal);
+        Assert.DoesNotContain("t-target", connected + connectedOutgoing + connectedIncoming, StringComparison.Ordinal);
     }
 
     private static ReviewMaps CreateMaps()
@@ -275,6 +312,12 @@ public sealed class MapsReportWriterTests
 
     private static async Task<string> ReadDependenciesAsync(string root, string role, string key) =>
         await File.ReadAllTextAsync(Path.Combine(root, "maps", role, key, "dependencies.md"));
+
+    private static Task<string> ReadDependencyPartAsync(string root, string role, string key, string fileName) =>
+        ReadMapFileAsync(root, role, key, fileName);
+
+    private static async Task<string> ReadMapFileAsync(string root, string role, string key, string fileName) =>
+        await File.ReadAllTextAsync(Path.Combine(root, "maps", role, key, fileName));
 
     private static async Task<string> ReadStructureAsync(string root, string role, string key) =>
         await File.ReadAllTextAsync(Path.Combine(root, "maps", role, key, "structure.md"));

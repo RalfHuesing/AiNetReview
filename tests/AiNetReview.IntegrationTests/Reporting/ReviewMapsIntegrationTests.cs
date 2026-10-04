@@ -69,9 +69,14 @@ public sealed class ReviewMapsIntegrationTests
         var auditPath = Path.Combine(runDirectory, "maps", "audit", "index.md");
         var productionStructurePath = Path.Combine(runDirectory, "maps", "production", production.Key, "structure.md");
         var productionDependenciesPath = Path.Combine(runDirectory, "maps", "production", production.Key, "dependencies.md");
+        var productionOutgoingPath = Path.Combine(runDirectory, "maps", "production", production.Key, "dependencies-outgoing.md");
+        var productionIncomingPath = Path.Combine(runDirectory, "maps", "production", production.Key, "dependencies-incoming.md");
         var testsStructurePath = Path.Combine(runDirectory, "maps", "tests", tests.Key, "structure.md");
         var testsDependenciesPath = Path.Combine(runDirectory, "maps", "tests", tests.Key, "dependencies.md");
-        Assert.All(new[] { mapRootPath, projectsPath, auditPath, productionStructurePath, productionDependenciesPath, testsStructurePath, testsDependenciesPath },
+        var testsOutgoingPath = Path.Combine(runDirectory, "maps", "tests", tests.Key, "dependencies-outgoing.md");
+        var testsIncomingPath = Path.Combine(runDirectory, "maps", "tests", tests.Key, "dependencies-incoming.md");
+        Assert.All(new[] { mapRootPath, projectsPath, auditPath, productionStructurePath, productionDependenciesPath, productionOutgoingPath,
+                productionIncomingPath, testsStructurePath, testsDependenciesPath, testsOutgoingPath, testsIncomingPath },
             path => Assert.True(File.Exists(path), $"Expected map was not published: '{path}'."));
         var mapIndex = await File.ReadAllTextAsync(mapRootPath);
         Assert.Contains("`projects.md`", mapIndex, StringComparison.Ordinal);
@@ -112,23 +117,41 @@ public sealed class ReviewMapsIntegrationTests
         }
 
         var dependencies = await File.ReadAllTextAsync(testsDependenciesPath);
-        Assert.Contains("`WidgetTests` → `DeepType`", dependencies, StringComparison.Ordinal);
-        Assert.Contains("### `tests/Domain.Tests/WidgetTests.cs`", dependencies, StringComparison.Ordinal);
-        Assert.Contains("L1 ExplicitTypeUse", dependencies, StringComparison.Ordinal);
-        Assert.DoesNotContain(testType.Id, dependencies, StringComparison.Ordinal);
-        Assert.DoesNotContain(deepType.Id, dependencies, StringComparison.Ordinal);
+        var testsOutgoing = await File.ReadAllTextAsync(testsOutgoingPath);
+        var testsIncoming = await File.ReadAllTextAsync(testsIncomingPath);
+        Assert.Contains("Outgoing: 1; incoming: 0.", dependencies, StringComparison.Ordinal);
+        Assert.Contains("`dependencies-outgoing.md`", dependencies, StringComparison.Ordinal);
+        Assert.Contains("`dependencies-incoming.md`", dependencies, StringComparison.Ordinal);
+        Assert.Contains("`WidgetTests` → `DeepType`", testsOutgoing, StringComparison.Ordinal);
+        Assert.Contains("### `tests/Domain.Tests/WidgetTests.cs`", testsOutgoing, StringComparison.Ordinal);
+        Assert.Contains("L1 ExplicitTypeUse", testsOutgoing, StringComparison.Ordinal);
+        Assert.Contains("No in-scope incoming direct type edges", testsIncoming, StringComparison.Ordinal);
+        Assert.DoesNotContain(testType.Id, dependencies + testsOutgoing + testsIncoming, StringComparison.Ordinal);
+        Assert.DoesNotContain(deepType.Id, dependencies + testsOutgoing + testsIncoming, StringComparison.Ordinal);
         var productionDependencies = await File.ReadAllTextAsync(productionDependenciesPath);
+        var productionOutgoing = await File.ReadAllTextAsync(productionOutgoingPath);
+        var productionIncoming = await File.ReadAllTextAsync(productionIncomingPath);
         Assert.Contains("## Project routes", productionDependencies, StringComparison.Ordinal);
         Assert.Contains("Domain.Tests/Domain.Tests.csproj", productionDependencies, StringComparison.Ordinal);
-        Assert.Contains("### `DeepType`", productionDependencies, StringComparison.Ordinal);
-        Assert.Contains("## Consumer declarations", productionDependencies, StringComparison.Ordinal);
-        Assert.Contains("### `tests/Domain.Tests/Domain.Tests.csproj`", productionDependencies, StringComparison.Ordinal);
-        Assert.Contains("- `WidgetTests`: `tests/Domain.Tests/WidgetTests.cs:1`", productionDependencies, StringComparison.Ordinal);
-        Assert.Contains("- Test consumers (`tests/Domain.Tests/Domain.Tests.csproj`): `WidgetTests`", productionDependencies, StringComparison.Ordinal);
-        Assert.DoesNotContain("#### Test consumers", productionDependencies, StringComparison.Ordinal);
-        Assert.DoesNotContain("##### `tests/Domain.Tests/Domain.Tests.csproj`", productionDependencies, StringComparison.Ordinal);
-        Assert.DoesNotContain(testType.Id, productionDependencies, StringComparison.Ordinal);
-        Assert.DoesNotContain(deepType.Id, productionDependencies, StringComparison.Ordinal);
+        Assert.Contains($"| `{tests.ProjectPath}` | tests | `../../tests/{tests.Key}/structure.md` | `../../tests/{tests.Key}/dependencies.md` | `../../tests/{tests.Key}/dependencies-outgoing.md` |", productionDependencies, StringComparison.Ordinal);
+        Assert.Contains("### `DeepType`", productionIncoming, StringComparison.Ordinal);
+        Assert.Contains("## Consumer declarations", productionIncoming, StringComparison.Ordinal);
+        Assert.Contains($"### `{tests.ProjectPath}`", productionIncoming, StringComparison.Ordinal);
+        Assert.Contains("- `WidgetTests`: `tests/Domain.Tests/WidgetTests.cs:1`", productionIncoming, StringComparison.Ordinal);
+        Assert.Contains($"- Test consumers (`{tests.ProjectPath}`): `WidgetTests`", productionIncoming, StringComparison.Ordinal);
+        Assert.DoesNotContain("WidgetTests", productionOutgoing, StringComparison.Ordinal);
+        Assert.DoesNotContain(testType.Id, productionDependencies + productionOutgoing + productionIncoming, StringComparison.Ordinal);
+        Assert.DoesNotContain(deepType.Id, productionDependencies + productionOutgoing + productionIncoming, StringComparison.Ordinal);
+
+        foreach (var mapProject in maps.Projects)
+        {
+            var role = mapProject.Role == ProjectRole.Tests ? "tests" : "production";
+            foreach (var fileName in new[] { "structure.md", "dependencies.md", "dependencies-outgoing.md", "dependencies-incoming.md" })
+            {
+                Assert.True(File.Exists(Path.Combine(runDirectory, "maps", role, mapProject.Key, fileName)),
+                    $"Route target for '{mapProject.ProjectPath}' was not published: '{fileName}'.");
+            }
+        }
 
         var markdownFiles = Directory.GetFiles(runDirectory, "*.md", SearchOption.AllDirectories);
         foreach (var mdFile in markdownFiles)
