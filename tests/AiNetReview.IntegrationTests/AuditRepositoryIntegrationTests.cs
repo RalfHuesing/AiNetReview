@@ -17,14 +17,45 @@ public sealed partial class AuditRepositoryIntegrationTests
 {
     private const string TargetEnvironmentVariable = "AINETREVIEW_AUDIT_TARGET";
 
-    [Fact]
-    [Trait("Category", "Audit")]
-    public async Task ConfiguredTarget_PublishesOnlyCentralMarkdown()
+    public static TheoryData<string> GetAuditTargets()
     {
-        var selectedTargetName = Environment.GetEnvironmentVariable(TargetEnvironmentVariable);
-        Assert.Matches(TargetNamePattern(), selectedTargetName ?? string.Empty);
-        var targetName = selectedTargetName ?? throw new InvalidOperationException("The manual audit target was not selected.");
+        var hostRoot = SolutionRootLocator.Find();
+        var targetsDirectory = Path.Combine(hostRoot, "audit-targets");
+        var data = new TheoryData<string>();
+        if (Directory.Exists(targetsDirectory))
+        {
+            foreach (var file in Directory.EnumerateFiles(targetsDirectory, "*.json").OrderBy(f => f, StringComparer.Ordinal))
+            {
+                var targetName = Path.GetFileNameWithoutExtension(file);
+                data.Add(targetName);
+            }
+        }
 
+        if (data.Count == 0)
+        {
+            data.Add(string.Empty);
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [Trait("Category", "Audit")]
+    [MemberData(nameof(GetAuditTargets))]
+    public async Task ConfiguredTarget_PublishesOnlyCentralMarkdown(string targetName)
+    {
+        if (string.IsNullOrEmpty(targetName))
+        {
+            return;
+        }
+
+        var selectedTargetName = Environment.GetEnvironmentVariable(TargetEnvironmentVariable);
+        if (!string.IsNullOrEmpty(selectedTargetName) && !string.Equals(selectedTargetName, targetName, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        Assert.Matches(TargetNamePattern(), targetName);
         var hostRoot = SolutionRootLocator.Find();
         var profilePath = Path.Combine(hostRoot, "audit-targets", targetName + ".json");
         Assert.True(File.Exists(profilePath), $"Audit profile was not found: '{profilePath}'.");

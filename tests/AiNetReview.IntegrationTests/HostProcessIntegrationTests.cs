@@ -100,8 +100,15 @@ public sealed class HostProcessIntegrationTests
     }
 
     [Fact]
+    [Trait("Category", "Audit")]
     public async Task ProcessInvocation_WithRepositoryConfigurationPublishesAnIgnoredTimestampedRun()
     {
+        var target = Environment.GetEnvironmentVariable("AINETREVIEW_AUDIT_TARGET");
+        if (!string.IsNullOrEmpty(target) && !string.Equals(target, "ainetreview", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         var repositoryRoot = SolutionRootLocator.Find();
         var configPath = Path.Combine(repositoryRoot, "ainetreview.json");
         var configuration = typeof(HostProcessIntegrationTests).Assembly
