@@ -96,10 +96,23 @@ public sealed class ReviewMapsIntegrationTests
         Assert.Contains("Widget", structure, StringComparison.Ordinal);
         Assert.Contains("Nested", structure, StringComparison.Ordinal);
         var dependencies = await File.ReadAllTextAsync(testsDependenciesPath);
-        Assert.Contains($"`{testType.Id}`", dependencies, StringComparison.Ordinal);
-        Assert.Contains($"`{deepType.Id}`", dependencies, StringComparison.Ordinal);
+        Assert.Contains("`WidgetTests` → `DeepType`", dependencies, StringComparison.Ordinal);
+        Assert.Contains("### `tests/Domain.Tests/WidgetTests.cs`", dependencies, StringComparison.Ordinal);
+        Assert.Contains("L1 ExplicitTypeUse", dependencies, StringComparison.Ordinal);
+        Assert.DoesNotContain(testType.Id, dependencies, StringComparison.Ordinal);
+        Assert.DoesNotContain(deepType.Id, dependencies, StringComparison.Ordinal);
         var productionDependencies = await File.ReadAllTextAsync(productionDependenciesPath);
-        Assert.Contains($"`../../tests/{tests.Key}/dependencies.md`", productionDependencies, StringComparison.Ordinal);
+        Assert.Contains("## Project routes", productionDependencies, StringComparison.Ordinal);
+        Assert.Contains("Domain.Tests/Domain.Tests.csproj", productionDependencies, StringComparison.Ordinal);
+        Assert.Contains("### `DeepType`", productionDependencies, StringComparison.Ordinal);
+        Assert.Contains("## Consumer declarations", productionDependencies, StringComparison.Ordinal);
+        Assert.Contains("### `tests/Domain.Tests/Domain.Tests.csproj`", productionDependencies, StringComparison.Ordinal);
+        Assert.Contains("- `WidgetTests`: `tests/Domain.Tests/WidgetTests.cs:1`", productionDependencies, StringComparison.Ordinal);
+        Assert.Contains("- Test consumers (`tests/Domain.Tests/Domain.Tests.csproj`): `WidgetTests`", productionDependencies, StringComparison.Ordinal);
+        Assert.DoesNotContain("#### Test consumers", productionDependencies, StringComparison.Ordinal);
+        Assert.DoesNotContain("##### `tests/Domain.Tests/Domain.Tests.csproj`", productionDependencies, StringComparison.Ordinal);
+        Assert.DoesNotContain(testType.Id, productionDependencies, StringComparison.Ordinal);
+        Assert.DoesNotContain(deepType.Id, productionDependencies, StringComparison.Ordinal);
     }
 
     private static async Task RestoreProjectAsync(string projectFile, string workingDirectory)

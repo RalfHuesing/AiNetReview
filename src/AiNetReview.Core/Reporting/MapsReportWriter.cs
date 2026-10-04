@@ -62,7 +62,7 @@ internal static class MapsReportWriter
             await MarkdownReportWriter.WriteUtf8Async(Path.Combine(projectDirectory, "structure.md"),
                 FormatStructure(project, projectFiles, projectTypes, cancellationToken), cancellationToken).ConfigureAwait(false);
             await MarkdownReportWriter.WriteUtf8Async(Path.Combine(projectDirectory, "dependencies.md"),
-                FormatDependencies(project, projectEdges, typesById, projectByKey, cancellationToken), cancellationToken).ConfigureAwait(false);
+                FormatDependencies(project, projectTypes, projectEdges, typesById, projectByKey, cancellationToken), cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -206,6 +206,7 @@ internal static class MapsReportWriter
 
     private static string FormatDependencies(
         ReviewMapProject project,
+        IReadOnlyList<ReviewMapType> projectTypes,
         IReadOnlyList<ReviewMapTypeEdge> edges,
         IReadOnlyDictionary<string, ReviewMapType> typesById,
         IReadOnlyDictionary<string, ReviewMapProject> projectByKey,
@@ -219,46 +220,22 @@ internal static class MapsReportWriter
         var incoming = edges.Where(edge => string.Equals(typesById[edge.ToTypeId].ProjectKey, project.Key, StringComparison.Ordinal)).ToArray();
         builder.Append("Outgoing: ").Append(outgoing.Length.ToString(CultureInfo.InvariantCulture))
             .Append("; incoming: ").Append(incoming.Length.ToString(CultureInfo.InvariantCulture)).Append(".\n\n");
+        var displayedNames = CreateTypeNames(projectTypes, edges, typesById, projectByKey);
+        AppendProjectRoutes(builder, project, edges, typesById, projectByKey, cancellationToken);
         if (outgoing.Length == 0 && incoming.Length == 0)
         {
             builder.Append("No in-scope direct type edges were prepared for this project.\n");
             return builder.ToString();
         }
 
-        var foreignTypeIds = edges.SelectMany(edge => new[] { edge.FromTypeId, edge.ToTypeId })
-            .Select(id => typesById[id])
-            .Where(type => !string.Equals(type.ProjectKey, project.Key, StringComparison.Ordinal))
-            .DistinctBy(static type => type.Id, StringComparer.Ordinal)
-            .ToArray();
-        builder.Append("## Foreign type IDs\n\n");
-        if (foreignTypeIds.Length == 0)
-        {
-            builder.Append("None.\n\n");
-        }
-        else
-        {
-            builder.Append("| Owner project | IDs | Structure map |\n| --- | --- | --- |\n");
-            foreach (var ownerGroup in foreignTypeIds.GroupBy(static type => type.ProjectKey, StringComparer.Ordinal)
-                         .OrderBy(static group => group.Key, StringComparer.Ordinal))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var owner = projectByKey[ownerGroup.Key];
-                builder.Append("| ").Append(MarkdownReportWriter.FormatCodeSpan(owner.Key)).Append(" | ")
-                    .Append(string.Join(", ", ownerGroup.Select(FormatTypeReference).Order(StringComparer.Ordinal)))
-                    .Append(" | ").Append(MarkdownReportWriter.FormatCodeSpan(StructureRoute(owner)))
-                    .Append(" |\n");
-            }
-            builder.Append('\n');
-        }
-
-        builder.Append("## Outgoing edges\n\nIDs resolve in namespace sections of the owning structure map; foreign IDs resolve in the table above. Each file heading applies to its line locations.\n\n");
+        builder.Append("## Outgoing edges\n\nEach file heading applies to its line locations.\n\n");
         if (outgoing.Length == 0)
         {
             builder.Append("None.\n\n");
         }
         var witnessedOutgoing = outgoing.SelectMany(edge => edge.Witnesses.Select(witness => (Edge: edge, Witness: witness)))
             .GroupBy(static item => (item.Witness.ProjectKey, item.Witness.SourcePath))
-            .OrderBy(static group => group.Key.ProjectKey, StringComparer.Ordinal)
+            .OrderBy(group => projectByKey[group.Key.ProjectKey].ProjectPath, StringComparer.Ordinal)
             .ThenBy(static group => group.Key.SourcePath, StringComparer.Ordinal)
             .ToArray();
         foreach (var fileGroup in witnessedOutgoing)
@@ -267,66 +244,181 @@ internal static class MapsReportWriter
             builder.Append("### ");
             if (!string.Equals(fileGroup.Key.ProjectKey, project.Key, StringComparison.Ordinal))
             {
-                builder.Append(MarkdownReportWriter.FormatCodeSpan(fileGroup.Key.ProjectKey)).Append(':');
+                builder.Append(MarkdownReportWriter.FormatCodeSpan(projectByKey[fileGroup.Key.ProjectKey].ProjectPath)).Append(':');
             }
             builder.Append(MarkdownReportWriter.FormatCodeSpan(fileGroup.Key.SourcePath)).Append("\n\n");
             foreach (var edgeGroup in fileGroup.GroupBy(static item => (item.Edge.FromTypeId, item.Edge.ToTypeId))
-                         .OrderBy(static group => group.Key.FromTypeId, StringComparer.Ordinal)
-                         .ThenBy(static group => group.Key.ToTypeId, StringComparer.Ordinal))
+                         .OrderBy(group => displayedNames[group.Key.FromTypeId], StringComparer.Ordinal)
+                         .ThenBy(group => displayedNames[group.Key.ToTypeId], StringComparer.Ordinal))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var locations = edgeGroup.Select(static item => item.Witness)
                     .OrderBy(static witness => witness.Line)
                     .ThenBy(static witness => witness.Kind, StringComparer.Ordinal)
                     .Select(witness => "L" + witness.Line.ToString(CultureInfo.InvariantCulture) + " " + witness.Kind);
-                builder.Append("- ").Append(MarkdownReportWriter.FormatCodeSpan(edgeGroup.Key.FromTypeId))
-                    .Append(" → ").Append(MarkdownReportWriter.FormatCodeSpan(edgeGroup.Key.ToTypeId))
+                builder.Append("- ").Append(MarkdownReportWriter.FormatCodeSpan(displayedNames[edgeGroup.Key.FromTypeId]))
+                    .Append(" → ").Append(MarkdownReportWriter.FormatCodeSpan(displayedNames[edgeGroup.Key.ToTypeId]))
                     .Append(": ").Append(string.Join(", ", locations)).Append('\n');
             }
             builder.Append('\n');
         }
 
         var unwitnessed = outgoing.Where(static edge => edge.Witnesses.Count == 0)
-            .OrderBy(static edge => edge.FromTypeId, StringComparer.Ordinal).ThenBy(static edge => edge.ToTypeId, StringComparer.Ordinal).ToArray();
+            .OrderBy(edge => displayedNames[edge.FromTypeId], StringComparer.Ordinal)
+            .ThenBy(edge => displayedNames[edge.ToTypeId], StringComparer.Ordinal).ToArray();
         if (unwitnessed.Length > 0)
         {
             builder.Append("## Outgoing edges without retained witnesses\n\n");
             foreach (var edge in unwitnessed)
-                builder.Append("- ").Append(MarkdownReportWriter.FormatCodeSpan(edge.FromTypeId)).Append(" → ")
-                    .Append(MarkdownReportWriter.FormatCodeSpan(edge.ToTypeId)).Append('\n');
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                builder.Append("- ").Append(MarkdownReportWriter.FormatCodeSpan(displayedNames[edge.FromTypeId])).Append(" → ")
+                    .Append(MarkdownReportWriter.FormatCodeSpan(displayedNames[edge.ToTypeId])).Append(" (no retained witnesses)\n");
+            }
             builder.Append('\n');
         }
 
-        builder.Append("## Incoming edges\n\n");
-        if (incoming.Length == 0)
-        {
-            builder.Append("None.\n");
-        }
-        else
-        {
-            foreach (var sourceGroup in incoming.GroupBy(edge => typesById[edge.FromTypeId].ProjectKey, StringComparer.Ordinal)
-                         .OrderBy(static group => group.Key, StringComparer.Ordinal))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var sourceProject = projectByKey[sourceGroup.Key];
-                builder.Append("### ").Append(MarkdownReportWriter.FormatCodeSpan(sourceProject.Key))
-                    .Append(" — outgoing map: ").Append(MarkdownReportWriter.FormatCodeSpan(DependencyRoute(sourceProject))).Append("\n\n");
-                foreach (var targetGroup in sourceGroup.GroupBy(static edge => edge.ToTypeId, StringComparer.Ordinal)
-                             .OrderBy(static group => group.Key, StringComparer.Ordinal))
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    builder.Append("- ").Append(MarkdownReportWriter.FormatCodeSpan(targetGroup.Key)).Append(" ← ")
-                        .Append(string.Join(", ", targetGroup.Select(static edge => edge.FromTypeId).Order(StringComparer.Ordinal)
-                            .Select(MarkdownReportWriter.FormatCodeSpan))).Append('\n');
-                }
-                builder.Append('\n');
-            }
-        }
+        AppendConsumerDeclarations(builder, incoming, displayedNames, typesById, projectByKey, cancellationToken);
+        AppendIncomingEdges(builder, incoming, displayedNames, typesById, projectByKey, cancellationToken);
         return builder.ToString();
     }
 
-    private static string FormatTypeReference(ReviewMapType type) =>
-        MarkdownReportWriter.FormatCodeSpan(type.Id);
+    private static void AppendConsumerDeclarations(
+        StringBuilder builder,
+        IReadOnlyList<ReviewMapTypeEdge> incoming,
+        IReadOnlyDictionary<string, string> displayedNames,
+        IReadOnlyDictionary<string, ReviewMapType> typesById,
+        IReadOnlyDictionary<string, ReviewMapProject> projectByKey,
+        CancellationToken cancellationToken)
+    {
+        builder.Append("## Consumer declarations\n\n");
+        var consumers = incoming.Select(static edge => edge.FromTypeId).Distinct(StringComparer.Ordinal).ToArray();
+        if (consumers.Length == 0)
+        {
+            builder.Append("None.\n\n");
+            return;
+        }
+
+        foreach (var ownerGroup in consumers.GroupBy(id => typesById[id].ProjectKey, StringComparer.Ordinal)
+                     .OrderBy(group => projectByKey[group.Key].ProjectPath, StringComparer.Ordinal))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var owner = projectByKey[ownerGroup.Key];
+            builder.Append("### ").Append(MarkdownReportWriter.FormatCodeSpan(owner.ProjectPath)).Append("\n\n");
+            foreach (var consumerId in ownerGroup.OrderBy(id => displayedNames[id], StringComparer.Ordinal))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var declarations = typesById[consumerId].Declarations
+                    .OrderBy(static declaration => declaration.SourcePath, StringComparer.Ordinal)
+                    .ThenBy(static declaration => declaration.Line)
+                    .Select(FormatDeclarationLocation);
+                builder.Append("- ").Append(MarkdownReportWriter.FormatCodeSpan(displayedNames[consumerId]))
+                    .Append(": ").Append(string.Join(", ", declarations)).Append('\n');
+            }
+            builder.Append('\n');
+        }
+    }
+
+    private static void AppendIncomingEdges(
+        StringBuilder builder,
+        IReadOnlyList<ReviewMapTypeEdge> incoming,
+        IReadOnlyDictionary<string, string> displayedNames,
+        IReadOnlyDictionary<string, ReviewMapType> typesById,
+        IReadOnlyDictionary<string, ReviewMapProject> projectByKey,
+        CancellationToken cancellationToken)
+    {
+        builder.Append("## Incoming edges\n\n")
+            .Append("Only non-empty consumer groups are shown. Declaration locations appear in Consumer declarations; edge witnesses are in the source project's outgoing map listed under Project routes.\n\n");
+        if (incoming.Count == 0)
+        {
+            builder.Append("None.\n");
+            return;
+        }
+
+        foreach (var targetGroup in incoming.GroupBy(static edge => edge.ToTypeId)
+                     .OrderBy(group => displayedNames[group.Key], StringComparer.Ordinal))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            builder.Append("### ").Append(MarkdownReportWriter.FormatCodeSpan(displayedNames[targetGroup.Key])).Append("\n\n");
+            var consumers = targetGroup.Select(static edge => edge.FromTypeId).Distinct(StringComparer.Ordinal).ToArray();
+            foreach (var role in new[] { ProjectRole.Production, ProjectRole.Tests })
+            {
+                var ownerGroups = consumers
+                    .Where(id => projectByKey[typesById[id].ProjectKey].Role == role)
+                    .GroupBy(id => typesById[id].ProjectKey, StringComparer.Ordinal)
+                    .OrderBy(group => projectByKey[group.Key].ProjectPath, StringComparer.Ordinal);
+                foreach (var ownerGroup in ownerGroups)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var owner = projectByKey[ownerGroup.Key];
+                    var names = ownerGroup.Select(id => displayedNames[id]).Order(StringComparer.Ordinal)
+                        .Select(MarkdownReportWriter.FormatCodeSpan);
+                    builder.Append("- ").Append(role == ProjectRole.Tests ? "Test consumers (" : "Production consumers (")
+                        .Append(MarkdownReportWriter.FormatCodeSpan(owner.ProjectPath)).Append("): ")
+                        .Append(string.Join(", ", names)).Append('\n');
+                }
+            }
+            builder.Append('\n');
+        }
+    }
+
+    private static IReadOnlyDictionary<string, string> CreateTypeNames(
+        IReadOnlyList<ReviewMapType> projectTypes,
+        IReadOnlyList<ReviewMapTypeEdge> edges,
+        IReadOnlyDictionary<string, ReviewMapType> typesById,
+        IReadOnlyDictionary<string, ReviewMapProject> projectByKey)
+    {
+        var types = projectTypes.Concat(edges.SelectMany(edge => new[] { typesById[edge.FromTypeId], typesById[edge.ToTypeId] }))
+            .DistinctBy(static type => type.Id, StringComparer.Ordinal).ToArray();
+        var crossProjectFullyQualifiedNames = types.GroupBy(static type => type.FullyQualifiedName, StringComparer.Ordinal)
+            .Where(group => group.Select(static type => type.ProjectKey).Distinct(StringComparer.Ordinal).Skip(1).Any())
+            .Select(static group => group.Key).ToHashSet(StringComparer.Ordinal);
+        var ambiguousNames = types.GroupBy(static type => type.Name, StringComparer.Ordinal)
+            .Where(static group => group.Select(static type => (type.FullyQualifiedName, type.ProjectKey)).Distinct().Skip(1).Any())
+            .Select(static group => group.Key).ToHashSet(StringComparer.Ordinal);
+
+        return types.ToDictionary(
+            static type => type.Id,
+            type => ambiguousNames.Contains(type.Name)
+                ? crossProjectFullyQualifiedNames.Contains(type.FullyQualifiedName)
+                    ? type.FullyQualifiedName + " (ProjectPath: " + projectByKey[type.ProjectKey].ProjectPath + ")"
+                    : type.FullyQualifiedName
+                : type.Name,
+            StringComparer.Ordinal);
+    }
+
+    private static void AppendProjectRoutes(
+        StringBuilder builder,
+        ReviewMapProject project,
+        IReadOnlyList<ReviewMapTypeEdge> edges,
+        IReadOnlyDictionary<string, ReviewMapType> typesById,
+        IReadOnlyDictionary<string, ReviewMapProject> projectByKey,
+        CancellationToken cancellationToken)
+    {
+        var projectKeys = edges.SelectMany(edge => new[] { typesById[edge.FromTypeId].ProjectKey, typesById[edge.ToTypeId].ProjectKey })
+            .Concat(edges.SelectMany(static edge => edge.Witnesses).Select(static witness => witness.ProjectKey))
+            .Append(project.Key)
+            .Distinct(StringComparer.Ordinal)
+            .Select(key => projectByKey.TryGetValue(key, out var relatedProject)
+                ? relatedProject
+                : throw new InvalidDataException($"Dependency map project '{key}' is not present in prepared maps."))
+            .OrderBy(static item => item.ProjectPath, StringComparer.Ordinal)
+            .ToArray();
+
+        builder.Append("## Project routes\n\n| Project path | Role | Structure route | Dependency route |\n| --- | --- | --- | --- |\n");
+        foreach (var relatedProject in projectKeys)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            builder.Append("| ").Append(MarkdownReportWriter.FormatCodeSpan(relatedProject.ProjectPath)).Append(" | ")
+                .Append(relatedProject.Role == ProjectRole.Tests ? "tests" : "production")
+                .Append(" | ").Append(MarkdownReportWriter.FormatCodeSpan(StructureRoute(relatedProject)))
+                .Append(" | ").Append(MarkdownReportWriter.FormatCodeSpan(DependencyRoute(relatedProject))).Append(" |\n");
+        }
+        builder.Append('\n');
+    }
+
+    private static string FormatDeclarationLocation(ReviewMapTypeDeclaration declaration) =>
+        MarkdownReportWriter.FormatCodeSpan(declaration.SourcePath + ":" + declaration.Line.ToString(CultureInfo.InvariantCulture));
 
     private static string ProjectRoute(ReviewMapProject project, string file) =>
         MarkdownReportWriter.FormatCodeSpan((project.Role == ProjectRole.Tests ? "tests" : "production") + "/" + project.Key + "/" + file);
