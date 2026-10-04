@@ -93,8 +93,24 @@ public sealed class ReviewMapsIntegrationTests
         var firstFile = Assert.Single(maps.Files.Where(file => file.ProjectKey == production.Key && file.RelativePath == "src/Domain/First.cs"));
         Assert.Contains($"| `src/Domain/First.cs` | {firstFile.Lines} | {Encoding.UTF8.GetByteCount(firstSource)} |", structure, StringComparison.Ordinal);
         Assert.Contains($"| `src/Domain` | 2 | {Encoding.UTF8.GetByteCount(firstSource) + Encoding.UTF8.GetByteCount(secondSource)} |", structure, StringComparison.Ordinal);
-        Assert.Contains("Widget", structure, StringComparison.Ordinal);
-        Assert.Contains("Nested", structure, StringComparison.Ordinal);
+        Assert.Contains("### `Example.Domain`", structure, StringComparison.Ordinal);
+        Assert.Contains("- `Widget` (Class): `src/Domain/First.cs:2`, `src/Domain/Second.cs:1`", structure, StringComparison.Ordinal);
+        Assert.Contains("- `Widget.Nested` (Class): `src/Domain/Second.cs:1`", structure, StringComparison.Ordinal);
+        Assert.Contains("- `BaseType` (Class): `src/Domain/Second.cs:2`", structure, StringComparison.Ordinal);
+        Assert.Contains("- `DeepType` (Class): `src/Domain/Second.cs:3`", structure, StringComparison.Ordinal);
+        foreach (var type in maps.Types)
+        {
+            Assert.DoesNotContain(type.Id, structure, StringComparison.Ordinal);
+        }
+
+        var testsStructure = await File.ReadAllTextAsync(testsStructurePath);
+        Assert.Contains("### `Example.Domain.Tests`", testsStructure, StringComparison.Ordinal);
+        Assert.Contains("- `WidgetTests` (Class): `tests/Domain.Tests/WidgetTests.cs:1`", testsStructure, StringComparison.Ordinal);
+        foreach (var type in maps.Types)
+        {
+            Assert.DoesNotContain(type.Id, testsStructure, StringComparison.Ordinal);
+        }
+
         var dependencies = await File.ReadAllTextAsync(testsDependenciesPath);
         Assert.Contains("`WidgetTests` → `DeepType`", dependencies, StringComparison.Ordinal);
         Assert.Contains("### `tests/Domain.Tests/WidgetTests.cs`", dependencies, StringComparison.Ordinal);
@@ -113,6 +129,16 @@ public sealed class ReviewMapsIntegrationTests
         Assert.DoesNotContain("##### `tests/Domain.Tests/Domain.Tests.csproj`", productionDependencies, StringComparison.Ordinal);
         Assert.DoesNotContain(testType.Id, productionDependencies, StringComparison.Ordinal);
         Assert.DoesNotContain(deepType.Id, productionDependencies, StringComparison.Ordinal);
+
+        var markdownFiles = Directory.GetFiles(runDirectory, "*.md", SearchOption.AllDirectories);
+        foreach (var mdFile in markdownFiles)
+        {
+            var content = await File.ReadAllTextAsync(mdFile);
+            foreach (var mapType in maps.Types)
+            {
+                Assert.DoesNotContain(mapType.Id, content, StringComparison.Ordinal);
+            }
+        }
     }
 
     private static async Task RestoreProjectAsync(string projectFile, string workingDirectory)

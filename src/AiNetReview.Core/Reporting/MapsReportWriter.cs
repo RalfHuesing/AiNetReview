@@ -193,7 +193,7 @@ internal static class MapsReportWriter
             foreach (var type in namespaceGroup.OrderBy(static type => type.FullyQualifiedName, StringComparer.Ordinal))
             {
                 builder.Append("- ").Append(MarkdownReportWriter.FormatCodeSpan(type.Name)).Append(" (")
-                    .Append(type.Kind).Append(", ").Append(MarkdownReportWriter.FormatCodeSpan(type.Id)).Append("): ")
+                    .Append(type.Kind).Append("): ")
                     .Append(string.Join(", ", type.Declarations.OrderBy(static declaration => declaration.SourcePath, StringComparer.Ordinal)
                         .ThenBy(static declaration => declaration.Line)
                         .Select(declaration => MarkdownReportWriter.FormatCodeSpan(declaration.SourcePath + ":" + declaration.Line.ToString(CultureInfo.InvariantCulture)))))

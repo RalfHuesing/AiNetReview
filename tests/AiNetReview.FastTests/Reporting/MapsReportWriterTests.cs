@@ -126,11 +126,14 @@ public sealed class MapsReportWriterTests
         await MapsReportWriter.WriteMapsAsync(first.DirectoryPath, maps, CancellationToken.None);
         await MapsReportWriter.WriteMapsAsync(second.DirectoryPath, permuted, CancellationToken.None);
 
-        foreach (var (role, key) in new[] { ("production", "p-production"), ("tests", "p-tests-one"), ("tests", "p-tests-two") })
+        foreach (var (role, key) in new[] { ("production", "p-production"), ("production", "p-shared"), ("tests", "p-tests-one"), ("tests", "p-tests-two") })
         {
             Assert.Equal(
                 await ReadDependenciesAsync(first.DirectoryPath, role, key),
                 await ReadDependenciesAsync(second.DirectoryPath, role, key));
+            Assert.Equal(
+                await ReadStructureAsync(first.DirectoryPath, role, key),
+                await ReadStructureAsync(second.DirectoryPath, role, key));
         }
     }
 
@@ -228,8 +231,53 @@ public sealed class MapsReportWriterTests
     private static ReviewMapTypeWitness Witness(string projectKey, string path, int line, string kind) =>
         new(projectKey, path, line, kind);
 
+    [Fact]
+    public async Task WriteMapsAsync_RendersStructureWithoutVisibleTypeIdsAndPreservesDeclarations()
+    {
+        using var temp = TestTempDirectory.Create();
+        var maps = CreateMaps();
+
+        await MapsReportWriter.WriteMapsAsync(temp.DirectoryPath, maps, CancellationToken.None);
+
+        var productionStructure = await ReadStructureAsync(temp.DirectoryPath, "production", "p-production");
+        Assert.Contains("# Structure — `src/Domain/Domain.csproj`", productionStructure, StringComparison.Ordinal);
+        Assert.Contains("### `App`", productionStructure, StringComparison.Ordinal);
+        Assert.Contains("- `Runner` (Class): `src/Domain/Runner.Part1.cs:10`, `src/Domain/Runner.Part2.cs:30`", productionStructure, StringComparison.Ordinal);
+        Assert.Contains("- `Outer<T>.Inner<U>` (Class): `src/Domain/Outer.cs:8`", productionStructure, StringComparison.Ordinal);
+        Assert.Contains("### `App.Domain`", productionStructure, StringComparison.Ordinal);
+        Assert.Contains("- `Cache` (Class): `src/Domain/Cache.cs:4`", productionStructure, StringComparison.Ordinal);
+        Assert.Contains("- `Widget` (Class): `src/Domain/Widget.cs:2`", productionStructure, StringComparison.Ordinal);
+        Assert.Contains("### `Infrastructure`", productionStructure, StringComparison.Ordinal);
+        Assert.Contains("- `Cache` (Class): `src/Domain/Infrastructure/Cache.cs:5`", productionStructure, StringComparison.Ordinal);
+        Assert.Contains("- `Widget` (Class): `src/Domain/Unused.cs:1`", productionStructure, StringComparison.Ordinal);
+        Assert.Contains("### `Shared`", productionStructure, StringComparison.Ordinal);
+        Assert.Contains("- `Token` (Class): `src/Domain/Token.cs:2`", productionStructure, StringComparison.Ordinal);
+
+        foreach (var type in maps.Types.Where(static type => type.ProjectKey == "p-production"))
+        {
+            Assert.DoesNotContain(type.Id, productionStructure, StringComparison.Ordinal);
+        }
+
+        var sharedStructure = await ReadStructureAsync(temp.DirectoryPath, "production", "p-shared");
+        Assert.Contains("### `Shared`", sharedStructure, StringComparison.Ordinal);
+        Assert.Contains("- `Token` (Class): `src/Shared/Token.cs:2`", sharedStructure, StringComparison.Ordinal);
+        Assert.Contains("- `OtherConsumer` (Class): `Shared.cs:12`", sharedStructure, StringComparison.Ordinal);
+        foreach (var type in maps.Types.Where(static type => type.ProjectKey == "p-shared"))
+        {
+            Assert.DoesNotContain(type.Id, sharedStructure, StringComparison.Ordinal);
+        }
+
+        var testsStructure = await ReadStructureAsync(temp.DirectoryPath, "tests", "p-tests-one");
+        Assert.Contains("### `App.Tests`", testsStructure, StringComparison.Ordinal);
+        Assert.Contains("- `WidgetTests` (Class): `tests/Domain.Tests/WidgetTests.Part2.cs:20`, `tests/Domain.Tests/WidgetTests.cs:3`", testsStructure, StringComparison.Ordinal);
+        Assert.DoesNotContain("t-test-one", testsStructure, StringComparison.Ordinal);
+    }
+
     private static async Task<string> ReadDependenciesAsync(string root, string role, string key) =>
         await File.ReadAllTextAsync(Path.Combine(root, "maps", role, key, "dependencies.md"));
+
+    private static async Task<string> ReadStructureAsync(string root, string role, string key) =>
+        await File.ReadAllTextAsync(Path.Combine(root, "maps", role, key, "structure.md"));
 
     private static string ExtractSection(string text, string heading, string? nextHeading)
     {
